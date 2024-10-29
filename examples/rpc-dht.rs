@@ -1,7 +1,7 @@
 use futures::StreamExt;
 use hyperswarm_dht::rpc::{DhtConfig, RpcDht, RpcDhtEvent};
 
-#[async_std::main]
+#[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pretty_env_logger::init();
 
@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .expect("Failed to create dht with socket");
 
-        let work = async_std::task::spawn(async move {
+        let work = tokio::task::spawn(async move {
             loop {
                 if let Some(event) = a.next().await {
                     match event {

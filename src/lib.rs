@@ -1105,7 +1105,7 @@ mod tests {
                     Some(HyperDhtEvent::Bootstrapped { .. }) => {}
                     _ => panic!("expected bootstrap result first"),
                 }
-                async_std::task::spawn(async move {
+                tokio::task::spawn(async move {
                     loop {
                         // process each incoming message
                         dht.next().await;
@@ -1127,7 +1127,7 @@ mod tests {
             )
             .await?;
             let addr = bs.local_addr()?;
-            async_std::task::spawn(async move {
+            tokio::task::spawn(async move {
                 loop {
                     // process each incoming message
                     bs.next().await;
@@ -1137,7 +1137,7 @@ mod tests {
         }};
     }
 
-    #[async_std::test]
+    #[tokio::test]
     async fn mutable_put_get() -> Result<(), Box<dyn std::error::Error>> {
         use futures::select;
         // create an ephemeral bootstrap node
@@ -1174,7 +1174,7 @@ mod tests {
 
         // 2. node `b` queries the DHT for the value
         b.get_mutable(key.clone());
-        async_std::task::spawn(async move {
+        tokio::task::spawn(async move {
             loop {
                 if let Some(event) = b.next().await {
                     match event {
@@ -1220,7 +1220,7 @@ mod tests {
         }
     }
 
-    #[async_std::test]
+    #[tokio::test]
     async fn immutable_put_get() -> Result<(), Box<dyn std::error::Error>> {
         // create an ephemeral bootstrap node
         let bs_addr = bootstrap_dht!();
@@ -1241,7 +1241,7 @@ mod tests {
             }
             _ => panic!("expected result for the immutable value"),
         };
-        async_std::task::spawn(async move {
+        tokio::task::spawn(async move {
             loop {
                 a.next().await;
             }
@@ -1271,7 +1271,7 @@ mod tests {
         Ok(())
     }
 
-    #[async_std::test]
+    #[tokio::test]
     async fn local_bootstrap() -> Result<(), Box<dyn std::error::Error>> {
         // ephemeral node used for bootstrapping
         let bs_addr = bootstrap_dht!();
@@ -1282,7 +1282,7 @@ mod tests {
 
         let (tx, rx) = futures::channel::oneshot::channel();
 
-        async_std::task::spawn(async move {
+        tokio::task::spawn(async move {
             if let Some(HyperDhtEvent::Bootstrapped { .. }) = state.next().await {
                 // after initial bootstrapping the state`s address is included in the bs`
                 // routing table. Then the `node` can start to announce

@@ -1,17 +1,15 @@
 use std::{
     fmt, io,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
 };
 
-use async_std::{
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
-    stream::Stream,
-};
 use bytes::BytesMut;
-use futures::{ready, Future, Sink};
+use futures::{ready, Future, Sink, Stream};
 use futures_codec::{Decoder, Encoder};
+use tokio::net::UdpSocket;
 
 pub type RecvFuture =
     Pin<Box<dyn Future<Output = (Vec<u8>, io::Result<(usize, SocketAddr)>)> + Send + Sync>>;
@@ -214,13 +212,13 @@ mod tests {
 
     const QUICK_BROWN_FOX: &str = "The quick brown fox jumps over the lazy dog";
 
-    #[async_std::test]
+    #[tokio::test]
     async fn udp_framed() -> Result<(), Box<dyn std::error::Error>> {
         let socket = UdpSocket::bind("127.0.0.1:0").await?;
         let addr = socket.local_addr()?;
         let mut framed = UdpFramed::new(socket, BytesCodec);
 
-        let handle = async_std::task::spawn(async move {
+        let handle = tokio::task::spawn(async move {
             let (msg, addr) = framed.next().await.unwrap()?;
             assert_eq!(msg.bytes(), QUICK_BROWN_FOX.as_bytes());
             framed.send((msg, addr)).await?;

@@ -9,18 +9,19 @@ use crate::{
         IdBytes, Peer, RequestId,
     },
 };
-use async_std::{net::UdpSocket, stream::Stream};
 use blake2::{
     crypto_mac::generic_array::{typenum::U64, GenericArray},
     Blake2b, Digest,
 };
 use fnv::FnvHashMap;
+use futures::Stream;
 use futures::{
     task::{Context, Poll},
     Sink,
 };
 use prost::Message as ProtoMessage;
 use std::{collections::VecDeque, fmt, io, net::SocketAddr, ops::Deref, pin::Pin, time::Duration};
+use tokio::net::UdpSocket;
 use wasm_timer::Instant;
 
 pub const VERSION: u64 = 1;

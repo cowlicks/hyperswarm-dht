@@ -10,14 +10,14 @@
 use futures::StreamExt;
 use hyperswarm_dht::{DhtConfig, HyperDht};
 
-#[async_std::main]
+#[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut bs =
         HyperDht::with_config(DhtConfig::default().empty_bootstrap_nodes().ephemeral()).await?;
 
     let bs_addr = bs.local_addr()?;
 
-    async_std::task::spawn(async move {
+    tokio::task::spawn(async move {
         loop {
             bs.next().await;
         }

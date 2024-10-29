@@ -11,13 +11,13 @@ use std::{
     time::Duration,
 };
 
-use async_std::net::UdpSocket;
 use ed25519_dalek::{PublicKey, PUBLIC_KEY_LENGTH};
 use futures::{
     stream::Stream,
     task::{Context, Poll},
 };
 use sha2::digest::generic_array::{typenum::U32, GenericArray};
+use tokio::net::UdpSocket;
 use wasm_timer::Instant;
 
 pub use crate::rpc::message::*;
@@ -110,7 +110,7 @@ impl DhtConfig {
     }
 
     /// Create a new UDP socket and attempt to bind it to the addr provided.
-    pub async fn bind<A: async_std::net::ToSocketAddrs>(
+    pub async fn bind<A: tokio::net::ToSocketAddrs>(
         mut self,
         addr: A,
     ) -> Result<Self, (Self, std::io::Error)> {

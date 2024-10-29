@@ -7,13 +7,19 @@
 //! the address of the bootstrap node gets piped to
 //! the rust program which creates an ephemeral node to announce and
 //! afterwards unannouce a topic and a port.
-use async_std::{io::stdin, prelude::StreamExt, task};
+use futures::StreamExt;
 use hyperswarm_dht::{DhtConfig, HyperDht, IdBytes, QueryOpts};
+use tokio::{
+    io::{stdin, AsyncBufReadExt, BufReader},
+    task,
+};
 
-#[async_std::main]
+#[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut bootstrap = String::new();
-    stdin()
+    let stdin = stdin();
+    let mut reader = BufReader::new(stdin);
+    reader
         .read_line(&mut bootstrap)
         .await
         .expect("Could not read bootstrap server address");
