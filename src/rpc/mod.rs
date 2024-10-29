@@ -1,13 +1,15 @@
 //! Make RPC calls over a Kademlia based DHT.
 
-use std::borrow::Borrow;
-use std::collections::{HashSet, VecDeque};
-use std::convert::{TryFrom, TryInto};
-use std::hash::Hash;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs};
-use std::num::NonZeroUsize;
-use std::pin::Pin;
-use std::time::Duration;
+use std::{
+    borrow::Borrow,
+    collections::{HashSet, VecDeque},
+    convert::{TryFrom, TryInto},
+    hash::Hash,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4, ToSocketAddrs},
+    num::NonZeroUsize,
+    pin::Pin,
+    time::Duration,
+};
 
 use async_std::net::UdpSocket;
 use ed25519_dalek::{PublicKey, PUBLIC_KEY_LENGTH};

@@ -1,24 +1,3 @@
-use std::collections::VecDeque;
-use std::fmt;
-use std::io;
-use std::net::SocketAddr;
-use std::ops::Deref;
-use std::pin::Pin;
-use std::time::Duration;
-
-use async_std::{net::UdpSocket, stream::Stream};
-use blake2::crypto_mac::generic_array::{typenum::U64, GenericArray};
-use blake2::{Blake2b, Digest};
-use fnv::FnvHashMap;
-use futures::{
-    task::{Context, Poll},
-    Sink,
-};
-use prost::Message as ProtoMessage;
-use wasm_timer::Instant;
-
-use crate::rpc::udp::UdpFramed;
-use crate::rpc::IdBytes;
 use crate::{
     kbucket::Key,
     peers::PeersEncoding,
@@ -29,7 +8,21 @@ use crate::{
         protocol::DhtRpcCodec,
         Peer, RequestId,
     },
+    rpc::{udp::UdpFramed, IdBytes},
 };
+use async_std::{net::UdpSocket, stream::Stream};
+use blake2::{
+    crypto_mac::generic_array::{typenum::U64, GenericArray},
+    Blake2b, Digest,
+};
+use fnv::FnvHashMap;
+use futures::{
+    task::{Context, Poll},
+    Sink,
+};
+use prost::Message as ProtoMessage;
+use std::{collections::VecDeque, fmt, io, net::SocketAddr, ops::Deref, pin::Pin, time::Duration};
+use wasm_timer::Instant;
 
 pub const VERSION: u64 = 1;
 
