@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
     };
 
-    announce.await;
-    lookup.await;
+    announce.await?;
+    lookup.await?;
     Ok(())
 }

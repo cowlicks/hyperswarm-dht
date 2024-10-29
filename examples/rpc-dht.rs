@@ -61,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
 
-        work.await;
+        work.await?;
     }
 
     Ok(())

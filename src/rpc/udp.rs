@@ -234,7 +234,7 @@ mod tests {
         assert_eq!(len, QUICK_BROWN_FOX.len());
         assert_eq!(QUICK_BROWN_FOX.as_bytes(), &buf[..len]);
 
-        handle.await?;
+        handle.await??;
         Ok(())
     }
 }
