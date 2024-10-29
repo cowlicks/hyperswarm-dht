@@ -1,11 +1,11 @@
-use std::net::SocketAddr;
-use std::num::NonZeroUsize;
+use std::{net::SocketAddr, num::NonZeroUsize};
 
 use fnv::FnvHashMap;
 
-use crate::kbucket::{Key, K_VALUE};
-use crate::rpc::query::fixed::FixedPeersIter;
-use crate::rpc::{self, IdBytes, PeerId};
+use crate::{
+    kbucket::{Key, K_VALUE},
+    rpc::{self, query::fixed::FixedPeersIter, IdBytes, PeerId},
+};
 
 #[derive(Debug)]
 pub struct QueryTable {

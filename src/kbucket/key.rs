@@ -24,12 +24,15 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use std::borrow::Borrow;
-use std::hash::{Hash, Hasher};
+use std::{
+    borrow::Borrow,
+    hash::{Hash, Hasher},
+};
 
-use sha2::digest::generic_array::typenum::U32;
-use sha2::digest::generic_array::GenericArray;
-use sha2::{Digest, Sha256};
+use sha2::{
+    digest::generic_array::{typenum::U32, GenericArray},
+    Digest, Sha256,
+};
 use uint::construct_uint;
 
 use crate::rpc::IdBytes;

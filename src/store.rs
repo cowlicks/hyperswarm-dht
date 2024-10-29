@@ -4,13 +4,17 @@ use ed25519_dalek::PublicKey;
 use lru::LruCache;
 use prost::Message;
 
-use crate::crypto::VALUE_MAX_SIZE;
-use crate::dht_proto::Mutable;
-use crate::rpc::message::Type;
-use crate::rpc::query::{CommandQuery, CommandQueryResponse};
-use crate::rpc::IdBytes;
-use crate::{crypto, ERR_INVALID_INPUT};
-use crate::{IMMUTABLE_STORE_CMD, MUTABLE_STORE_CMD};
+use crate::{
+    crypto,
+    crypto::VALUE_MAX_SIZE,
+    dht_proto::Mutable,
+    rpc::{
+        message::Type,
+        query::{CommandQuery, CommandQueryResponse},
+        IdBytes,
+    },
+    ERR_INVALID_INPUT, IMMUTABLE_STORE_CMD, MUTABLE_STORE_CMD,
+};
 
 /// PUT_VALUE_MAX_SIZE (1000B) + packet overhead (i.e. the key etc.) should be
 /// less than the network MTU, normally 1400 bytes

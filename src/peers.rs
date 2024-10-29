@@ -1,10 +1,14 @@
-use std::convert::{TryFrom, TryInto};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::{
+    convert::{TryFrom, TryInto},
+    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
+};
 
 use smallvec::alloc::borrow::Borrow;
 
-use crate::kbucket::{self, EntryView};
-use crate::rpc::{IdBytes, Node, Peer, PeerId};
+use crate::{
+    kbucket::{self, EntryView},
+    rpc::{IdBytes, Node, Peer, PeerId},
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct PeersCodec {

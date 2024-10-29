@@ -22,8 +22,7 @@ use std::{collections::hash_map::Entry, num::NonZeroUsize, vec};
 
 use fnv::FnvHashMap;
 
-use crate::rpc::query::peers::PeersIterState;
-use crate::rpc::Peer;
+use crate::rpc::{query::peers::PeersIterState, Peer};
 
 /// A peer iterator for bootstrapping a query.
 #[derive(Debug)]

@@ -1,12 +1,12 @@
-use std::fmt;
-use std::io;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::{
+    fmt, io,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use async_std::{
-    net::UdpSocket,
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
     stream::Stream,
 };
 use bytes::BytesMut;

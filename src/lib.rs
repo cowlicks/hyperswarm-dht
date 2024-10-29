@@ -2,31 +2,38 @@
 #![warn(unused, rust_2018_idioms)]
 
 use core::cmp;
-use std::convert::{TryFrom, TryInto};
-use std::fmt;
-use std::io;
-use std::net::{IpAddr, SocketAddr, SocketAddrV4, ToSocketAddrs};
-use std::pin::Pin;
-use std::time::Duration;
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt, io,
+    net::{IpAddr, SocketAddr, SocketAddrV4, ToSocketAddrs},
+    pin::Pin,
+    time::Duration,
+};
 
 use ed25519_dalek::{Keypair, PublicKey, Signature};
 use either::Either;
 use fnv::FnvHashMap;
-use futures::task::{Context, Poll};
-use futures::Stream;
+use futures::{
+    task::{Context, Poll},
+    Stream,
+};
 use log::*;
 use prost::Message as ProstMessage;
 use sha2::digest::generic_array::{typenum::U32, GenericArray};
 use smallvec::alloc::collections::VecDeque;
 
-use crate::dht_proto::{encode_input, Mutable, PeersInput, PeersOutput};
-use crate::lru::{CacheKey, PeerCache};
-use crate::peers::{decode_local_peers, decode_peers, PeersEncoding};
-use crate::rpc::message::{Message, Type};
-use crate::rpc::query::{CommandQuery, CommandQueryResponse, QueryId, QueryStats};
 pub use crate::rpc::{DhtConfig, IdBytes, Peer, PeerId};
-use crate::rpc::{RequestOk, Response, ResponseOk, RpcDht, RpcDhtEvent};
-use crate::store::{StorageEntry, StorageKey, Store, PUT_VALUE_MAX_SIZE};
+use crate::{
+    dht_proto::{encode_input, Mutable, PeersInput, PeersOutput},
+    lru::{CacheKey, PeerCache},
+    peers::{decode_local_peers, decode_peers, PeersEncoding},
+    rpc::{
+        message::{Message, Type},
+        query::{CommandQuery, CommandQueryResponse, QueryId, QueryStats},
+        RequestOk, Response, ResponseOk, RpcDht, RpcDhtEvent,
+    },
+    store::{StorageEntry, StorageKey, Store, PUT_VALUE_MAX_SIZE},
+};
 
 mod dht_proto {
     use prost::Message;

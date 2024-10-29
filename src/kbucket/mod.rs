@@ -68,9 +68,11 @@
 // [0]: https://pdos.csail.mit.edu/~petar/papers/maymounkov-kademlia-lncs.pdf
 #![allow(unused)]
 
-use std::collections::VecDeque;
-use std::num::NonZeroUsize;
-use std::time::{Duration, Instant};
+use std::{
+    collections::VecDeque,
+    num::NonZeroUsize,
+    time::{Duration, Instant},
+};
 
 use arrayvec::{self, ArrayVec};
 

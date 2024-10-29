@@ -1,13 +1,12 @@
-use std::convert::TryFrom;
-use std::fmt;
-use std::fmt::Formatter;
-use std::net::SocketAddr;
+use std::{convert::TryFrom, fmt, fmt::Formatter, net::SocketAddr};
 
 use prost::Message as ProstMessage;
 
-use crate::kbucket;
-use crate::peers::{decode_peer_ids, decode_peers};
-use crate::rpc::{IdBytes, Peer, PeerId, RequestId};
+use crate::{
+    kbucket,
+    peers::{decode_peer_ids, decode_peers},
+    rpc::{IdBytes, Peer, PeerId, RequestId},
+};
 
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Holepunch {

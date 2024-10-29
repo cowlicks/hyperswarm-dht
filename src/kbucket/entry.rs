@@ -21,9 +21,11 @@
 //! The `Entry` API for quering and modifying the entries of a `KBucketsTable`
 //! representing the nodes participating in the Kademlia DHT.
 
-pub use super::bucket::{AppliedPending, InsertResult, Node, NodeStatus};
-pub use super::key::*;
 use super::*;
+pub use super::{
+    bucket::{AppliedPending, InsertResult, Node, NodeStatus},
+    key::*,
+};
 
 /// An immutable by-reference view of a bucket entry.
 pub struct EntryRefView<'a, TPeerId, TVal> {

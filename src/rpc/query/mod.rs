@@ -1,21 +1,21 @@
-use std::num::NonZeroUsize;
-use std::time::Duration;
+use std::{num::NonZeroUsize, time::Duration};
 
 use fnv::FnvHashMap;
 use futures::task::Poll;
 use wasm_timer::Instant;
 
-use crate::peers::PeersEncoding;
-use crate::rpc::IdBytes;
 use crate::{
     kbucket::{Key, ALPHA_VALUE, K_VALUE},
+    peers::PeersEncoding,
     rpc::{
         io::VERSION,
         message::{Command, Message, Type},
-        query::fixed::FixedPeersIter,
-        query::peers::PeersIterState,
-        query::table::{PeerState, QueryTable},
-        Peer, PeerId, RequestId, Response,
+        query::{
+            fixed::FixedPeersIter,
+            peers::PeersIterState,
+            table::{PeerState, QueryTable},
+        },
+        IdBytes, Peer, PeerId, RequestId, Response,
     },
 };
 

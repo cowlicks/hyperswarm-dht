@@ -1,11 +1,14 @@
-use blake2::crypto_mac::generic_array::{typenum::U64, GenericArray};
-use blake2::{Blake2b, VarBlake2b};
-use ed25519_dalek::ed25519::signature::Signature as Sig;
-use ed25519_dalek::SignatureError;
+use blake2::{
+    crypto_mac::generic_array::{typenum::U64, GenericArray},
+    Blake2b, VarBlake2b,
+};
+use ed25519_dalek::{ed25519::signature::Signature as Sig, SignatureError};
 pub use ed25519_dalek::{ExpandedSecretKey, Keypair, PublicKey, SecretKey, Signature, Verifier};
 
-use crate::dht_proto::Mutable;
-use crate::rpc::{fill_random_bytes, IdBytes};
+use crate::{
+    dht_proto::Mutable,
+    rpc::{fill_random_bytes, IdBytes},
+};
 
 /// VALUE_MAX_SIZE + packet overhead (i.e. the key etc.)
 /// should be less than the network MTU, normally 1400 bytes
@@ -85,8 +88,10 @@ pub fn hash_id(val: &[u8]) -> IdBytes {
 /// Generate a new `Ed25519` key pair.
 #[inline]
 pub fn keypair() -> Keypair {
-    use rand::rngs::{OsRng, StdRng};
-    use rand::SeedableRng;
+    use rand::{
+        rngs::{OsRng, StdRng},
+        SeedableRng,
+    };
     Keypair::generate(&mut StdRng::from_rng(OsRng::default()).unwrap())
 }
 

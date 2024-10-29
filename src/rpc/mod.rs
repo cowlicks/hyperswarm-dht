@@ -21,7 +21,6 @@ use sha2::digest::generic_array::{typenum::U32, GenericArray};
 use wasm_timer::Instant;
 
 pub use crate::rpc::message::*;
-use crate::rpc::query::CommandQueryResponse;
 use crate::{
     kbucket::{self, Entry, KBucketsTable, Key, KeyBytes, NodeStatus, K_VALUE},
     peers::PeersEncoding,
@@ -29,8 +28,8 @@ use crate::{
         io::{IoConfig, IoHandler, IoHandlerEvent, MessageEvent, VERSION},
         jobs::PeriodicJob,
         query::{
-            table::PeerState, CommandQuery, QueryConfig, QueryEvent, QueryId, QueryPool,
-            QueryPoolState, QueryStats, QueryStream, QueryType,
+            table::PeerState, CommandQuery, CommandQueryResponse, QueryConfig, QueryEvent, QueryId,
+            QueryPool, QueryPoolState, QueryStats, QueryStream, QueryType,
         },
     },
 };
@@ -1130,10 +1129,9 @@ pub enum ResponseError {
 /// Fill the slice with random bytes
 #[inline]
 pub(crate) fn fill_random_bytes(dest: &mut [u8]) {
-    use rand::SeedableRng;
     use rand::{
         rngs::{OsRng, StdRng},
-        RngCore,
+        RngCore, SeedableRng,
     };
     let mut rng = StdRng::from_rng(OsRng::default()).unwrap();
     rng.fill_bytes(dest)

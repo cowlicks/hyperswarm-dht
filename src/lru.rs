@@ -1,8 +1,4 @@
-use std::borrow::Borrow;
-use std::cmp::Ordering;
-use std::hash::Hash;
-use std::net::SocketAddr;
-use std::time::Duration;
+use std::{borrow::Borrow, cmp::Ordering, hash::Hash, net::SocketAddr, time::Duration};
 
 use fnv::FnvHashMap;
 use smallvec::alloc::collections::VecDeque;

@@ -3,12 +3,11 @@ use crate::{
     peers::PeersEncoding,
     rpc::{
         fill_random_bytes,
-        message::Holepunch,
-        message::{Command, Message, Type},
+        message::{Command, Holepunch, Message, Type},
         protocol::DhtRpcCodec,
-        Peer, RequestId,
+        udp::UdpFramed,
+        IdBytes, Peer, RequestId,
     },
-    rpc::{udp::UdpFramed, IdBytes},
 };
 use async_std::{net::UdpSocket, stream::Stream};
 use blake2::{
