@@ -2,7 +2,7 @@ use blake2::{
     crypto_mac::generic_array::{typenum::U64, GenericArray},
     Blake2b, VarBlake2b,
 };
-use ed25519_dalek::{ed25519::signature::Signature as Sig, SignatureError};
+use ed25519_dalek::SignatureError;
 pub use ed25519_dalek::{ExpandedSecretKey, Keypair, PublicKey, SecretKey, Signature, Verifier};
 
 use crate::{

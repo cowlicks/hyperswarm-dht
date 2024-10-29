@@ -70,6 +70,7 @@ pub struct DhtConfig {
     io_config: IoConfig,
     bootstrap_interval: Duration,
     ping_interval: Duration,
+    #[allow(unused)] // FIXME bg: why never read?
     connection_idle_timeout: Duration,
     ephemeral: bool,
     pub(crate) adaptive: bool,

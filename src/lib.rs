@@ -84,6 +84,7 @@ pub struct HyperDht {
     queries: FnvHashMap<QueryId, QueryStreamType>,
     /// If `true`, the node will become non-ephemeral after the node has shown
     /// to be long-lived
+    #[allow(unused)] // FIXME why aint this used
     adaptive: bool,
     /// Cache for known peers
     peers: PeerCache,

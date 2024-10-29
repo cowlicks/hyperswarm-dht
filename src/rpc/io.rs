@@ -35,6 +35,7 @@ struct Request<TUserData: fmt::Debug + Clone> {
     /// The remote peer
     peer: Peer,
     /// Timestamp when the request was sent
+    #[allow(unused)] // FIXME not read. Why not?
     timestamp: Instant,
     user_data: TUserData,
 }

@@ -12,6 +12,7 @@ use crate::{
 
 #[derive(Debug, Clone, Default)]
 pub struct PeersCodec {
+    #[allow(unused)] // FIXME why aint this used
     id_length: usize,
 }
 
