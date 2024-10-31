@@ -38,7 +38,7 @@ pretty-hash = "0.4.1"
 
 [dependencies.tokio]
 version = "1.41.0"
-features = ["rt"]
+features = ["rt", "net"]
 
 [features]
 cli = ["structopt"]
@@ -48,4 +48,4 @@ env_logger = "0.8.3"
 
 [dev-dependencies.tokio]
 version = "1.41.0"
-features = ["rt", "io-std"]
+features = ["rt-multi-thread", "io-util", "io-std", "macros"]

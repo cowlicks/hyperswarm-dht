@@ -25,4 +25,3 @@ The Kademlia implementation and logic is copied from [libp2-kad](https://github.
 
  * MIT license ([LICENSE-MIT](LICENSE-MIT) or
    https://opensource.org/licenses/MIT)
-   
