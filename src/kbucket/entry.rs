@@ -28,6 +28,7 @@ pub use super::{
 };
 
 /// An immutable by-reference view of a bucket entry.
+#[derive(Debug)]
 pub struct EntryRefView<'a, TPeerId, TVal> {
     /// The node represented by the entry.
     pub node: NodeRefView<'a, TPeerId, TVal>,
@@ -36,6 +37,7 @@ pub struct EntryRefView<'a, TPeerId, TVal> {
 }
 
 /// An immutable by-reference view of a `Node`.
+#[derive(Debug)]
 pub struct NodeRefView<'a, TKey, TVal> {
     pub key: &'a TKey,
     pub value: &'a TVal,
