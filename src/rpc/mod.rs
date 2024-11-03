@@ -37,8 +37,12 @@ use crate::{
 pub mod io;
 mod jobs;
 pub mod message;
+#[cfg(test)]
+mod old_test;
 pub mod protocol;
 pub mod query;
+#[cfg(test)]
+mod test;
 pub mod udp;
 
 #[derive(Debug)]
@@ -46,7 +50,7 @@ pub struct RpcDht {
     /// Identifier of this node
     id: Key<IdBytes>,
     // TODO change Key to Key<PeerId>
-    kbuckets: KBucketsTable<Key<IdBytes>, Node>,
+    pub kbuckets: KBucketsTable<Key<IdBytes>, Node>,
     io: IoHandler<QueryId>,
     bootstrap_job: PeriodicJob,
     ping_job: PeriodicJob,

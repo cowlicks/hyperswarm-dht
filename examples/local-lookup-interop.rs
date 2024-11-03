@@ -39,9 +39,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("could not start");
             node.next().await;
 
+            println!("announcing topic: {topic:?}");
             let query = QueryOpts::new(topic).port(12345);
             node.announce(query);
-            node.next().await;
+            println!("announced. get next evt");
+            let e = node.next().await;
+            println!("announce node got evt: {e:?}");
         })
     };
 
@@ -49,6 +52,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let topic = topic.clone();
         let bootstrap = bootstrap.clone();
         task::spawn(async move {
+            println!("from lookup task");
+            println!("boostrap nodes: {bootstrap}");
             let mut node = HyperDht::with_config(
                 DhtConfig::default()
                     .ephemeral()
@@ -56,11 +61,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .await
             .expect("could not start");
-            node.next().await;
+            println!("lookup node created");
+            let e = node.next().await;
+            println!("looup node created got evt: {e:?}");
 
             let query = QueryOpts::new(topic.clone());
             node.lookup(query);
             let event = node.next().await;
+            println!("looup node sent query got evt: {event:?}");
 
             match event {
                 Some(hyperswarm_dht::HyperDhtEvent::LookupResult { lookup, .. }) => {
@@ -70,12 +78,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let query = QueryOpts::new(topic).port(12345);
-            node.next().await;
             node.unannounce(query);
+            let e = node.next().await;
+            println!("looup node got evt: {e:?}");
+            println!("looup node unannoached");
         })
     };
 
     announce.await?;
     lookup.await?;
+    println!("done");
     Ok(())
 }

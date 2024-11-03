@@ -46,6 +46,10 @@ cli = ["structopt"]
 [dev-dependencies]
 env_logger = "0.8.3"
 
+[dev-dependencies.rusty_nodejs_repl]
+#rusty_nodejs_repl = "0.2.1"
+path = "../js-repl-rs"
+
 [dev-dependencies.tokio]
 version = "1.41.0"
-features = ["rt-multi-thread", "io-util", "io-std", "macros"]
+features = ["rt-multi-thread", "io-util", "io-std", "macros", "time"]

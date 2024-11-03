@@ -48,6 +48,8 @@ mod dht_proto {
         buf
     }
 }
+#[cfg(test)]
+pub mod test;
 
 pub mod crypto;
 pub mod kbucket;
