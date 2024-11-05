@@ -20,7 +20,7 @@ use sha2::digest::generic_array::{typenum::U32, GenericArray};
 use tokio::net::UdpSocket;
 use wasm_timer::Instant;
 
-pub use crate::rpc::message::*;
+pub use crate::rpc::message::{Command, Holepunch, Message, Type};
 use crate::{
     kbucket::{self, Entry, KBucketsTable, Key, KeyBytes, NodeStatus, K_VALUE},
     peers::PeersEncoding,
