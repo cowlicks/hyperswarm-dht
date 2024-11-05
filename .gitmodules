@@ -1,0 +1,3 @@
+[submodule "js/dht-rpc"]
+	path = js/dht-rpc
+	url = git@github.com:cowlicks/dht-rpc.git
