@@ -3,6 +3,7 @@
 
 use core::cmp;
 use std::{
+    array::TryFromSliceError,
     convert::{TryFrom, TryInto},
     fmt, io,
     net::{IpAddr, SocketAddr, SocketAddrV4, ToSocketAddrs},
@@ -78,6 +79,29 @@ pub const MUTABLE_STORE_CMD: &str = "mutable-store";
 pub const IMMUTABLE_STORE_CMD: &str = "immutable-store";
 /// The command identifier to (un)announce/lookup peers
 pub const PEERS_CMD: &str = "peers";
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("Error from compact_encoding: {0}")]
+    CompactEncodingError(EncodingError),
+    #[error("IO Error")]
+    IoError(#[from] std::io::Error),
+    #[error("Invalid RPC command in message: {0}")]
+    InvalidRpcCommand(u8),
+    #[error("Incorrect message ID size. Expected 32. Error: {0}")]
+    IncorrectMessageIdSize(TryFromSliceError),
+    #[error("Error in libsodium's genric_hash function. Return value: {0}")]
+    LibSodiumGenericHashError(i32),
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+/// TODO make EncodingError impl Error trait
+impl From<EncodingError> for Error {
+    fn from(value: EncodingError) -> Self {
+        Error::CompactEncodingError(value)
+    }
+}
 
 /// The implementation of the hyperswarm DHT
 #[derive(Debug)]
@@ -1082,21 +1106,6 @@ impl QueryStreamInner {
                 local_peers,
             })
         }
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("Error from compact_encoding: {0}")]
-    CompactEncodingError(EncodingError),
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
-/// TODO make EncodingError impl Error trait
-impl From<EncodingError> for Error {
-    fn from(value: EncodingError) -> Self {
-        Error::CompactEncodingError(value)
     }
 }
 
