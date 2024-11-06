@@ -50,6 +50,7 @@ impl Request {
         if id {
             state
                 .add_end(32)
+                // TODO make From<compact_encoding::EncodingError> for ERror work
                 .map_err(|e| Error::CompactEncodingErr(e.to_string()))?;
         }
         if token.is_some() {
@@ -89,15 +90,13 @@ impl Request {
         }
         state.add_start(1)?;
 
+        // TODO add state.encode_u16 function to compact_encoding
         let [first, second] = self.tid.to_le_bytes();
         buff[state.start()] = first;
         state.add_start(1)?;
         buff[state.start()] = second;
         state.add_start(1)?;
 
-        // TODO encode "to" arg
-        // peer.ipv4.encode(state, to)
-        // 4 bytes for ip
         let ip_bytes = to.host.octets();
         buff[state.start()] = ip_bytes[0];
         state.add_start(1)?;
