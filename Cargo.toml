@@ -35,8 +35,11 @@ lru = "0.5.3"
 smallvec = "1.4.1"
 either = "1.5.3"
 pretty-hash = "0.4.1"
-compact-encoding = "1.1.0"
 thiserror = "1.0.68"
+libsodium-sys-stable = "1.21.2"
+
+[dependencies.compact-encoding]
+path = "../compact-encoding"
 
 [dependencies.async-udx]
 path = "../async-udx"
