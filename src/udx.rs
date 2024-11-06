@@ -1,61 +1,9 @@
-//!
-//! get a test case:
-//! - run dht-rpc and get the inputs & outputs to _encodeRequest function
-//! - rewrite function
-//! - test rust against js case
-//!
-//! msg protocol. w bootstrap node (BN) running
-//! create node (AN) pointing to boostrap
-//! AN -> command = 2
-
+//! udx/dht-rpc internnals
 use std::net::{IpAddr, Ipv4Addr};
 
 use compact_encoding::State;
 /**
  * from: https://github.com/holepunchto/dht-rpc/blob/bfa84ec5eef4cf405ab239b03ab733063d6564f2/lib/io.js#L424-L453
-
-to {
-  id: <Buffer e9 6e 01 46 a3 3e 02 29 87 fe 25 6c 63 43 ac 5d 20 db a4 7e a1 b6 34 1f 93 29 03
-b4 84 69 45 3e>,
-  host: '127.0.0.1',
-  port: 10001
-}
-this._io.ephemeral true
-id false
-state { start: 0, end: 10, buffer: null }
-this.command 2
-state { start: 0, end: 10, buffer: null }
-this.target [
-  235, 159, 119,  93,  35, 250,  85,  76,
-  120, 152,  96,  17, 175, 157, 204, 216,
-    8, 191, 189,  16, 140, 146, 202, 172,
-   84, 232,  73, 218, 113, 136, 161, 173
-]
-REQUEST_ID 3
-this.internal true
-this.tid 50632
-this._io.table.id [
-  235, 159, 119,  93,  35, 250,  85,  76,
-  120, 152,  96,  17, 175, 157, 204, 216,
-    8, 191, 189,  16, 140, 146, 202, 172,
-   84, 232,  73, 218, 113, 136, 161, 173
-]
-this.target [
-  235, 159, 119,  93,  35, 250,  85,  76,
-  120, 152,  96,  17, 175, 157, 204, 216,
-    8, 191, 189,  16, 140, 146, 202, 172,
-   84, 232,  73, 218, 113, 136, 161, 173
-]
-state.buffer <Buffer 03 0c c8 c5 7f 00 00 01 11 27 02 eb 9f 77 5d 23 fa 55 4c 78 98 60 11 af 9d
- cc d8 08 bf bd 10 8c 92 ca ac 54 e8 49 da 71 88 a1 ad>
-[
-    3,  12, 200, 197, 127,   0,   0,   1,  17,
-   39,   2, 235, 159, 119,  93,  35, 250,  85,
-   76, 120, 152,  96,  17, 175, 157, 204, 216,
-    8, 191, 189,  16, 140, 146, 202, 172,  84,
-  232,  73, 218, 113, 136, 161, 173
-]
-
 */
 
 #[derive(Debug, Clone)]
@@ -192,21 +140,34 @@ impl Request {
     }
 }
 
+/// This data and expected result are taken from the initial message a node sends to a bootstrap
+/// node in dht-rpc 6.15.1
 #[test]
-fn qq() -> Result<(), Box<dyn std::error::Error>> {
+fn test_encode_buffer() -> Result<(), Box<dyn std::error::Error>> {
+    let id = false;
+    let command = Command::FindNode;
+    let target = Some(vec![
+        235, 159, 119, 93, 35, 250, 85, 76, 120, 152, 96, 17, 175, 157, 204, 216, 8, 191, 189, 16,
+        140, 146, 202, 172, 84, 232, 73, 218, 113, 136, 161, 173,
+    ]);
+    let table_id = Some(vec![
+        235, 159, 119, 93, 35, 250, 85, 76, 120, 152, 96, 17, 175, 157, 204, 216, 8, 191, 189, 16,
+        140, 146, 202, 172, 84, 232, 73, 218, 113, 136, 161, 173,
+    ]);
+    let internal = true;
+    let tid = 50632;
+    let expected_buffer = vec![
+        3, 12, 200, 197, 127, 0, 0, 1, 17, 39, 2, 235, 159, 119, 93, 35, 250, 85, 76, 120, 152, 96,
+        17, 175, 157, 204, 216, 8, 191, 189, 16, 140, 146, 202, 172, 84, 232, 73, 218, 113, 136,
+        161, 173,
+    ];
     let req = Request {
-        id: false,
-        command: Command::FindNode,
-        target: Some(vec![
-            235, 159, 119, 93, 35, 250, 85, 76, 120, 152, 96, 17, 175, 157, 204, 216, 8, 191, 189,
-            16, 140, 146, 202, 172, 84, 232, 73, 218, 113, 136, 161, 173,
-        ]),
-        table_id: Some(vec![
-            235, 159, 119, 93, 35, 250, 85, 76, 120, 152, 96, 17, 175, 157, 204, 216, 8, 191, 189,
-            16, 140, 146, 202, 172, 84, 232, 73, 218, 113, 136, 161, 173,
-        ]),
-        internal: true,
-        tid: 50632,
+        id,
+        command,
+        target,
+        table_id,
+        internal,
+        tid,
     };
 
     let to = To {
@@ -214,18 +175,7 @@ fn qq() -> Result<(), Box<dyn std::error::Error>> {
         host: "127.0.0.1".parse().unwrap(),
         port: 10001,
     };
-    dbg!(&req);
     let res = req.encode_request(None, None, to)?;
-    // res[1] = 4 + 8
-    let expected = vec![
-        3, 12, 200, 197, 127, 0, 0, 1, 17, 39, 2, 235, 159, 119, 93, 35, 250, 85, 76, 120, 152, 96,
-        17, 175, 157, 204, 216, 8, 191, 189, 16, 140, 146, 202, 172, 84, 232, 73, 218, 113, 136,
-        161, 173,
-    ];
-    /// res[1] = 4 + 8
-    /// exp[1] = 4 + 8
-    dbg!(res.len());
-    dbg!(expected.len());
-    assert_eq!(res, expected);
+    assert_eq!(res, expected_buffer);
     Ok(())
 }
