@@ -33,7 +33,7 @@ struct Request {
 }
 
 const REQUEST_ID: u8 = 3;
-use crate::Error;
+use crate::Result;
 
 impl Request {
     pub(crate) fn encode_request(
@@ -41,20 +41,17 @@ impl Request {
         token: Option<Vec<u8>>,
         value: Option<Vec<u8>>,
         to: To,
-    ) -> Result<Vec<u8>, crate::Error> {
+    ) -> Result<Vec<u8>> {
         let id = false;
         //let mut state = State::new(0, 1 + 1 + 6 + 2, Vec::new());
         let mut state = State::new();
         let res = state.add_end(1 + 1 + 6 + 2);
 
         if id {
-            state
-                .add_end(32)
-                // TODO make From<compact_encoding::EncodingError> for ERror work
-                .map_err(|e| Error::CompactEncodingErr(e.to_string()))?;
+            state.add_end(32)?;
         }
         if token.is_some() {
-            state.add_end(32).map_err(Error::from)?;
+            state.add_end(32)?;
         }
 
         let cmd = self.command.clone() as usize;
@@ -142,7 +139,7 @@ impl Request {
 /// This data and expected result are taken from the initial message a node sends to a bootstrap
 /// node in dht-rpc 6.15.1
 #[test]
-fn test_encode_buffer() -> Result<(), Box<dyn std::error::Error>> {
+fn test_encode_buffer() -> Result<()> {
     let id = false;
     let command = Command::FindNode;
     let target = Some(vec![

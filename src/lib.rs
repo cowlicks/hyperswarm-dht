@@ -10,6 +10,7 @@ use std::{
     time::Duration,
 };
 
+use compact_encoding::EncodingError;
 use ed25519_dalek::{Keypair, PublicKey, Signature};
 use either::Either;
 use fnv::FnvHashMap;
@@ -791,7 +792,7 @@ impl From<IdBytes> for QueryOpts {
 impl TryFrom<&[u8]> for QueryOpts {
     type Error = std::array::TryFromSliceError;
 
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+    fn try_from(value: &[u8]) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
             topic: value.try_into()?,
             port: None,
@@ -1084,6 +1085,21 @@ impl QueryStreamInner {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("Error from compact_encoding: {0}")]
+    CompactEncodingError(EncodingError),
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+/// TODO make EncodingError impl Error trait
+impl From<EncodingError> for Error {
+    fn from(value: EncodingError) -> Self {
+        Error::CompactEncodingError(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use futures::{FutureExt, SinkExt, StreamExt};
@@ -1142,7 +1158,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mutable_put_get() -> Result<(), Box<dyn std::error::Error>> {
+    async fn mutable_put_get() -> std::result::Result<(), Box<dyn std::error::Error>> {
         use futures::select;
         // create an ephemeral bootstrap node
         let bs_addr = bootstrap_dht!();
@@ -1225,7 +1241,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn immutable_put_get() -> Result<(), Box<dyn std::error::Error>> {
+    async fn immutable_put_get() -> std::result::Result<(), Box<dyn std::error::Error>> {
         // create an ephemeral bootstrap node
         let bs_addr = bootstrap_dht!();
         // spawn some nodes bootstrapped with `bs`
@@ -1276,7 +1292,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_bootstrap() -> Result<(), Box<dyn std::error::Error>> {
+    async fn local_bootstrap() -> std::result::Result<(), Box<dyn std::error::Error>> {
         // ephemeral node used for bootstrapping
         let bs_addr = bootstrap_dht!();
 
