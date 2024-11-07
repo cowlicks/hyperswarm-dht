@@ -2,26 +2,24 @@
 //!
 use std::convert::{TryFrom, TryInto};
 #[allow(unreachable_code, dead_code)]
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::Ipv4Addr;
 
-use crate::{Error, Result};
-use compact_encoding::{CompactEncoding, EncodingError, State};
+use crate::{
+    cenc::calculate_id,
+    constants::{ID_SIZE, REQUEST_ID, RESPONSE_ID, TID_SIZE, TOKEN_SIZE},
+    Error, Result,
+};
+use compact_encoding::{CompactEncoding, State};
 /**
  * from: https://github.com/holepunchto/dht-rpc/blob/bfa84ec5eef4cf405ab239b03ab733063d6564f2/lib/io.js#L424-L453
 */
-
-const ID_SIZE: usize = 32;
-const HASH_SIZE: usize = 32;
-const VERSION: u8 = 0b11;
-const RESPONSE_ID: u8 = (0b0001 << 4) | VERSION;
-const REQUEST_ID: u8 = (0b0000 << 4) | VERSION;
 
 // TODO in js this is de/encoded with c.uint which is for a variable sized unsigned integer.
 // but it is always one byte. We use a u8 instead of a usize here. So there is a limit on 256
 // commands.
 #[derive(Debug, Clone)]
 #[repr(u8)]
-enum Command {
+pub enum Command {
     Ping = 0,
     PingNat,
     FindNode,
@@ -44,10 +42,10 @@ impl TryFrom<u8> for Command {
 }
 
 #[derive(Debug)]
-struct Addr {
-    id: Vec<u8>,
-    host: Ipv4Addr,
-    port: u16,
+pub struct Addr {
+    pub id: Vec<u8>,
+    pub host: Ipv4Addr,
+    pub port: u16,
 }
 
 #[derive(Debug)]
@@ -63,19 +61,6 @@ pub struct Request {
     internal: bool,
     tid: u16,
     table_id: Option<Vec<u8>>,
-}
-
-fn encode_ip(ip: &Ipv4Addr, buff: &mut [u8], state: &mut State) -> Result<()> {
-    let ip_bytes = ip.octets();
-    buff[state.start()] = ip_bytes[0];
-    state.add_start(1)?;
-    buff[state.start()] = ip_bytes[1];
-    state.add_start(1)?;
-    buff[state.start()] = ip_bytes[2];
-    state.add_start(1)?;
-    buff[state.start()] = ip_bytes[3];
-    state.add_start(1)?;
-    Ok(())
 }
 
 impl Request {
@@ -162,15 +147,73 @@ impl Request {
 
 pub struct Io {}
 
-const TID_SIZE: usize = 32;
-
-pub struct Reply {
-    tid: [u8; TID_SIZE],
+fn decode_fixed_32_flag(
+    flags: u8,
+    shift: u8,
+    state: &mut State,
+    buff: &[u8],
+) -> Result<Option<[u8; 32]>> {
+    if flags & shift > 0 {
+        Ok(Some(
+            state.decode_fixed_32(buff)?.as_ref().try_into().unwrap(),
+        ))
+    } else {
+        Ok(None)
+    }
 }
-fn decode_reply(buff: &[u8], from: Addr, state: &mut State) -> Result<Reply> {
+
+fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Reply> {
     let flags = buff[state.start()];
     let tid = state.decode_u16(buff)?;
-    todo!()
+    let to: Addr = state.decode(buff)?;
+
+    let id = decode_fixed_32_flag(flags, 1, state, buff)?;
+    let token = decode_fixed_32_flag(flags, 2, state, buff)?;
+
+    let closer_nodes: Option<Addr> = if flags & 4 > 0 {
+        Some(state.decode(buff)?)
+    } else {
+        None
+    };
+
+    let error: Option<u8> = if flags & 8 > 0 {
+        Some(state.decode_u8(buff)?)
+    } else {
+        None
+    };
+
+    let value = if flags & 16 > 0 {
+        Some(state.decode_buffer(buff)?.to_vec())
+    } else {
+        None
+    };
+
+    if let Some(id) = id {
+        if let Some(valid_id) = validate_id(&id, &from) {
+            from.id = valid_id.to_vec();
+        }
+    }
+    Ok(Reply {
+        tid,
+        rtt: 0,
+        from,
+        to,
+        token,
+        closer_nodes,
+        error,
+        value,
+    })
+}
+
+pub struct Reply {
+    tid: u16,
+    rtt: usize,
+    from: Addr,
+    to: Addr,
+    token: Option<[u8; 32]>,
+    closer_nodes: Option<Addr>,
+    error: Option<u8>,
+    value: Option<Vec<u8>>,
 }
 
 impl Io {
@@ -183,7 +226,7 @@ impl Io {
         };
         match buff[0] {
             REQUEST_ID => {
-                let res = self.decode_request(&buff, from, &mut state)?;
+                let _res = self.decode_request(&buff, from, &mut state)?;
                 todo!()
             }
             RESPONSE_ID => {
@@ -201,39 +244,26 @@ impl Io {
 
         let Addr { id, host, port } = state.decode(buff)?;
 
-        let id = if flags & 1 > 0 {
-            // TODO it'd be nice if this returned Box<[u8;32]>
-            Some(state.decode_fixed_32(buff)?)
-        } else {
-            None
-        };
+        let id = decode_fixed_32_flag(flags, 1, state, buff)?;
+        let token = decode_fixed_32_flag(flags, 2, state, buff)?;
 
-        let token = if flags & 2 > 0 {
-            Some(state.decode_fixed_32(buff)?)
-        } else {
-            None
-        };
         let internal = (flags & 4) != 0;
         let command = Command::try_from(buff[state.start()])?;
-        let target = if flags & 8 > 0 {
-            Some(state.decode_fixed_32(buff)?)
-        } else {
-            None
-        };
+
+        let target = decode_fixed_32_flag(flags, 2, state, buff)?;
+
         let value = if flags & 16 > 0 {
             Some(state.decode_buffer(buff)?)
         } else {
             None
         };
+
         if let Some(id) = id {
-            let id_32: [u8; ID_SIZE] = id
-                .as_ref()
-                .try_into()
-                .map_err(Error::IncorrectMessageIdSize)?;
-            if let Ok(valid_id) = validate_id(&id_32, &from) {
-                from.id = valid_id
+            if let Some(valid_id) = validate_id(&id, &from) {
+                from.id = valid_id.to_vec();
             }
         }
+
         Ok(Request {
             command,
             target: target.map(Into::into),
@@ -245,83 +275,13 @@ impl Io {
     }
 }
 
-/*
-function validateId(id, from) {
-        const expected = peer.id(from.host, from.port)
-        return b4a.equals(expected, id) ? expected : null
-}
-  const addr = out.subarray(0, 6)
-  ipv4.encode(
-    { start: 0, end: 6, buffer: addr },
-    { host, port }
-  )
-  sodium.crypto_generichash(out, addr)
-*/
-fn generic_hash(input: &[u8]) -> Result<[u8; HASH_SIZE]> {
-    let mut out = [0; HASH_SIZE];
-    let ret = unsafe {
-        libsodium_sys::crypto_generichash(
-            out.as_mut_ptr(),
-            out.len(),
-            input.as_ptr(),
-            input.len() as u64,
-            std::ptr::null(),
-            0,
-        )
-    };
-    if ret != 0 {
-        return Err(Error::LibSodiumGenericHashError(ret));
+fn validate_id(id: &[u8; ID_SIZE], from: &Addr) -> Option<[u8; ID_SIZE]> {
+    if let Ok(result) = calculate_id(from) {
+        if *id == result {
+            return Some(*id);
+        }
     }
-    Ok(out)
-}
-
-impl CompactEncoding<Addr> for State {
-    fn preencode(&mut self, value: &Addr) -> std::result::Result<usize, EncodingError> {
-        Ok(self.add_end(6)?)
-    }
-
-    fn encode(
-        &mut self,
-        value: &Addr,
-        buff: &mut [u8],
-    ) -> std::result::Result<usize, EncodingError> {
-        let ip_bytes = value.host.octets();
-        buff[self.start()] = ip_bytes[0];
-        self.add_start(1)?;
-        buff[self.start()] = ip_bytes[1];
-        self.add_start(1)?;
-        buff[self.start()] = ip_bytes[2];
-        self.add_start(1)?;
-        buff[self.start()] = ip_bytes[3];
-        self.add_start(1)?;
-
-        self.encode_u16(value.port, buff)?;
-        Ok(self.start())
-    }
-
-    fn decode(&mut self, buff: &[u8]) -> std::result::Result<Addr, EncodingError> {
-        let ip_start = self.start();
-        let [ip1, ip2, ip3, ip4, port_1, port_2] = buff[ip_start..(ip_start + 4 + 2)] else {
-            todo!()
-        };
-        self.add_start(4 + 2)?;
-        let host = Ipv4Addr::from([ip1, ip2, ip3, ip4]);
-        let port = u16::from_le_bytes([port_1, port_2]);
-        Ok(Addr {
-            id: Vec::new(),
-            host,
-            port,
-        })
-    }
-}
-fn validate_id(id: &[u8; ID_SIZE], from: &Addr) -> Result<Vec<u8>> {
-    let mut from_buff = vec![0; 6];
-    let mut state = State::new_with_start_and_end(0, 6);
-    encode_ip(&from.host, &mut from_buff, &mut state)?;
-    state.encode_u16(from.port, &mut from_buff)?;
-    let result = generic_hash(&from_buff)?;
-    //libsodium_sys::crypto_generichash(out, outlen, in_, inlen, key, keylen)
-    todo!()
+    None
 }
 
 #[cfg(test)]

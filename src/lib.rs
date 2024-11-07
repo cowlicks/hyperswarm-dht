@@ -1,5 +1,6 @@
 //! Rust Implementation of the hyperswarm DHT
-#![warn(unused, rust_2018_idioms)]
+#![warn(rust_2018_idioms)]
+#![allow(unreachable_code)]
 
 use core::cmp;
 use std::{
@@ -53,6 +54,8 @@ mod dht_proto {
 #[cfg(test)]
 pub mod test;
 
+pub(crate) mod cenc;
+pub mod constants;
 pub mod crypto;
 pub mod kbucket;
 pub mod lru;
