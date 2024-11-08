@@ -43,7 +43,7 @@ impl TryFrom<u8> for Command {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Addr {
-    pub id: Vec<u8>,
+    pub id: Option<Vec<u8>>,
     pub host: Ipv4Addr,
     pub port: u16,
 }
@@ -59,11 +59,6 @@ pub struct Request {
     target: Option<[u8; 32]>,
     value: Option<Vec<u8>>,
 }
-
-use rand::{
-    rngs::{OsRng, StdRng},
-    RngCore, SeedableRng,
-};
 
 impl Request {
     pub fn encode_request(
@@ -124,8 +119,8 @@ impl Request {
         state.encode(&to, &mut buff)?;
 
         if id {
-            let table_id = todo!();
-            state.encode_fixed_32(table_id, &mut buff)?;
+            //let table_id = todo!();
+            state.encode_fixed_32(todo!(), &mut buff)?;
         }
         if let Some(t) = token {
             // c.fixed32.encode(state, token)
@@ -196,7 +191,7 @@ fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Reply>
 
     if let Some(id) = id {
         if let Some(valid_id) = validate_id(&id, &from) {
-            from.id = valid_id.to_vec();
+            from.id = valid_id.to_vec().into();
         }
     }
     Ok(Reply {
@@ -226,7 +221,7 @@ impl Io {
     pub fn decode_message(self, buff: Vec<u8>, host: Ipv4Addr, port: u16) -> Result<Vec<u8>> {
         let mut state = State::new_with_start_and_end(1, buff.len());
         let from = Addr {
-            id: Vec::new(),
+            id: None,
             host,
             port,
         };
@@ -267,7 +262,7 @@ impl Io {
 
         if let Some(id) = id {
             if let Some(valid_id) = validate_id(&id, &from) {
-                from.id = valid_id.to_vec();
+                from.id = valid_id.to_vec().into();
             }
         }
 
@@ -296,6 +291,10 @@ fn validate_id(id: &[u8; ID_SIZE], from: &Addr) -> Option<[u8; ID_SIZE]> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use rand::{
+        rngs::{OsRng, StdRng},
+        RngCore, SeedableRng,
+    };
     use std::net::Ipv4Addr;
 
     const HOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
@@ -312,12 +311,12 @@ mod test {
     fn mk_request() -> Request {
         Request {
             to: Addr {
-                id: Vec::new(),
+                id: None,
                 host: HOST,
                 port: 54321,
             },
             from: Addr {
-                id: Vec::new(),
+                id: None,
                 host: HOST,
                 port: 12345,
             },
@@ -344,7 +343,7 @@ mod test {
         let req = mk_request();
 
         let to = Addr {
-            id: Vec::new(),
+            id: None,
             host: HOST,
             port: 10001,
         };
@@ -369,7 +368,7 @@ mod test {
             198, 162, 26, 109, 183, 36, 71, 251, 134, 40, 25, 235, 205, 135, 36,
         ];
         let from_before = Addr {
-            id: vec![],
+            id: None,
             host: HOST,
             port: 45475,
         };
@@ -382,12 +381,12 @@ mod test {
         let internal = true;
         let token = None;
         let to = Addr {
-            id: vec![],
+            id: None,
             host: HOST,
             port: 10001,
         };
         let mut from = Addr {
-            id: vec![],
+            id: None,
             host: HOST,
             port: 45475,
         };
@@ -418,8 +417,38 @@ mod test {
         Ok(())
     }
 
+    #[ignore]
     #[test]
     fn test_decode_message() -> Result<()> {
+ let state_start =  1 ;
+ let state_end =  49 ;
+ let state_buff =  [
+   19,   5, 73,  32, 127,  0,  0,   1, 193, 153,
+  233, 110,  1,  70, 163, 62,  2,  41, 135, 254,
+   37, 108, 99,  67, 172, 93, 32, 219, 164, 126,
+  161, 182, 52,  31, 147, 41,  3, 180, 132, 105,
+   69,  62,  1, 127,   0,  0,  1, 193, 153
+] ;
+ let from =  Addr { id: None, host: HOST, port: 10001 } ;
+ let flags =  5 ;
+ let tid =  8265 ;
+ let to =  Addr { id: None, host: HOST, port: 39361 } ;
+ let id =  [
+  233, 110,   1,  70, 163,  62,   2, 41,
+  135, 254,  37, 108,  99,  67, 172, 93,
+   32, 219, 164, 126, 161, 182,  52, 31,
+  147,  41,   3, 180, 132, 105,  69, 62
+] ;
+ let token: Option<[u8;32]> =  None ;
+ let closerNodes: Vec<Addr> =  vec![ Addr{ id: None, host: HOST, port: 39361 } ] ;
+ let error =  0 ;
+ let value: Option<[u8;32]> =  None ;
+ let validateId: Option<[u8;32]>=  Some([
+  233, 110,   1,  70, 163,  62,   2, 41,
+  135, 254,  37, 108,  99,  67, 172, 93,
+   32, 219, 164, 126, 161, 182,  52, 31,
+  147,  41,   3, 180, 132, 105,  69, 62
+] );
         todo!()
     }
 

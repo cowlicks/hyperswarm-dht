@@ -81,7 +81,7 @@ impl CompactEncoding<Addr> for State {
         let host = Ipv4Addr::from([ip1, ip2, ip3, ip4]);
         let port = u16::from_le_bytes([port_1, port_2]);
         Ok(Addr {
-            id: Vec::new(),
+            id: None,
             host,
             port,
         })
