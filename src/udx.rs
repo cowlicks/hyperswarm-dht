@@ -6,8 +6,8 @@ use std::net::Ipv4Addr;
 
 use crate::{
     cenc::calculate_id,
-    constants::{ID_SIZE, REQUEST_ID, RESPONSE_ID, TID_SIZE, TOKEN_SIZE},
-    Error, Result,
+    constants::{ID_SIZE, REQUEST_ID, RESPONSE_ID, TABLE_ID_SIZE},
+    Result,
 };
 use compact_encoding::{CompactEncoding, State};
 /**
@@ -17,7 +17,7 @@ use compact_encoding::{CompactEncoding, State};
 // TODO in js this is de/encoded with c.uint which is for a variable sized unsigned integer.
 // but it is always one byte. We use a u8 instead of a usize here. So there is a limit on 256
 // commands.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[repr(u8)]
 pub enum Command {
     Ping = 0,
@@ -41,27 +41,29 @@ impl TryFrom<u8> for Command {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Addr {
     pub id: Vec<u8>,
     pub host: Ipv4Addr,
     pub port: u16,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Request {
-    // _io {
-    //  ephemeral: bool,
-    //  serverSocket: Socket,
-    //  table.id: [u8: 32]
-    // }
-    id: bool,
-    command: Command,
-    target: Option<Vec<u8>>,
-    internal: bool,
     tid: u16,
-    table_id: Option<Vec<u8>>,
+    from: Addr,
+    to: Addr,
+    token: Option<[u8; 32]>,
+    internal: bool,
+    command: Command,
+    target: Option<[u8; 32]>,
+    value: Option<Vec<u8>>,
 }
+
+use rand::{
+    rngs::{OsRng, StdRng},
+    RngCore, SeedableRng,
+};
 
 impl Request {
     pub fn encode_request(
@@ -69,13 +71,14 @@ impl Request {
         token: Option<Vec<u8>>,
         value: Option<Vec<u8>>,
         to: Addr,
+        io: &Io,
+        is_server_socket: bool,
     ) -> Result<Vec<u8>> {
-        let id = false;
-        //let mut state = State::new(0, 1 + 1 + 6 + 2, Vec::new());
+        let id = !io.ephemeral && is_server_socket;
         let mut state = State::new();
-        let res = state.add_end(1 + 1 + 6 + 2);
+        state.add_end(1 + 1 + 6 + 2)?;
 
-        if id {
+        if is_server_socket {
             state.add_end(ID_SIZE)?;
         }
         if token.is_some() {
@@ -135,7 +138,7 @@ impl Request {
         // c.uint.encode(state, this.command)
         if let Some(t) = &self.target {
             // c.fixed32.encode(state, this.target)
-            state.encode_fixed_32(&t, &mut buff)?;
+            state.encode_fixed_32(t, &mut buff)?;
         }
         if let Some(v) = value {
             state.encode_buffer(&v, &mut buff)?;
@@ -145,7 +148,11 @@ impl Request {
     }
 }
 
-pub struct Io {}
+pub struct Io {
+    ephemeral: bool,
+    //serverSocket: UdxSocket,
+    table_id: [u8; TABLE_ID_SIZE],
+}
 
 fn decode_fixed_32_flag(
     flags: u8,
@@ -154,12 +161,11 @@ fn decode_fixed_32_flag(
     buff: &[u8],
 ) -> Result<Option<[u8; 32]>> {
     if flags & shift > 0 {
-        Ok(Some(
+        return Ok(Some(
             state.decode_fixed_32(buff)?.as_ref().try_into().unwrap(),
-        ))
-    } else {
-        Ok(None)
+        ));
     }
+    return Ok(None);
 }
 
 fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Reply> {
@@ -230,6 +236,7 @@ impl Io {
                 todo!()
             }
             RESPONSE_ID => {
+                let _res = decode_reply(&buff, from, &mut state)?;
                 todo!()
             }
             _ => todo!("eror"),
@@ -242,18 +249,18 @@ impl Io {
 
         let tid = state.decode_u16(buff)?;
 
-        let Addr { id, host, port } = state.decode(buff)?;
+        let to = state.decode(buff)?;
 
         let id = decode_fixed_32_flag(flags, 1, state, buff)?;
         let token = decode_fixed_32_flag(flags, 2, state, buff)?;
 
         let internal = (flags & 4) != 0;
-        let command = Command::try_from(buff[state.start()])?;
+        let command: Command = state.decode(buff)?;
 
-        let target = decode_fixed_32_flag(flags, 2, state, buff)?;
+        let target = decode_fixed_32_flag(flags, 8, state, buff)?;
 
         let value = if flags & 16 > 0 {
-            Some(state.decode_buffer(buff)?)
+            Some(state.decode_buffer(buff)?.as_ref().to_vec())
         } else {
             None
         };
@@ -265,12 +272,14 @@ impl Io {
         }
 
         Ok(Request {
-            command,
-            target: target.map(Into::into),
-            internal,
             tid,
-            id: todo!(),
-            table_id: todo!(),
+            from,
+            to,
+            token,
+            internal,
+            command,
+            target,
+            value,
         })
     }
 }
@@ -290,31 +299,41 @@ mod test {
     use std::net::Ipv4Addr;
 
     const HOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
+
+    fn thirty_two_random_bytes() -> [u8; 32] {
+        let mut buff = [0; 32];
+        let mut rng = StdRng::from_rng(OsRng).unwrap();
+        rng.fill_bytes(&mut buff);
+        buff
+    }
+
     /// This data and expected result are taken from the initial message a node sends to a bootstrap
     /// node in dht-rpc 6.15.1
     fn mk_request() -> Request {
-        let id = false;
-        let command = Command::FindNode;
-        let target = Some(vec![
-            235, 159, 119, 93, 35, 250, 85, 76, 120, 152, 96, 17, 175, 157, 204, 216, 8, 191, 189,
-            16, 140, 146, 202, 172, 84, 232, 73, 218, 113, 136, 161, 173,
-        ]);
-        let table_id = Some(vec![
-            235, 159, 119, 93, 35, 250, 85, 76, 120, 152, 96, 17, 175, 157, 204, 216, 8, 191, 189,
-            16, 140, 146, 202, 172, 84, 232, 73, 218, 113, 136, 161, 173,
-        ]);
-        let internal = true;
-        let tid = 50632;
-
         Request {
-            id,
-            command,
-            target,
-            table_id,
-            internal,
-            tid,
+            to: Addr {
+                id: Vec::new(),
+                host: HOST,
+                port: 54321,
+            },
+            from: Addr {
+                id: Vec::new(),
+                host: HOST,
+                port: 12345,
+            },
+            command: Command::FindNode,
+            target: Some([
+                235, 159, 119, 93, 35, 250, 85, 76, 120, 152, 96, 17, 175, 157, 204, 216, 8, 191,
+                189, 16, 140, 146, 202, 172, 84, 232, 73, 218, 113, 136, 161, 173,
+            ]),
+            token: Some(thirty_two_random_bytes()),
+            value: Some(thirty_two_random_bytes().to_vec()),
+
+            internal: true,
+            tid: 50632,
         }
     }
+
     #[test]
     fn test_encode_buffer() -> Result<()> {
         let expected_buffer = vec![
@@ -329,36 +348,83 @@ mod test {
             host: HOST,
             port: 10001,
         };
-        let res = req.encode_request(None, None, to)?;
+        let io = Io {
+            ephemeral: false,
+            table_id: thirty_two_random_bytes(),
+        };
+
+        let res = req.encode_request(None, None, to, &io, false)?;
         assert_eq!(res, expected_buffer);
         Ok(())
     }
 
-    /*
-    #[tokio::test]
-    async fn do_bootstrap() -> Result<()> {
-        use async_udx::UdxSocket;
-
-        dbg!();
-        let socket = UdxSocket::bind("127.0.0.1:0").await?;
-        dbg!();
-
-        let req = mk_request();
-        dbg!();
+    #[test]
+    fn test_decode_request() -> Result<()> {
+        let state_start = 1;
+        let state_end = 75;
+        let buff = [
+            3, 13, 38, 33, 127, 0, 0, 1, 17, 39, 186, 215, 155, 149, 209, 74, 57, 70, 15, 217, 115,
+            50, 6, 25, 133, 59, 149, 198, 162, 26, 109, 183, 36, 71, 251, 134, 40, 25, 235, 205,
+            135, 36, 2, 186, 215, 155, 149, 209, 74, 57, 70, 15, 217, 115, 50, 6, 25, 133, 59, 149,
+            198, 162, 26, 109, 183, 36, 71, 251, 134, 40, 25, 235, 205, 135, 36,
+        ];
+        let from_before = Addr {
+            id: vec![],
+            host: HOST,
+            port: 45475,
+        };
+        let value = None;
+        let target = [
+            186, 215, 155, 149, 209, 74, 57, 70, 15, 217, 115, 50, 6, 25, 133, 59, 149, 198, 162,
+            26, 109, 183, 36, 71, 251, 134, 40, 25, 235, 205, 135, 36,
+        ];
+        let command = 2;
+        let internal = true;
+        let token = None;
         let to = Addr {
-            id: Vec::new(),
+            id: vec![],
             host: HOST,
             port: 10001,
         };
-        dbg!();
-        let buffer = req.encode_request(None, None, to)?;
-        dbg!();
+        let mut from = Addr {
+            id: vec![],
+            host: HOST,
+            port: 45475,
+        };
+        let tid = 8486;
+        let id = [
+            186, 215, 155, 149, 209, 74, 57, 70, 15, 217, 115, 50, 6, 25, 133, 59, 149, 198, 162,
+            26, 109, 183, 36, 71, 251, 134, 40, 25, 235, 205, 135, 36,
+        ];
 
-        socket.send((HOST, 10001).into(), &buffer);
-        dbg!();
-        let res = socket.recv().await;
-        dbg!(&res);
+        let mut state = State::new_with_start_and_end(state_start, state_end);
+        let io = Io {
+            ephemeral: false,
+            table_id: thirty_two_random_bytes(),
+        };
+        let res = io.decode_request(&buff, from.clone(), &mut state)?;
+        from.id = res.from.id.clone();
+        let expected = Request {
+            tid,
+            from,
+            to,
+            token,
+            internal,
+            command: command.try_into()?,
+            target: Some(target),
+            value,
+        };
+        assert_eq!(res, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_decode_message() -> Result<()> {
         todo!()
     }
-    */
+
+    #[test]
+    fn test_decode_reply() -> Result<()> {
+        todo!()
+    }
 }

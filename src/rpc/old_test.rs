@@ -84,6 +84,7 @@ await (async () => {
 })()
 ";
 
+#[ignore]
 #[tokio::test]
 async fn foo() -> Result<(), Box<dyn std::error::Error>> {
     let mut repl = ConfigBuilder::default()

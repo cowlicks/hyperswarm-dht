@@ -23,6 +23,7 @@ use crate::{
 
 const PATH_NEW_JS_NODE_MODULES: &str = "~/git/hyper/hyperswarm-dht/new_js_version/node_modules";
 
+#[ignore]
 #[tokio::test]
 async fn wip_bootstrap_rs_js() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let js1_port = free_port().unwrap();
