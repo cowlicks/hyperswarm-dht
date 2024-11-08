@@ -1,8 +1,12 @@
 //! udx/dht-rpc internnals
 //!
-use std::convert::{TryFrom, TryInto};
+use rand::Rng;
 #[allow(unreachable_code, dead_code)]
 use std::net::Ipv4Addr;
+use std::{
+    convert::{TryFrom, TryInto},
+    sync::atomic::{AtomicU16, Ordering},
+};
 
 use crate::{
     cenc::calculate_id,
@@ -48,11 +52,23 @@ pub struct Addr {
     pub port: u16,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct Reply {
+    tid: u16,
+    rtt: usize,
+    from: Addr,
+    to: Addr,
+    token: Option<[u8; 32]>,
+    closer_nodes: Option<Vec<Addr>>,
+    error: u8,
+    value: Option<Vec<u8>>,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Request {
     tid: u16,
-    from: Addr,
-    to: Addr,
+    from: Option<Addr>,
+    to: Option<Addr>,
     token: Option<[u8; 32]>,
     internal: bool,
     command: Command,
@@ -61,30 +77,31 @@ pub struct Request {
 }
 
 impl Request {
-    pub fn create_ping(to: &Addr) -> Self {
-        Request::create_request(to, None, true, Command::Ping, None, None)
-    }
-    fn get_table_id() -> [u8; 32] {
-        todo!()
-    }
-    pub fn create_request(
-        to: &Addr,
+    fn new(
+        tid: u16,
+        from: Option<Addr>,
+        to: Option<Addr>,
         token: Option<[u8; 32]>,
         internal: bool,
         command: Command,
         target: Option<[u8; 32]>,
-        value: Option<[u8; 32]>,
+        value: Option<Vec<u8>>,
     ) -> Self {
+        Self {
+            tid,
+            from,
+            to,
+            token,
+            internal,
+            command,
+            target,
+            value,
+        }
+    }
+    fn get_table_id() -> [u8; 32] {
         todo!()
     }
-    pub fn encode_request(
-        &self,
-        token: Option<Vec<u8>>,
-        value: Option<Vec<u8>>,
-        to: Addr,
-        io: &Io,
-        is_server_socket: bool,
-    ) -> Result<Vec<u8>> {
+    pub fn encode_request(&self, io: &Io, is_server_socket: bool) -> Result<Vec<u8>> {
         let id = !io.ephemeral && is_server_socket;
         let mut state = State::new();
         state.add_end(1 + 1 + 6 + 2)?;
@@ -92,7 +109,7 @@ impl Request {
         if is_server_socket {
             state.add_end(ID_SIZE)?;
         }
-        if token.is_some() {
+        if self.token.is_some() {
             state.add_end(32)?;
         }
 
@@ -103,7 +120,7 @@ impl Request {
             state.add_end(32)?;
         }
 
-        if let Some(v) = &value {
+        if let Some(v) = &self.value {
             state.preencode_buffer(v)?;
         }
 
@@ -115,7 +132,7 @@ impl Request {
         if id {
             buff[state.start()] |= 1 << 0;
         }
-        if token.is_some() {
+        if self.token.is_some() {
             buff[state.start()] |= 1 << 1;
         }
         if self.internal {
@@ -124,7 +141,7 @@ impl Request {
         if self.target.is_some() {
             buff[state.start()] |= 1 << 3;
         }
-        if value.is_some() {
+        if self.value.is_some() {
             buff[state.start()] |= 1 << 4;
         }
         state.add_start(1)?;
@@ -132,12 +149,16 @@ impl Request {
         // TODO add state.encode_u16 function to compact_encoding
         state.encode_u16(self.tid, &mut buff)?;
 
-        state.encode(&to, &mut buff)?;
+        let Some(to) = self.to.as_ref() else {
+            // Maybe Req should have *one* field for To/From that's just Addr
+            todo!()
+        };
+        state.encode(to, &mut buff)?;
 
         if id {
             state.encode_fixed_32(&Request::get_table_id(), &mut buff)?;
         }
-        if let Some(t) = token {
+        if let Some(t) = self.token {
             // c.fixed32.encode(state, token)
             state.encode_fixed_32(&t, &mut buff)?;
         }
@@ -150,7 +171,7 @@ impl Request {
             // c.fixed32.encode(state, this.target)
             state.encode_fixed_32(t, &mut buff)?;
         }
-        if let Some(v) = value {
+        if let Some(v) = self.value.as_ref() {
             state.encode_buffer(&v, &mut buff)?;
         }
 
@@ -159,9 +180,117 @@ impl Request {
 }
 
 pub struct Io {
-    tid: u16,
+    tid: AtomicU16,
     ephemeral: bool,
     //serverSocket: UdxSocket,
+}
+
+impl Default for Io {
+    fn default() -> Self {
+        Self {
+            tid: AtomicU16::new(rand::thread_rng().gen()),
+            ephemeral: true,
+        }
+    }
+}
+
+impl Io {
+    pub fn create_ping(&self, to: &Addr) -> Request {
+        self.create_request(to, None, true, Command::Ping, None, None)
+    }
+
+    //pub fn create_request(&self,
+
+    pub fn create_request(
+        &self,
+        to: &Addr,
+        token: Option<[u8; 32]>,
+        internal: bool,
+        command: Command,
+        target: Option<[u8; 32]>,
+        value: Option<Vec<u8>>,
+    ) -> Request {
+        let tid = self.tid.fetch_add(1, Ordering::Relaxed);
+        Request::new(
+            tid,
+            None,
+            Some(to.clone()),
+            token,
+            internal,
+            command,
+            target,
+            value,
+        )
+    }
+
+    pub fn decode_message(self, buff: Vec<u8>, host: Ipv4Addr, port: u16) -> Result<Vec<u8>> {
+        let mut state = State::new_with_start_and_end(1, buff.len());
+        let from = Addr {
+            id: None,
+            host,
+            port,
+        };
+        match buff[0] {
+            REQUEST_ID => {
+                let _res = self.decode_request(&buff, from, &mut state)?;
+                todo!()
+            }
+            RESPONSE_ID => {
+                let _res = decode_reply(&buff, from, &mut state)?;
+                todo!()
+            }
+            _ => todo!("eror"),
+        }
+    }
+
+    pub fn decode_request(self, buff: &[u8], mut from: Addr, state: &mut State) -> Result<Request> {
+        let flags = buff[state.start()];
+        state.add_start(1)?;
+
+        let tid = state.decode_u16(buff)?;
+
+        let to = Some(state.decode(buff)?);
+
+        let id = decode_fixed_32_flag(flags, 1, state, buff)?;
+        let token = decode_fixed_32_flag(flags, 2, state, buff)?;
+
+        let internal = (flags & 4) != 0;
+        let command: Command = state.decode(buff)?;
+
+        let target = decode_fixed_32_flag(flags, 8, state, buff)?;
+
+        let value = if flags & 16 > 0 {
+            Some(state.decode_buffer(buff)?.as_ref().to_vec())
+        } else {
+            None
+        };
+
+        if let Some(id) = id {
+            if let Some(valid_id) = validate_id(&id, &from) {
+                from.id = valid_id.to_vec().into();
+            }
+        }
+
+        Ok(Request {
+            tid,
+            from: Some(from),
+            to,
+            token,
+            internal,
+            command,
+            target,
+            value,
+        })
+    }
+}
+
+fn validate_id(id: &[u8; ID_SIZE], from: &Addr) -> Option<[u8; ID_SIZE]> {
+    if let Ok(result) = calculate_id(from) {
+        if *id == result {
+            return Some(*id);
+        }
+    }
+    None
 }
 
 fn decode_fixed_32_flag(
@@ -233,99 +362,26 @@ fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Reply>
     })
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Reply {
-    tid: u16,
-    rtt: usize,
-    from: Addr,
-    to: Addr,
-    token: Option<[u8; 32]>,
-    closer_nodes: Option<Vec<Addr>>,
-    error: u8,
-    value: Option<Vec<u8>>,
-}
-
-impl Io {
-    pub fn decode_message(self, buff: Vec<u8>, host: Ipv4Addr, port: u16) -> Result<Vec<u8>> {
-        let mut state = State::new_with_start_and_end(1, buff.len());
-        let from = Addr {
-            id: None,
-            host,
-            port,
-        };
-        match buff[0] {
-            REQUEST_ID => {
-                let _res = self.decode_request(&buff, from, &mut state)?;
-                todo!()
-            }
-            RESPONSE_ID => {
-                let _res = decode_reply(&buff, from, &mut state)?;
-                todo!()
-            }
-            _ => todo!("eror"),
-        }
-    }
-
-    pub fn decode_request(self, buff: &[u8], mut from: Addr, state: &mut State) -> Result<Request> {
-        let flags = buff[state.start()];
-        state.add_start(1)?;
-
-        let tid = state.decode_u16(buff)?;
-
-        let to = state.decode(buff)?;
-
-        let id = decode_fixed_32_flag(flags, 1, state, buff)?;
-        let token = decode_fixed_32_flag(flags, 2, state, buff)?;
-
-        let internal = (flags & 4) != 0;
-        let command: Command = state.decode(buff)?;
-
-        let target = decode_fixed_32_flag(flags, 8, state, buff)?;
-
-        let value = if flags & 16 > 0 {
-            Some(state.decode_buffer(buff)?.as_ref().to_vec())
-        } else {
-            None
-        };
-
-        if let Some(id) = id {
-            if let Some(valid_id) = validate_id(&id, &from) {
-                from.id = valid_id.to_vec().into();
-            }
-        }
-
-        Ok(Request {
-            tid,
-            from,
-            to,
-            token,
-            internal,
-            command,
-            target,
-            value,
-        })
-    }
-}
-
-fn validate_id(id: &[u8; ID_SIZE], from: &Addr) -> Option<[u8; ID_SIZE]> {
-    if let Ok(result) = calculate_id(from) {
-        if *id == result {
-            return Some(*id);
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
+    use async_udx::UdxSocket;
     use rand::{
         rngs::{OsRng, StdRng},
         RngCore, SeedableRng,
     };
-    use std::net::Ipv4Addr;
+    use std::{
+        net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+        time::Duration,
+    };
 
     const HOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
+    const BOOTSTRAP_PORT: u16 = 10001;
+    const BOOTSTRAP_ADDR: Addr = Addr {
+        id: None,
+        host: HOST,
+        port: BOOTSTRAP_PORT,
+    };
 
     fn thirty_two_random_bytes() -> [u8; 32] {
         let mut buff = [0; 32];
@@ -338,16 +394,16 @@ mod test {
     /// node in dht-rpc 6.15.1
     fn mk_request() -> Request {
         Request {
-            to: Addr {
+            to: Some(Addr {
                 id: None,
                 host: HOST,
                 port: 54321,
-            },
-            from: Addr {
+            }),
+            from: Some(Addr {
                 id: None,
                 host: HOST,
                 port: 12345,
-            },
+            }),
             command: Command::FindNode,
             target: Some([
                 235, 159, 119, 93, 35, 250, 85, 76, 120, 152, 96, 17, 175, 157, 204, 216, 8, 191,
@@ -359,6 +415,21 @@ mod test {
             internal: true,
             tid: 50632,
         }
+    }
+
+    #[tokio::test]
+    async fn test_ping() -> Result<()> {
+        let sock = UdxSocket::bind("127.0.0.1:0").await?;
+        let io = Io::default();
+        let ping_req = io.create_ping(&BOOTSTRAP_ADDR);
+        let buff = ping_req.encode_request(&io, false)?;
+        println!("{buff:?}");
+        //ping_req.en
+        let sock_addr: SocketAddr = format!("{HOST}:{BOOTSTRAP_PORT}").parse().unwrap();
+        sock.send(sock_addr, &buff);
+        //socke.send(&B
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        Ok(())
     }
 
     #[test]
@@ -373,11 +444,11 @@ mod test {
         let to = Addr {
             id: None,
             host: HOST,
-            port: 10001,
+            port: BOOTSTRAP_PORT,
         };
-        let io = Io { ephemeral: false };
+        let io = Io::default();
 
-        let res = req.encode_request(None, None, to, &io, false)?;
+        let res = req.encode_request(&io, false)?;
         assert_eq!(res, expected_buffer);
         Ok(())
     }
@@ -408,7 +479,7 @@ mod test {
         let to = Addr {
             id: None,
             host: HOST,
-            port: 10001,
+            port: BOOTSTRAP_PORT,
         };
         let mut from = Addr {
             id: None,
@@ -422,13 +493,13 @@ mod test {
         ];
 
         let mut state = State::new_with_start_and_end(state_start, state_end);
-        let io = Io { ephemeral: false };
+        let io = Io::default();
         let res = io.decode_request(&buff, from.clone(), &mut state)?;
-        from.id = res.from.id.clone();
+        from.id = res.from.as_ref().unwrap().id.clone();
         let expected = Request {
             tid,
-            from,
-            to,
+            from: Some(from),
+            to: Some(to),
             token,
             internal,
             command: command.try_into()?,
@@ -437,12 +508,6 @@ mod test {
         };
         assert_eq!(res, expected);
         Ok(())
-    }
-
-    #[ignore]
-    #[test]
-    fn test_decode_message() -> Result<()> {
-        todo!()
     }
 
     #[test]
@@ -457,7 +522,7 @@ mod test {
         let from = Addr {
             id: None,
             host: HOST,
-            port: 10001,
+            port: BOOTSTRAP_PORT,
         };
         let flags = 5;
         let tid = 8265;
