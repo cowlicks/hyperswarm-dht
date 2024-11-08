@@ -61,6 +61,22 @@ pub struct Request {
 }
 
 impl Request {
+    pub fn create_ping(to: &Addr) -> Self {
+        Request::create_request(to, None, true, Command::Ping, None, None)
+    }
+    fn get_table_id() -> [u8; 32] {
+        todo!()
+    }
+    pub fn create_request(
+        to: &Addr,
+        token: Option<[u8; 32]>,
+        internal: bool,
+        command: Command,
+        target: Option<[u8; 32]>,
+        value: Option<[u8; 32]>,
+    ) -> Self {
+        todo!()
+    }
     pub fn encode_request(
         &self,
         token: Option<Vec<u8>>,
@@ -119,8 +135,7 @@ impl Request {
         state.encode(&to, &mut buff)?;
 
         if id {
-            //let table_id = todo!();
-            state.encode_fixed_32(todo!(), &mut buff)?;
+            state.encode_fixed_32(&Request::get_table_id(), &mut buff)?;
         }
         if let Some(t) = token {
             // c.fixed32.encode(state, token)
@@ -144,9 +159,9 @@ impl Request {
 }
 
 pub struct Io {
+    tid: u16,
     ephemeral: bool,
     //serverSocket: UdxSocket,
-    table_id: [u8; TABLE_ID_SIZE],
 }
 
 fn decode_fixed_32_flag(
@@ -162,25 +177,37 @@ fn decode_fixed_32_flag(
     }
     return Ok(None);
 }
+/// Decode an u32 array
+pub fn decode_addr_array(state: &mut State, buffer: &[u8]) -> Result<Vec<Addr>> {
+    let len = state.decode_usize_var(buffer)?;
+    let mut value: Vec<Addr> = Vec::with_capacity(len);
+    for _ in 0..len {
+        let add: Addr = state.decode(buffer)?;
+        value.push(add);
+    }
+    Ok(value)
+}
 
 fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Reply> {
     let flags = buff[state.start()];
+    state.add_start(1)?;
+
     let tid = state.decode_u16(buff)?;
     let to: Addr = state.decode(buff)?;
 
     let id = decode_fixed_32_flag(flags, 1, state, buff)?;
     let token = decode_fixed_32_flag(flags, 2, state, buff)?;
 
-    let closer_nodes: Option<Addr> = if flags & 4 > 0 {
-        Some(state.decode(buff)?)
+    let closer_nodes: Option<Vec<Addr>> = if flags & 4 > 0 {
+        Some(decode_addr_array(state, buff)?)
     } else {
         None
     };
 
-    let error: Option<u8> = if flags & 8 > 0 {
-        Some(state.decode_u8(buff)?)
+    let error: u8 = if flags & 8 > 0 {
+        state.decode_u8(buff)?
     } else {
-        None
+        0
     };
 
     let value = if flags & 16 > 0 {
@@ -206,14 +233,15 @@ fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Reply>
     })
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct Reply {
     tid: u16,
     rtt: usize,
     from: Addr,
     to: Addr,
     token: Option<[u8; 32]>,
-    closer_nodes: Option<Addr>,
-    error: Option<u8>,
+    closer_nodes: Option<Vec<Addr>>,
+    error: u8,
     value: Option<Vec<u8>>,
 }
 
@@ -347,10 +375,7 @@ mod test {
             host: HOST,
             port: 10001,
         };
-        let io = Io {
-            ephemeral: false,
-            table_id: thirty_two_random_bytes(),
-        };
+        let io = Io { ephemeral: false };
 
         let res = req.encode_request(None, None, to, &io, false)?;
         assert_eq!(res, expected_buffer);
@@ -397,10 +422,7 @@ mod test {
         ];
 
         let mut state = State::new_with_start_and_end(state_start, state_end);
-        let io = Io {
-            ephemeral: false,
-            table_id: thirty_two_random_bytes(),
-        };
+        let io = Io { ephemeral: false };
         let res = io.decode_request(&buff, from.clone(), &mut state)?;
         from.id = res.from.id.clone();
         let expected = Request {
@@ -420,40 +442,63 @@ mod test {
     #[ignore]
     #[test]
     fn test_decode_message() -> Result<()> {
- let state_start =  1 ;
- let state_end =  49 ;
- let state_buff =  [
-   19,   5, 73,  32, 127,  0,  0,   1, 193, 153,
-  233, 110,  1,  70, 163, 62,  2,  41, 135, 254,
-   37, 108, 99,  67, 172, 93, 32, 219, 164, 126,
-  161, 182, 52,  31, 147, 41,  3, 180, 132, 105,
-   69,  62,  1, 127,   0,  0,  1, 193, 153
-] ;
- let from =  Addr { id: None, host: HOST, port: 10001 } ;
- let flags =  5 ;
- let tid =  8265 ;
- let to =  Addr { id: None, host: HOST, port: 39361 } ;
- let id =  [
-  233, 110,   1,  70, 163,  62,   2, 41,
-  135, 254,  37, 108,  99,  67, 172, 93,
-   32, 219, 164, 126, 161, 182,  52, 31,
-  147,  41,   3, 180, 132, 105,  69, 62
-] ;
- let token: Option<[u8;32]> =  None ;
- let closerNodes: Vec<Addr> =  vec![ Addr{ id: None, host: HOST, port: 39361 } ] ;
- let error =  0 ;
- let value: Option<[u8;32]> =  None ;
- let validateId: Option<[u8;32]>=  Some([
-  233, 110,   1,  70, 163,  62,   2, 41,
-  135, 254,  37, 108,  99,  67, 172, 93,
-   32, 219, 164, 126, 161, 182,  52, 31,
-  147,  41,   3, 180, 132, 105,  69, 62
-] );
         todo!()
     }
 
     #[test]
     fn test_decode_reply() -> Result<()> {
-        todo!()
+        let state_start = 1;
+        let state_end = 49;
+        let state_buff = vec![
+            19, 5, 73, 32, 127, 0, 0, 1, 193, 153, 233, 110, 1, 70, 163, 62, 2, 41, 135, 254, 37,
+            108, 99, 67, 172, 93, 32, 219, 164, 126, 161, 182, 52, 31, 147, 41, 3, 180, 132, 105,
+            69, 62, 1, 127, 0, 0, 1, 193, 153,
+        ];
+        let from = Addr {
+            id: None,
+            host: HOST,
+            port: 10001,
+        };
+        let flags = 5;
+        let tid = 8265;
+        let to = Addr {
+            id: None,
+            host: HOST,
+            port: 39361,
+        };
+        let id = [
+            233, 110, 1, 70, 163, 62, 2, 41, 135, 254, 37, 108, 99, 67, 172, 93, 32, 219, 164, 126,
+            161, 182, 52, 31, 147, 41, 3, 180, 132, 105, 69, 62,
+        ];
+        let token: Option<[u8; 32]> = None;
+        let closer_nodes: Vec<Addr> = vec![Addr {
+            id: None,
+            host: HOST,
+            port: 39361,
+        }];
+        let error = 0;
+        let value: Option<Vec<u8>> = None;
+        let validateId: Option<[u8; 32]> = Some([
+            233, 110, 1, 70, 163, 62, 2, 41, 135, 254, 37, 108, 99, 67, 172, 93, 32, 219, 164, 126,
+            161, 182, 52, 31, 147, 41, 3, 180, 132, 105, 69, 62,
+        ]);
+
+        let mut state = State::new_with_start_and_end(state_start, state_end);
+        let mut og_from = from.clone();
+        let result = decode_reply(&state_buff, from, &mut state)?;
+
+        og_from.id = result.from.id.clone();
+        let expected = Reply {
+            tid,
+            rtt: 0,
+            from: og_from,
+            to,
+            token,
+            closer_nodes: Some(closer_nodes),
+            error: error.into(),
+            value,
+        };
+        assert_eq!(result, expected);
+        Ok(())
     }
 }
