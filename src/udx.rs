@@ -397,7 +397,7 @@ mod test {
             to: Some(Addr {
                 id: None,
                 host: HOST,
-                port: 54321,
+                port: BOOTSTRAP_PORT,
             }),
             from: Some(Addr {
                 id: None,
@@ -409,8 +409,8 @@ mod test {
                 235, 159, 119, 93, 35, 250, 85, 76, 120, 152, 96, 17, 175, 157, 204, 216, 8, 191,
                 189, 16, 140, 146, 202, 172, 84, 232, 73, 218, 113, 136, 161, 173,
             ]),
-            token: Some(thirty_two_random_bytes()),
-            value: Some(thirty_two_random_bytes().to_vec()),
+            token: None,
+            value: None,
 
             internal: true,
             tid: 50632,
