@@ -203,8 +203,8 @@ impl Io {
         self.create_request(to, None, true, Command::PingNat, None, Some(value))
     }
 
-    pub fn create_find_node(&self, to: &Addr, target: [u8; 32]) -> Request {
-        self.create_request(to, None, true, Command::Ping, Some(target), None)
+    pub fn create_find_node(&self, to: &Addr, target: &[u8; 32]) -> Request {
+        self.create_request(to, None, true, Command::Ping, Some(target.clone()), None)
     }
 
     pub fn create_request(
@@ -423,6 +423,7 @@ mod test {
         }
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_ping() -> Result<()> {
         let sock = UdxSocket::bind("127.0.0.1:0").await?;
@@ -435,6 +436,44 @@ mod test {
         sock.send(sock_addr, &buff);
         //socke.send(&B
         tokio::time::sleep(Duration::from_millis(1000)).await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn do_find_node() -> Result<()> {
+        // data from find the first bootstrap call
+        // the "target" is this.table.id for the bootstrap query
+        let target = [
+            119, 44, 181, 79, 186, 249, 110, 212, 6, 32, 70, 6, 149, 114, 119, 56, 168, 69, 210,
+            251, 161, 149, 49, 223, 53, 187, 230, 101, 161, 56, 143, 163,
+        ];
+        //let value = None;
+        // let command =  2 ;
+        // let internal =  true ;
+        // let token =  None ;
+        // let to =  {
+        //  id: <Buffer e9 6e 01 46 a3 3e 02 29 87 fe 25 6c 63 43 ac 5d 20 db a4 7e a1 b6 34 1f 93 29 03
+        //b4 84 69 45 3e>,
+        //  host: '127.0.0.1',
+        //  port: 10001
+        //} ;
+        let sock = UdxSocket::bind("127.0.0.1:0").await?;
+        let io = Io::default();
+        // TODO finish find node
+        let find_node_req = io.create_find_node(
+            /// the node we are looking for?
+            &BOOTSTRAP_ADDR,
+            &target,
+        );
+        let buff = find_node_req.encode_request(&io, false)?;
+        println!("{buff:?}");
+        //find_node_req.en
+        let sock_addr: SocketAddr = format!("{HOST}:{BOOTSTRAP_PORT}").parse().unwrap();
+        sock.send(sock_addr, &buff);
+        //socke.send(&B
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        let res = sock.recv().await;
+        dbg!(res);
         Ok(())
     }
 
