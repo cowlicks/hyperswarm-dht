@@ -54,7 +54,6 @@ mod dht_proto {
 #[cfg(test)]
 pub mod test;
 
-pub(crate) mod cenc;
 pub mod constants;
 pub mod crypto;
 pub mod kbucket;

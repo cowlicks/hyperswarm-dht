@@ -9,11 +9,14 @@ use std::{
 };
 
 use crate::{
-    cenc::calculate_id,
     constants::{ID_SIZE, REQUEST_ID, RESPONSE_ID, TABLE_ID_SIZE},
     Result,
 };
 use compact_encoding::{CompactEncoding, State};
+
+mod cenc;
+
+use cenc::calculate_id;
 /**
  * from: https://github.com/holepunchto/dht-rpc/blob/bfa84ec5eef4cf405ab239b03ab733063d6564f2/lib/io.js#L424-L453
 */
@@ -249,7 +252,12 @@ impl Io {
         }
     }
 
-    pub fn decode_request(self, buff: &[u8], mut from: Addr, state: &mut State) -> Result<Request> {
+    pub fn decode_request(
+        &self,
+        buff: &[u8],
+        mut from: Addr,
+        state: &mut State,
+    ) -> Result<Request> {
         let flags = buff[state.start()];
         state.add_start(1)?;
 
