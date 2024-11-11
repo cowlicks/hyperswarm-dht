@@ -1,4 +1,7 @@
-use std::{convert::TryFrom, net::Ipv4Addr};
+use std::{
+    convert::{TryFrom, TryInto},
+    net::Ipv4Addr,
+};
 
 use compact_encoding::{CompactEncoding, EncodingError, State};
 
@@ -7,6 +10,8 @@ use crate::{
     udx::{Addr, Command},
     Error, Result,
 };
+
+use super::{Reply, Request};
 
 impl CompactEncoding<Command> for State {
     fn preencode(&mut self, _value: &Command) -> std::result::Result<usize, EncodingError> {
@@ -111,4 +116,122 @@ fn generic_hash(input: &[u8]) -> Result<[u8; HASH_SIZE]> {
         return Err(Error::LibSodiumGenericHashError(ret));
     }
     Ok(out)
+}
+
+pub fn decode_request(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Request> {
+    let flags = buff[state.start()];
+    state.add_start(1)?;
+
+    let tid = state.decode_u16(buff)?;
+
+    let to = Some(state.decode(buff)?);
+
+    let id = decode_fixed_32_flag(flags, 1, state, buff)?;
+    let token = decode_fixed_32_flag(flags, 2, state, buff)?;
+
+    let internal = (flags & 4) != 0;
+    let command: Command = state.decode(buff)?;
+
+    let target = decode_fixed_32_flag(flags, 8, state, buff)?;
+
+    let value = if flags & 16 > 0 {
+        Some(state.decode_buffer(buff)?.as_ref().to_vec())
+    } else {
+        None
+    };
+
+    if let Some(id) = id {
+        if let Some(valid_id) = validate_id(&id, &from) {
+            from.id = valid_id.to_vec().into();
+        }
+    }
+
+    Ok(Request {
+        tid,
+        from: Some(from),
+        to,
+        token,
+        internal,
+        command,
+        target,
+        value,
+    })
+}
+
+fn validate_id(id: &[u8; ID_SIZE], from: &Addr) -> Option<[u8; ID_SIZE]> {
+    if let Ok(result) = calculate_id(from) {
+        if *id == result {
+            return Some(*id);
+        }
+    }
+    None
+}
+
+fn decode_fixed_32_flag(
+    flags: u8,
+    shift: u8,
+    state: &mut State,
+    buff: &[u8],
+) -> Result<Option<[u8; 32]>> {
+    if flags & shift > 0 {
+        return Ok(Some(
+            state.decode_fixed_32(buff)?.as_ref().try_into().unwrap(),
+        ));
+    }
+    return Ok(None);
+}
+/// Decode an u32 array
+pub fn decode_addr_array(state: &mut State, buffer: &[u8]) -> Result<Vec<Addr>> {
+    let len = state.decode_usize_var(buffer)?;
+    let mut value: Vec<Addr> = Vec::with_capacity(len);
+    for _ in 0..len {
+        let add: Addr = state.decode(buffer)?;
+        value.push(add);
+    }
+    Ok(value)
+}
+
+pub fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Reply> {
+    let flags = buff[state.start()];
+    state.add_start(1)?;
+
+    let tid = state.decode_u16(buff)?;
+    let to: Addr = state.decode(buff)?;
+
+    let id = decode_fixed_32_flag(flags, 1, state, buff)?;
+    let token = decode_fixed_32_flag(flags, 2, state, buff)?;
+
+    let closer_nodes: Option<Vec<Addr>> = if flags & 4 > 0 {
+        Some(decode_addr_array(state, buff)?)
+    } else {
+        None
+    };
+
+    let error: u8 = if flags & 8 > 0 {
+        state.decode_u8(buff)?
+    } else {
+        0
+    };
+
+    let value = if flags & 16 > 0 {
+        Some(state.decode_buffer(buff)?.to_vec())
+    } else {
+        None
+    };
+
+    if let Some(id) = id {
+        if let Some(valid_id) = validate_id(&id, &from) {
+            from.id = valid_id.to_vec().into();
+        }
+    }
+    Ok(Reply {
+        tid,
+        rtt: 0,
+        from,
+        to,
+        token,
+        closer_nodes,
+        error,
+        value,
+    })
 }

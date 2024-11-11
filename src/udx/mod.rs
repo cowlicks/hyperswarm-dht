@@ -4,19 +4,19 @@ use rand::Rng;
 #[allow(unreachable_code, dead_code)]
 use std::net::Ipv4Addr;
 use std::{
-    convert::{TryFrom, TryInto},
+    convert::TryFrom,
     sync::atomic::{AtomicU16, Ordering},
 };
 
 use crate::{
-    constants::{ID_SIZE, REQUEST_ID, RESPONSE_ID, TABLE_ID_SIZE},
+    constants::{ID_SIZE, REQUEST_ID, RESPONSE_ID},
     Result,
 };
 use compact_encoding::{CompactEncoding, State};
 
 mod cenc;
 
-use cenc::calculate_id;
+use cenc::{decode_reply, decode_request};
 /**
  * from: https://github.com/holepunchto/dht-rpc/blob/bfa84ec5eef4cf405ab239b03ab733063d6564f2/lib/io.js#L424-L453
 */
@@ -241,7 +241,7 @@ impl Io {
         };
         match buff[0] {
             REQUEST_ID => {
-                let _res = self.decode_request(&buff, from, &mut state)?;
+                let _res = decode_request(&buff, from, &mut state)?;
                 todo!()
             }
             RESPONSE_ID => {
@@ -251,129 +251,6 @@ impl Io {
             _ => todo!("eror"),
         }
     }
-
-    pub fn decode_request(
-        &self,
-        buff: &[u8],
-        mut from: Addr,
-        state: &mut State,
-    ) -> Result<Request> {
-        let flags = buff[state.start()];
-        state.add_start(1)?;
-
-        let tid = state.decode_u16(buff)?;
-
-        let to = Some(state.decode(buff)?);
-
-        let id = decode_fixed_32_flag(flags, 1, state, buff)?;
-        let token = decode_fixed_32_flag(flags, 2, state, buff)?;
-
-        let internal = (flags & 4) != 0;
-        let command: Command = state.decode(buff)?;
-
-        let target = decode_fixed_32_flag(flags, 8, state, buff)?;
-
-        let value = if flags & 16 > 0 {
-            Some(state.decode_buffer(buff)?.as_ref().to_vec())
-        } else {
-            None
-        };
-
-        if let Some(id) = id {
-            if let Some(valid_id) = validate_id(&id, &from) {
-                from.id = valid_id.to_vec().into();
-            }
-        }
-
-        Ok(Request {
-            tid,
-            from: Some(from),
-            to,
-            token,
-            internal,
-            command,
-            target,
-            value,
-        })
-    }
-}
-
-fn validate_id(id: &[u8; ID_SIZE], from: &Addr) -> Option<[u8; ID_SIZE]> {
-    if let Ok(result) = calculate_id(from) {
-        if *id == result {
-            return Some(*id);
-        }
-    }
-    None
-}
-
-fn decode_fixed_32_flag(
-    flags: u8,
-    shift: u8,
-    state: &mut State,
-    buff: &[u8],
-) -> Result<Option<[u8; 32]>> {
-    if flags & shift > 0 {
-        return Ok(Some(
-            state.decode_fixed_32(buff)?.as_ref().try_into().unwrap(),
-        ));
-    }
-    return Ok(None);
-}
-/// Decode an u32 array
-pub fn decode_addr_array(state: &mut State, buffer: &[u8]) -> Result<Vec<Addr>> {
-    let len = state.decode_usize_var(buffer)?;
-    let mut value: Vec<Addr> = Vec::with_capacity(len);
-    for _ in 0..len {
-        let add: Addr = state.decode(buffer)?;
-        value.push(add);
-    }
-    Ok(value)
-}
-
-fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Reply> {
-    let flags = buff[state.start()];
-    state.add_start(1)?;
-
-    let tid = state.decode_u16(buff)?;
-    let to: Addr = state.decode(buff)?;
-
-    let id = decode_fixed_32_flag(flags, 1, state, buff)?;
-    let token = decode_fixed_32_flag(flags, 2, state, buff)?;
-
-    let closer_nodes: Option<Vec<Addr>> = if flags & 4 > 0 {
-        Some(decode_addr_array(state, buff)?)
-    } else {
-        None
-    };
-
-    let error: u8 = if flags & 8 > 0 {
-        state.decode_u8(buff)?
-    } else {
-        0
-    };
-
-    let value = if flags & 16 > 0 {
-        Some(state.decode_buffer(buff)?.to_vec())
-    } else {
-        None
-    };
-
-    if let Some(id) = id {
-        if let Some(valid_id) = validate_id(&id, &from) {
-            from.id = valid_id.to_vec().into();
-        }
-    }
-    Ok(Reply {
-        tid,
-        rtt: 0,
-        from,
-        to,
-        token,
-        closer_nodes,
-        error,
-        value,
-    })
 }
 
 #[cfg(test)]
@@ -547,7 +424,7 @@ mod test {
 
         let mut state = State::new_with_start_and_end(state_start, state_end);
         let io = Io::default();
-        let res = io.decode_request(&buff, from.clone(), &mut state)?;
+        let res = decode_request(&buff, from.clone(), &mut state)?;
         from.id = res.from.as_ref().unwrap().id.clone();
         let expected = Request {
             tid,
