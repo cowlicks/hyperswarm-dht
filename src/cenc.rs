@@ -67,7 +67,6 @@ impl CompactEncoding<Addr> for State {
         buff: &mut [u8],
     ) -> std::result::Result<usize, EncodingError> {
         encode_ip(&value.host, buff, self)?;
-
         self.encode_u16(value.port, buff)?;
         Ok(self.start())
     }

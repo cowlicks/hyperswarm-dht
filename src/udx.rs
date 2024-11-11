@@ -199,7 +199,13 @@ impl Io {
         self.create_request(to, None, true, Command::Ping, None, None)
     }
 
-    //pub fn create_request(&self,
+    pub fn create_ping_nat(&self, to: &Addr, value: Vec<u8>) -> Request {
+        self.create_request(to, None, true, Command::PingNat, None, Some(value))
+    }
+
+    pub fn create_find_node(&self, to: &Addr, target: [u8; 32]) -> Request {
+        self.create_request(to, None, true, Command::Ping, Some(target), None)
+    }
 
     pub fn create_request(
         &self,
