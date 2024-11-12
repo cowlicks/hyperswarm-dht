@@ -24,6 +24,7 @@ use log::*;
 use prost::Message as ProstMessage;
 use sha2::digest::generic_array::{typenum::U32, GenericArray};
 use smallvec::alloc::collections::VecDeque;
+use udx::RpcDhtBuilderError;
 
 pub use crate::rpc::{DhtConfig, IdBytes, Peer, PeerId};
 use crate::{
@@ -94,6 +95,8 @@ pub enum Error {
     IncorrectMessageIdSize(TryFromSliceError),
     #[error("Error in libsodium's genric_hash function. Return value: {0}")]
     LibSodiumGenericHashError(i32),
+    #[error("RpcDhtBuilderError: {0}")]
+    RpcDhtBuilderError(#[from] RpcDhtBuilderError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
