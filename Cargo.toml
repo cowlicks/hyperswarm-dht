@@ -37,6 +37,7 @@ either = "1.5.3"
 pretty-hash = "0.4.1"
 thiserror = "1.0.68"
 libsodium-sys-stable = "1.21.2"
+derive_builder = "0.20.2"
 
 [dependencies.compact-encoding]
 path = "../compact-encoding"
