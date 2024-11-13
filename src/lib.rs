@@ -88,7 +88,7 @@ pub const PEERS_CMD: &str = "peers";
 pub enum Error {
     #[error("Error from compact_encoding: {0}")]
     CompactEncodingError(EncodingError),
-    #[error("IO Error")]
+    #[error("IO Eror")]
     IoError(#[from] std::io::Error),
     #[error("Invalid RPC command in message: {0}")]
     InvalidRpcCommand(u8),
@@ -98,6 +98,10 @@ pub enum Error {
     LibSodiumGenericHashError(i32),
     #[error("RpcDhtBuilderError: {0}")]
     RpcDhtBuilderError(#[from] RpcDhtBuilderError),
+    #[error("RecvError: {0}")]
+    RecvError(#[from] RecvError),
+    #[error("AddrParseError: {0}")]
+    AddrParseError(#[from] AddrParseError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
