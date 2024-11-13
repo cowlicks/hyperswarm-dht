@@ -116,7 +116,8 @@ impl RpcDht {
             panic!()
         };
         let to = Addr::from(node_addr);
-        let r = self.io.send_find_node(&to, &self.id).await?;
+        let receiver = self.io.send_find_node(&to, &self.id).await?;
+        let _resp = receiver.into_future().await?;
         Ok(())
     }
 
