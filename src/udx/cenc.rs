@@ -11,7 +11,7 @@ use crate::{
     Error, Result,
 };
 
-use super::{Reply, Request};
+use super::io::{Reply, Request};
 
 impl CompactEncoding<Command> for State {
     fn preencode(&mut self, _value: &Command) -> std::result::Result<usize, EncodingError> {

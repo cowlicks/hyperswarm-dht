@@ -2,6 +2,8 @@
 //!
 #![allow(unreachable_code, dead_code)]
 use std::convert::TryFrom;
+use std::fmt::Display;
+use std::future::IntoFuture;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
 use crate::{udx::io::Io, Result};
@@ -12,6 +14,7 @@ use rand::{
 
 mod cenc;
 mod io;
+
 #[cfg(test)]
 mod test;
 
@@ -29,6 +32,19 @@ pub enum Command {
     PingNat,
     FindNode,
     DownHint,
+}
+
+impl Display for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Command::*;
+        write!(f, "COMMAND")?;
+        match self {
+            Ping => write!(f, "::Ping"),
+            PingNat => write!(f, "::PingNat"),
+            FindNode => write!(f, "::FindNode"),
+            DownHint => write!(f, "::DownHint"),
+        }
+    }
 }
 
 impl TryFrom<u8> for Command {
@@ -104,7 +120,7 @@ impl RpcDht {
         Ok(())
     }
 
-    fn query(&mut self, command: Command, id: [u8; 32], value: Option<Vec<u8>>) {
+    fn query(&mut self, _command: Command, _id: [u8; 32], _value: Option<Vec<u8>>) {
         todo!()
     }
 }
