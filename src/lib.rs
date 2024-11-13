@@ -69,10 +69,10 @@ pub mod udx;
 const EPH_AFTER: u64 = 1000 * 60 * 20;
 
 /// The publicly available hyperswarm DHT addresses
-pub const DEFAULT_BOOTSTRAP: [&str; 3] = [
-    "bootstrap1.hyperdht.org:49737",
-    "bootstrap2.hyperdht.org:49737",
-    "bootstrap3.hyperdht.org:49737",
+pub const DEFAULT_BOOTSTRAP: [&str; 6] = [
+    "node1.hyperdht.org:49737",
+    "node2.hyperdht.org:49737",
+    "node3.hyperdht.org:49737",
 ];
 
 pub(crate) const ERR_INVALID_INPUT: &str = "ERR_INVALID_INPUT";
