@@ -10,7 +10,6 @@ const opts = { ephemeral: false };
 const N_NODES = 1;
 
 
-
 const nodes = [];
 // Let's create 100 dht nodes for our example.
 for (var i = 0; i < N_NODES; i++) {

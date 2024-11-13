@@ -7,7 +7,7 @@ use std::{
     array::TryFromSliceError,
     convert::{TryFrom, TryInto},
     fmt, io,
-    net::{IpAddr, SocketAddr, SocketAddrV4, ToSocketAddrs},
+    net::{AddrParseError, IpAddr, SocketAddr, SocketAddrV4, ToSocketAddrs},
     pin::Pin,
     time::Duration,
 };
@@ -24,6 +24,7 @@ use log::*;
 use prost::Message as ProstMessage;
 use sha2::digest::generic_array::{typenum::U32, GenericArray};
 use smallvec::alloc::collections::VecDeque;
+use tokio::sync::oneshot::error::RecvError;
 use udx::RpcDhtBuilderError;
 
 pub use crate::rpc::{DhtConfig, IdBytes, Peer, PeerId};

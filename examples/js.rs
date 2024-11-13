@@ -7,10 +7,10 @@
 //! the address of the bootstrap node gets piped to
 //! the nodejs program which creates an ephemeral node to announce and
 //! afterwards unannouce a topic and a port.
-use std::{convert::TryFrom, net::Ipv4Addr, time::Duration};
+use std::{net::Ipv4Addr, time::Duration};
 
 use futures::StreamExt;
-use hyperswarm_dht::{rpc::RpcDht, DhtConfig, HyperDht};
+use hyperswarm_dht::{rpc::RpcDht, DhtConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -41,5 +41,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             dbg!(&x);
         }
     }
-    Ok(())
 }
