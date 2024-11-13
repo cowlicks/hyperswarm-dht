@@ -5,33 +5,47 @@ const value = 'hello'
 function hash (value) {
   return crypto.createHash('sha256').update(value).digest()
 }
-const opts = { ephemeral: false, host: '127.0.0.1', }
+const opts = { ephemeral: false };
+
+const N_NODES = 1;
 
 
 
 const nodes = [];
 // Let's create 100 dht nodes for our example.
-for (var i = 0; i < 1; i++) {
+for (var i = 0; i < N_NODES; i++) {
   process.stdout.write(String(i));
-  const n = await createNode()
+  const n = await createNode(i)
   nodes.push(n);
 }
 
 async function createNode () {
   const node = new DHT({
     bootstrap: [
-      'localhost:10001'
+'188.166.28.20:33041',
+'129.151.241.61:49737',
+'136.243.5.20:39876',
+'88.99.3.86:53521',
     ],
     ...opts
   })
-
-  /*
   await node.fullyBootstrapped();
+  console.log('BOOTSTRAPPED!', i);
+  //let x = await node.findNode(Buffer.from('hello world'));
+  //console.log(x);
+  //const q = node.query({ target: Buffer.from('asnotehusntahoesunthsanteohunthe'), command: 2, value: null});
+  console.log('sthsh');
+  for await (const d of node.refresh()) {
+    console.log('xxx');
+    console.log(d);
+    console.log([...node.toArray()]);
+  }
 
   const values = new Map()
   const VALUES = 0 // define a command enum
 
   console.log(node.address());
+  console.log([...node.toArray()]);
 
   node.on('request', function (req) {
     console.log('req.command =', req.command);
@@ -53,6 +67,5 @@ async function createNode () {
     }
   })
   return node;
-  */
 }
 
