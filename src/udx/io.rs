@@ -230,13 +230,12 @@ pub enum Message {
 
 impl Io {
     pub fn new() -> Result<Self> {
-        let socket = Arc::new(TRwLock::new(UdxSocket::bind("127.0.0.1:0")?));
+        let socket = Arc::new(TRwLock::new(UdxSocket::bind("0.0.0.0:0")?));
         let recv_socket = socket.clone();
         let inflight: Inflight = Default::default();
         let _recv_inflight = inflight.clone();
         tokio::spawn(async move {
             loop {
-                dbg!();
                 // TODO add timeout so rw is not locked forever
                 let x = recv_socket.read().await.recv().await;
                 if let Ok((addr, buff)) = x {
