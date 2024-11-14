@@ -7,6 +7,7 @@ use std::future::IntoFuture;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
 use crate::{udx::io::Io, Result};
+use io::Reply;
 use rand::{
     rngs::{OsRng, StdRng},
     RngCore, SeedableRng,
@@ -111,14 +112,19 @@ impl RpcDhtBuilder {
 }
 
 impl RpcDht {
-    async fn bootstrap(&self) -> Result<()> {
+    async fn bootstrap(&self) -> Result<Reply> {
         let Some(node_addr) = self.bootstrap_nodes.last() else {
             panic!()
         };
         let to = Addr::from(node_addr);
         let receiver = self.io.send_find_node(&to, &self.id).await?;
-        let _resp = receiver.into_future().await?;
-        Ok(())
+        Ok(receiver.into_future().await?)
+    }
+
+    async fn ping(&self, addr: &SocketAddr) -> Result<Reply> {
+        let to = Addr::from(addr);
+        let receiver = self.io.send_find_node(&to, &self.id).await?;
+        Ok(receiver.into_future().await?)
     }
 
     fn query(&mut self, _command: Command, _id: [u8; 32], _value: Option<Vec<u8>>) {

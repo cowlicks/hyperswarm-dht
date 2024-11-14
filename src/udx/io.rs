@@ -269,6 +269,10 @@ impl Io {
         let req = self.create_find_node(to, target);
         self.send(to, req).await
     }
+    pub async fn send_ping(&self, to: &Addr) -> Result<Receiver<Reply>> {
+        let req = self.create_ping(to);
+        self.send(to, req).await
+    }
 
     pub async fn send(&self, to: &Addr, request: Request) -> Result<Receiver<Reply>> {
         let buff = request.encode_request(self, false)?;
