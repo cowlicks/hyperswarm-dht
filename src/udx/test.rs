@@ -8,14 +8,11 @@ use crate::{
 };
 use async_udx::UdxSocket;
 use compact_encoding::State;
-use futures::future::select_all;
 use std::{
     convert::TryInto,
     net::{Ipv4Addr, SocketAddr, ToSocketAddrs},
     time::Duration,
 };
-use tokio::{select, spawn};
-
 const HOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 const BOOTSTRAP_PORT: u16 = 10001;
 const BOOTSTRAP_ADDR: Addr = Addr {
@@ -23,96 +20,43 @@ const BOOTSTRAP_ADDR: Addr = Addr {
     host: HOST,
     port: BOOTSTRAP_PORT,
 };
-/*
-Rust initial to local js bootstrap
-Request {
-          flags = {
-              id = false,
-              token? = false,
-              internal = true,
-              target? = true,
-              value? = false
-          }
-          flags = 12
-          tid = 10450,
-          to = "127.0.0.1:10001",
-          table_id = TODO
-          token = null,
-          command = COMMAND::FindNode,
-          target = b2f2a6..c4,
-          value = null,
-        }
 
-[/home/blake/git/hyper/hyperswarm-dht/js/dht-rpc/lib/io.js:508] Request {
-  flags {
-    id = (this._io.ephemeral (true) == false && socket ([object Object]) === this._io.serverSocket ([object Object])) == false,
-    token? = false,
-    internal =  true,
-    target? = true,
-    value = false,
-  },
-  flags = 12,
-  tid = 3546,
-  to = 127.0.0.1:10001,
-  table_id = null,
-  token = undefined,
-  command = FIND_NODE,
-  target = 0065e47b249717db110d5dc4202d34e013e94c5d2340e431e1bdbfadb204a5fc,
-  value = undefined,
-}
-*/
-
+#[ignore]
 #[tokio::test]
 async fn bootstrap_local() -> Result<()> {
     let hosts = ["127.0.0.1:10001"];
-    let mut stuff = vec![];
     for bs in hosts {
-        dbg!(&bs);
         for addr in dbg!(bs.to_socket_addrs().unwrap()) {
-            let o = spawn(async move {
-                let rpc = RpcDhtBuilder::default().add_bootstrap_node(addr)?.build()?;
-                dbg!();
-                let rec = rpc.bootstrap().await?;
-                println!("got {addr:?} response: {rec:?}");
-                Ok::<(), crate::Error>(())
-            });
-            stuff.push(o);
+            let rpc = RpcDhtBuilder::default().add_bootstrap_node(addr)?.build()?;
+            let rec = rpc.bootstrap().await?;
+            dbg!(rec);
         }
     }
-    let x = select_all(stuff).await;
-    dbg!(x);
+    Ok(())
+}
+
+#[tokio::test]
+async fn ping_global() -> Result<()> {
+    for bs in DEFAULT_BOOTSTRAP {
+        dbg!(&bs);
+        for addr in dbg!(bs.to_socket_addrs().unwrap()) {
+            let rpc = RpcDhtBuilder::default().add_bootstrap_node(addr)?.build()?;
+            let rec = rpc.ping(&addr).await?;
+            dbg!(rec);
+        }
+    }
     Ok(())
 }
 
 #[tokio::test]
 async fn bootstrap_global() -> Result<()> {
-    let hosts = [
-        "129.151.241.61:49737",
-        "188.166.28.20:33041",
-        "136.243.5.20:39876",
-        "88.99.3.86:53521",
-    ];
-    let mut stuff = vec![];
-    for bs in hosts {
-        dbg!(&bs);
+    for bs in DEFAULT_BOOTSTRAP {
         for addr in dbg!(bs.to_socket_addrs().unwrap()) {
-            //let addr: SocketAddr = "127.0.0.1:10001".parse()?;
-            let o = spawn(async move {
-                let rpc = RpcDhtBuilder::default()
-                    //.add_bootstrap_node(SocketAddr::from(&BOOTSTRAP_ADDR))?
-                    .add_bootstrap_node(addr)?
-                    .build()?;
-                dbg!();
-                let rec = rpc.bootstrap().await?;
-                println!("got {addr:?} response: {rec:?}");
-                Ok::<(), crate::Error>(())
-            });
-            stuff.push(o);
+            let rpc = RpcDhtBuilder::default().add_bootstrap_node(addr)?.build()?;
+            let rec = rpc.bootstrap().await?;
+            dbg!(rec);
         }
     }
-    let x = select_all(stuff).await;
-    dbg!(x);
-    //tokio::time::sleep(Duration::from_millis(20 * 1000)).await;
     Ok(())
 }
 
@@ -156,44 +100,6 @@ async fn test_ping() -> Result<()> {
     sock.send(sock_addr, &buff);
     //socke.send(&B
     tokio::time::sleep(Duration::from_millis(1000)).await;
-    Ok(())
-}
-
-#[tokio::test]
-async fn do_find_node() -> Result<()> {
-    // data from find the first bootstrap call
-    // the "target" is this.table.id for the bootstrap query
-    let target = [
-        119, 44, 181, 79, 186, 249, 110, 212, 6, 32, 70, 6, 149, 114, 119, 56, 168, 69, 210, 251,
-        161, 149, 49, 223, 53, 187, 230, 101, 161, 56, 143, 163,
-    ];
-    //let value = None;
-    // let command =  2 ;
-    // let internal =  true ;
-    // let token =  None ;
-    // let to =  {
-    //  id: <Buffer e9 6e 01 46 a3 3e 02 29 87 fe 25 6c 63 43 ac 5d 20 db a4 7e a1 b6 34 1f 93 29 03
-    //b4 84 69 45 3e>,
-    //  host: '127.0.0.1',
-    //  port: 10001
-    //} ;
-    let sock = UdxSocket::bind("127.0.0.1:0")?;
-    let io = Io::new()?;
-    // TODO finish find node
-    let find_node_req = io.create_find_node(
-        // the node we are looking for?
-        &BOOTSTRAP_ADDR,
-        &target,
-    );
-    let buff = find_node_req.encode_request(&io, false)?;
-    println!("{buff:?}");
-    //find_node_req.en
-    let sock_addr: SocketAddr = format!("{HOST}:{BOOTSTRAP_PORT}").parse().unwrap();
-    sock.send(sock_addr, &buff);
-    //socke.send(&B
-    tokio::time::sleep(Duration::from_millis(1000)).await;
-    let res = sock.recv().await;
-    dbg!(res?);
     Ok(())
 }
 
