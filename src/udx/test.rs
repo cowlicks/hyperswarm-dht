@@ -13,6 +13,8 @@ use std::{
     net::{Ipv4Addr, SocketAddr, ToSocketAddrs},
     time::Duration,
 };
+
+use super::cenc::validate_id;
 const HOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 const BOOTSTRAP_PORT: u16 = 10001;
 const BOOTSTRAP_ADDR: Addr = Addr {
@@ -27,7 +29,7 @@ async fn bootstrap_local() -> Result<()> {
     let hosts = ["127.0.0.1:10001"];
     for bs in hosts {
         for addr in dbg!(bs.to_socket_addrs().unwrap()) {
-            let rpc = RpcDhtBuilder::default().add_bootstrap_node(addr)?.build()?;
+            let mut rpc = RpcDhtBuilder::default().add_bootstrap_node(addr)?.build()?;
             let rec = rpc.bootstrap().await?;
             dbg!(rec);
         }
@@ -38,7 +40,6 @@ async fn bootstrap_local() -> Result<()> {
 #[tokio::test]
 async fn ping_global() -> Result<()> {
     for bs in DEFAULT_BOOTSTRAP {
-        dbg!(&bs);
         for addr in dbg!(bs.to_socket_addrs().unwrap()) {
             let rpc = RpcDhtBuilder::default().add_bootstrap_node(addr)?.build()?;
             let rec = rpc.ping(&addr).await?;
@@ -48,13 +49,26 @@ async fn ping_global() -> Result<()> {
     Ok(())
 }
 
+const DEFAULT_KBUCKET_PENDING_TIMEOUT_SECS: u64 = 300;
+
 #[tokio::test]
 async fn bootstrap_global() -> Result<()> {
     for bs in DEFAULT_BOOTSTRAP {
-        for addr in dbg!(bs.to_socket_addrs().unwrap()) {
-            let rpc = RpcDhtBuilder::default().add_bootstrap_node(addr)?.build()?;
+        for addr in bs.to_socket_addrs().unwrap() {
+            let id = thirty_two_random_bytes();
+
+            let key = KeyBytes::new(id);
+            let kbuckets = KBucketsTable::new(
+                key,
+                Duration::from_secs(DEFAULT_KBUCKET_PENDING_TIMEOUT_SECS),
+            );
+            let mut rpc = RpcDhtBuilder::default()
+                .id(id)
+                .add_bootstrap_node(addr)?
+                .kbuckets(kbuckets)
+                .build()?;
             let rec = rpc.bootstrap().await?;
-            dbg!(rec);
+            //dbg!(rec);
         }
     }
     Ok(())
@@ -183,8 +197,12 @@ fn test_decode_reply() -> Result<()> {
         99, 67, 172, 93, 32, 219, 164, 126, 161, 182, 52, 31, 147, 41, 3, 180, 132, 105, 69, 62, 1,
         127, 0, 0, 1, 193, 153,
     ];
+    let _id = [
+        233, 110, 1, 70, 163, 62, 2, 41, 135, 254, 37, 108, 99, 67, 172, 93, 32, 219, 164, 126,
+        161, 182, 52, 31, 147, 41, 3, 180, 132, 105, 69, 62,
+    ];
     let from = Addr {
-        id: None,
+        id: Some(_id.clone().try_into().unwrap()),
         host: HOST,
         port: BOOTSTRAP_PORT,
     };
@@ -195,10 +213,6 @@ fn test_decode_reply() -> Result<()> {
         host: HOST,
         port: 39361,
     };
-    let _id = [
-        233, 110, 1, 70, 163, 62, 2, 41, 135, 254, 37, 108, 99, 67, 172, 93, 32, 219, 164, 126,
-        161, 182, 52, 31, 147, 41, 3, 180, 132, 105, 69, 62,
-    ];
     let token: Option<[u8; 32]> = None;
     let closer_nodes: Vec<Addr> = vec![Addr {
         id: None,
@@ -216,7 +230,7 @@ fn test_decode_reply() -> Result<()> {
     let mut og_from = from.clone();
     let result = decode_reply(&state_buff, from, &mut state)?;
 
-    og_from.id = result.from.id.clone();
+    //og_from.id = result.from.id.clone();
     let expected = Reply {
         tid,
         rtt: 0,
@@ -228,5 +242,237 @@ fn test_decode_reply() -> Result<()> {
         value,
     };
     assert_eq!(result, expected);
+    Ok(())
+}
+
+#[test]
+fn test_validate_id() -> Result<()> {
+    /*
+    let id: [u8; 32] = [
+        128, 153, 111, 213, 115, 62, 11, 125, 92, 62, 223, 183, 3, 135, 211, 39, 152, 41, 73, 55,
+        160, 113, 55, 48, 114, 90, 50, 44, 201, 131, 192, 94,
+    ];
+    let from = Addr {
+        id: None,
+        host: Ipv4Addr::new(188, 166, 28, 20),
+        port: 60692,
+    };
+    */
+
+    let id: [u8; 32] = [
+        84, 212, 185, 198, 68, 16, 72, 6, 31, 128, 207, 105, 86, 76, 238, 70, 165, 115, 10, 223,
+        205, 89, 251, 230, 192, 86, 187, 73, 175, 119, 21, 70,
+    ];
+    let from: Addr = Addr {
+        id: None,
+        host: Ipv4Addr::new(2, 0, 194, 73),
+        port: 25432,
+    };
+    assert!(validate_id(&id, &from).is_some());
+    Ok(())
+}
+
+#[test]
+fn test_decode_reply2() -> Result<()> {
+    let id: [u8; 32] = [
+        150, 215, 52, 186, 21, 138, 59, 143, 151, 102, 157, 243, 44, 164, 119, 219, 83, 170, 212,
+        81, 106, 47, 82, 219, 19, 156, 62, 133, 43, 118, 112, 239,
+    ];
+
+    let from = Addr {
+        id: None,
+        host: Ipv4Addr::new(194, 113, 75, 189),
+        port: 55922,
+    };
+    let buff: Vec<u8> = vec![
+        19, 1, 255, 87, 23, 136, 216, 2, 190, 175, 150, 215, 52, 186, 21, 138, 59, 143, 151, 102,
+        157, 243, 44, 164, 119, 219, 83, 170, 212, 81, 106, 47, 82, 219, 19, 156, 62, 133, 43, 118,
+        112, 239,
+    ];
+
+    let reply = Reply {
+        tid: 22527,
+        rtt: 0,
+        from: Addr {
+            id: Some(id.to_vec()),
+            host: Ipv4Addr::new(194, 113, 75, 189),
+            port: 55922,
+        },
+        to: Addr {
+            id: None,
+            host: Ipv4Addr::new(23, 136, 216, 2),
+            port: 44990,
+        },
+        token: None,
+        closer_nodes: None,
+        error: 0,
+        value: None,
+    };
+
+    let mut state = State::new_with_start_and_end(1, buff.len());
+    let result = decode_reply(&buff, from, &mut state)?;
+    dbg!(&result.from.id);
+    assert_eq!(result, reply);
+
+    Ok(())
+}
+#[test]
+fn test_decode_reply3() -> Result<()> {
+    let id: [u8; 32] = [
+        225, 49, 134, 54, 15, 155, 254, 45, 250, 31, 96, 115, 173, 142, 30, 238, 191, 178, 191,
+        181, 97, 47, 89, 170, 82, 69, 188, 119, 101, 238, 137, 168,
+    ];
+
+    let host = Ipv4Addr::new(188, 166, 28, 20);
+    let port = 33041;
+    let from = Addr {
+        id: None,
+        host,
+        port,
+    };
+    let buff: Vec<u8> = vec![
+        19, 5, 255, 124, 74, 101, 11, 68, 57, 146, 225, 49, 134, 54, 15, 155, 254, 45, 250, 31, 96,
+        115, 173, 142, 30, 238, 191, 178, 191, 181, 97, 47, 89, 170, 82, 69, 188, 119, 101, 238,
+        137, 168, 20, 188, 166, 28, 20, 206, 234, 138, 68, 147, 8, 169, 223, 188, 166, 28, 20, 43,
+        213, 170, 187, 185, 104, 2, 132, 188, 166, 28, 20, 67, 183, 188, 166, 28, 20, 179, 213,
+        188, 166, 28, 20, 104, 149, 188, 166, 28, 20, 157, 178, 188, 166, 28, 20, 78, 217, 188,
+        166, 28, 20, 79, 195, 188, 166, 28, 20, 188, 182, 103, 55, 9, 56, 73, 194, 188, 166, 28,
+        20, 149, 130, 188, 166, 28, 20, 39, 206, 188, 166, 28, 20, 221, 216, 138, 68, 147, 8, 211,
+        223, 188, 166, 28, 20, 230, 156, 188, 166, 28, 20, 137, 194, 188, 166, 28, 20, 73, 194,
+        176, 9, 42, 203, 214, 211,
+    ];
+    let closer_nodes = vec![
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 60110,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(138, 68, 147, 8),
+            port: 57257,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 54571,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(170, 187, 185, 104),
+            port: 33794,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 46915,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 54707,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 38248,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 45725,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 55630,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 49999,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 46780,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(103, 55, 9, 56),
+            port: 49737,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 33429,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 52775,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 55517,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(138, 68, 147, 8),
+            port: 57299,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 40166,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 49801,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(188, 166, 28, 20),
+            port: 49737,
+        },
+        Addr {
+            id: None,
+            host: Ipv4Addr::new(176, 9, 42, 203),
+            port: 54230,
+        },
+    ];
+
+    let reply = Reply {
+        tid: 31999,
+        rtt: 0,
+        from: Addr {
+            id: Some(id.to_vec()),
+            host,
+            port,
+        },
+        to: Addr {
+            id: None,
+            host: Ipv4Addr::new(74, 101, 11, 68),
+            port: 37433,
+        },
+        token: None,
+        closer_nodes: Some(closer_nodes),
+        error: 0,
+        value: None,
+    };
+
+    let mut state = State::new_with_start_and_end(1, buff.len());
+    let result = decode_reply(&buff, from, &mut state)?;
+
+    let mut rep2 = reply.clone();
+    let mut res2 = result.clone();
+    rep2.closer_nodes = None;
+    res2.closer_nodes = None;
+    assert_eq!(res2, rep2);
+
+    assert_eq!(result, reply);
+
     Ok(())
 }
