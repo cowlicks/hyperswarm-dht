@@ -481,15 +481,6 @@ fn test_just_reply_buff() -> Result<()> {
         136, 243, 5, 20, 80, 215,
     ];
     let mut state = State::new_with_start_and_end(1, buff.len());
-    let res = decode_reply(&buff, from, &mut state)?;
-    Ok(())
-}
-#[test]
-fn foo() -> Result<()> {
-    let from = Addr {
-        id: None,
-        host: Ipv4Addr::new(2, 0, 194, 73),
-        port: 25432,
-    };
+    let _ = decode_reply(&buff, from, &mut state)?;
     Ok(())
 }

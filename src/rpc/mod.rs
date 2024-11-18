@@ -25,7 +25,7 @@ use crate::{
     kbucket::{self, Entry, KBucketsTable, Key, KeyBytes, NodeStatus, K_VALUE},
     peers::PeersEncoding,
     rpc::{
-        io::{IoConfig, IoHandler, IoHandlerEvent, MessageEvent, VERSION},
+        io::{IoConfig, IoHandler, IoHandlerEvent},
         jobs::PeriodicJob,
         query::{
             table::PeerState, CommandQuery, CommandQueryResponse, QueryConfig, QueryEvent, QueryId,
@@ -653,7 +653,7 @@ impl RpcDht {
         }
     }
 
-    fn on_ping_nat(&mut self, mut msg: Message, mut peer: Peer) {
+    fn on_ping_nat(&mut self, mut _msg: Message, mut _peer: Peer) {
         /* JS does this
         // check if the other side can receive a message to their other socket
         case PING_NAT: {
