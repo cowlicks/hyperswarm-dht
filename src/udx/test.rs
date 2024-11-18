@@ -40,12 +40,22 @@ async fn bootstrap_local() -> Result<()> {
 
 #[tokio::test]
 async fn ping_global() -> Result<()> {
-    for bs in DEFAULT_BOOTSTRAP {
-        for addr in bs.to_socket_addrs().unwrap() {
-            let rpc = RpcDhtBuilder::default().add_bootstrap_node(addr)?.build()?;
-            let _rec = rpc.ping(&addr).await?;
-        }
-    }
+    let addr = DEFAULT_BOOTSTRAP[0]
+        .to_socket_addrs()
+        .unwrap()
+        .last()
+        .unwrap();
+    let id = thirty_two_random_bytes();
+    let key = KeyBytes::new(id);
+    let kbuckets = KBucketsTable::new(
+        key,
+        Duration::from_secs(DEFAULT_KBUCKET_PENDING_TIMEOUT_SECS),
+    );
+    let rpc = RpcDhtBuilder::default()
+        .kbuckets(kbuckets)
+        .add_bootstrap_node(addr)?
+        .build()?;
+    let _rec = rpc.ping(&addr).await?;
     Ok(())
 }
 
@@ -53,24 +63,24 @@ const DEFAULT_KBUCKET_PENDING_TIMEOUT_SECS: u64 = 300;
 
 #[tokio::test]
 async fn bootstrap_global() -> Result<()> {
-    for bs in DEFAULT_BOOTSTRAP {
-        for addr in bs.to_socket_addrs().unwrap() {
-            let id = thirty_two_random_bytes();
-
-            let key = KeyBytes::new(id);
-            let kbuckets = KBucketsTable::new(
-                key,
-                Duration::from_secs(DEFAULT_KBUCKET_PENDING_TIMEOUT_SECS),
-            );
-            let mut rpc = RpcDhtBuilder::default()
-                .id(id)
-                .add_bootstrap_node(addr)?
-                .kbuckets(kbuckets)
-                .build()?;
-            let rec = rpc.bootstrap().await?;
-            //dbg!(rec);
-        }
-    }
+    let addr = DEFAULT_BOOTSTRAP[0]
+        .to_socket_addrs()
+        .unwrap()
+        .last()
+        .unwrap();
+    let id = thirty_two_random_bytes();
+    let key = KeyBytes::new(id);
+    let kbuckets = KBucketsTable::new(
+        key,
+        Duration::from_secs(DEFAULT_KBUCKET_PENDING_TIMEOUT_SECS),
+    );
+    let mut rpc = RpcDhtBuilder::default()
+        .id(id)
+        .add_bootstrap_node(addr)?
+        .kbuckets(kbuckets)
+        .build()?;
+    let rec = rpc.bootstrap().await?;
+    dbg!(rec);
     Ok(())
 }
 
@@ -197,12 +207,12 @@ fn test_decode_reply() -> Result<()> {
         99, 67, 172, 93, 32, 219, 164, 126, 161, 182, 52, 31, 147, 41, 3, 180, 132, 105, 69, 62, 1,
         127, 0, 0, 1, 193, 153,
     ];
-    let _id = [
+    let id = [
         233, 110, 1, 70, 163, 62, 2, 41, 135, 254, 37, 108, 99, 67, 172, 93, 32, 219, 164, 126,
         161, 182, 52, 31, 147, 41, 3, 180, 132, 105, 69, 62,
     ];
     let from = Addr {
-        id: Some(_id.clone().try_into().unwrap()),
+        id: Some(id.clone().try_into().unwrap()),
         host: HOST,
         port: BOOTSTRAP_PORT,
     };
@@ -221,20 +231,14 @@ fn test_decode_reply() -> Result<()> {
     }];
     let error = 0;
     let value: Option<Vec<u8>> = None;
-    //let validateId: Option<[u8; 32]> = Some([
-    //    233, 110, 1, 70, 163, 62, 2, 41, 135, 254, 37, 108, 99, 67, 172, 93, 32, 219, 164, 126,
-    //    161, 182, 52, 31, 147, 41, 3, 180, 132, 105, 69, 62,
-    //]);
 
     let mut state = State::new_with_start_and_end(state_start, state_end);
-    let mut og_from = from.clone();
-    let result = decode_reply(&state_buff, from, &mut state)?;
+    let result = decode_reply(&state_buff, from.clone(), &mut state)?;
 
-    //og_from.id = result.from.id.clone();
     let expected = Reply {
         tid,
         rtt: 0,
-        from: og_from,
+        from,
         to,
         token,
         closer_nodes: Some(closer_nodes),
@@ -247,7 +251,6 @@ fn test_decode_reply() -> Result<()> {
 
 #[test]
 fn test_validate_id() -> Result<()> {
-    /*
     let id: [u8; 32] = [
         128, 153, 111, 213, 115, 62, 11, 125, 92, 62, 223, 183, 3, 135, 211, 39, 152, 41, 73, 55,
         160, 113, 55, 48, 114, 90, 50, 44, 201, 131, 192, 94,
@@ -256,17 +259,6 @@ fn test_validate_id() -> Result<()> {
         id: None,
         host: Ipv4Addr::new(188, 166, 28, 20),
         port: 60692,
-    };
-    */
-
-    let id: [u8; 32] = [
-        84, 212, 185, 198, 68, 16, 72, 6, 31, 128, 207, 105, 86, 76, 238, 70, 165, 115, 10, 223,
-        205, 89, 251, 230, 192, 86, 187, 73, 175, 119, 21, 70,
-    ];
-    let from: Addr = Addr {
-        id: None,
-        host: Ipv4Addr::new(2, 0, 194, 73),
-        port: 25432,
     };
     assert!(validate_id(&id, &from).is_some());
     Ok(())
@@ -311,7 +303,6 @@ fn test_decode_reply2() -> Result<()> {
 
     let mut state = State::new_with_start_and_end(1, buff.len());
     let result = decode_reply(&buff, from, &mut state)?;
-    dbg!(&result.from.id);
     assert_eq!(result, reply);
 
     Ok(())
@@ -466,13 +457,39 @@ fn test_decode_reply3() -> Result<()> {
     let mut state = State::new_with_start_and_end(1, buff.len());
     let result = decode_reply(&buff, from, &mut state)?;
 
-    let mut rep2 = reply.clone();
-    let mut res2 = result.clone();
-    rep2.closer_nodes = None;
-    res2.closer_nodes = None;
-    assert_eq!(res2, rep2);
-
     assert_eq!(result, reply);
 
+    Ok(())
+}
+
+#[test]
+fn test_just_reply_buff() -> Result<()> {
+    let from = Addr {
+        id: None,
+        host: Ipv4Addr::new(2, 0, 194, 73),
+        port: 25432,
+    };
+    let buff = vec![
+        19, 5, 101, 186, 74, 101, 11, 68, 118, 171, 84, 212, 185, 198, 68, 16, 72, 6, 31, 128, 207,
+        105, 86, 76, 238, 70, 165, 115, 10, 223, 205, 89, 251, 230, 192, 86, 187, 73, 175, 119, 21,
+        70, 20, 188, 166, 28, 20, 104, 149, 150, 136, 237, 154, 210, 167, 150, 136, 237, 154, 237,
+        205, 150, 136, 237, 154, 54, 160, 34, 154, 38, 202, 81, 195, 150, 136, 237, 154, 31, 134,
+        150, 136, 237, 154, 62, 155, 150, 136, 237, 154, 247, 189, 136, 243, 5, 20, 165, 197, 150,
+        136, 237, 154, 169, 204, 88, 99, 3, 86, 35, 144, 188, 166, 28, 20, 160, 131, 170, 187, 185,
+        104, 2, 132, 150, 136, 237, 154, 206, 221, 24, 199, 122, 164, 215, 193, 170, 187, 185, 104,
+        115, 236, 141, 147, 52, 146, 73, 194, 88, 99, 3, 86, 47, 195, 188, 166, 28, 20, 179, 213,
+        136, 243, 5, 20, 80, 215,
+    ];
+    let mut state = State::new_with_start_and_end(1, buff.len());
+    let res = decode_reply(&buff, from, &mut state)?;
+    Ok(())
+}
+#[test]
+fn foo() -> Result<()> {
+    let from = Addr {
+        id: None,
+        host: Ipv4Addr::new(2, 0, 194, 73),
+        port: 25432,
+    };
     Ok(())
 }

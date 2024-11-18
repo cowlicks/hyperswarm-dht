@@ -98,6 +98,7 @@ pub struct RpcDht {
     bootstrap_nodes: Vec<SocketAddr>,
     #[builder(default = "Self::default_io()?")]
     io: Io,
+    // TODO make this automatically set using the id
     kbuckets: KBucketsTable<KeyBytes, Addr>,
 }
 
