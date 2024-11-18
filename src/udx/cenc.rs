@@ -158,7 +158,7 @@ pub fn decode_request(buff: &[u8], mut from: Addr, state: &mut State) -> Result<
     })
 }
 
-fn validate_id(id: &[u8; ID_SIZE], from: &Addr) -> Option<[u8; ID_SIZE]> {
+pub(crate) fn validate_id(id: &[u8; ID_SIZE], from: &Addr) -> Option<[u8; ID_SIZE]> {
     if let Ok(result) = calculate_id(from) {
         if *id == result {
             return Some(*id);
