@@ -69,7 +69,7 @@ pub mod udx;
 const EPH_AFTER: u64 = 1000 * 60 * 20;
 
 /// The publicly available hyperswarm DHT addresses
-pub const DEFAULT_BOOTSTRAP: [&str; 6] = [
+pub const DEFAULT_BOOTSTRAP: [&str; 3] = [
     "node1.hyperdht.org:49737",
     "node2.hyperdht.org:49737",
     "node3.hyperdht.org:49737",
