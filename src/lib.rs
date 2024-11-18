@@ -102,6 +102,8 @@ pub enum Error {
     RecvError(#[from] RecvError),
     #[error("AddrParseError: {0}")]
     AddrParseError(#[from] AddrParseError),
+    #[error("Requests must have a 'to' field")]
+    RequestRequiresToField,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

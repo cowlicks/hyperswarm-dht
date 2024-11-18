@@ -117,7 +117,7 @@ async fn test_ping() -> Result<()> {
     let sock = UdxSocket::bind("127.0.0.1:0")?;
     let io = Io::new()?;
     let ping_req = io.create_ping(&BOOTSTRAP_ADDR);
-    let buff = ping_req.encode_request(&io, false)?;
+    let buff = ping_req.encode(&io, false)?;
     println!("{buff:?}");
     //ping_req.en
     let sock_addr: SocketAddr = format!("{HOST}:{BOOTSTRAP_PORT}").parse().unwrap();
@@ -137,7 +137,7 @@ async fn test_encode_buffer() -> Result<()> {
     let req = mk_request();
     let io = Io::new()?;
 
-    let res = req.encode_request(&io, false)?;
+    let res = req.encode(&io, false)?;
     assert_eq!(res, expected_buffer);
     Ok(())
 }

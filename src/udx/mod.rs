@@ -21,11 +21,7 @@ mod io;
 #[cfg(test)]
 mod test;
 
-/**
- * from: https://github.com/holepunchto/dht-rpc/blob/bfa84ec5eef4cf405ab239b03ab733063d6564f2/lib/io.js#L424-L453
-*/
-
-// TODO in js this is de/encoded with c.uint which is for a variable sized unsigned integer.
+/// TODO in js this is de/encoded with c.uint which is for a variable sized unsigned integer.
 // but it is always one byte. We use a u8 instead of a usize here. So there is a limit on 256
 // commands.
 #[derive(Debug, Clone, PartialEq)]

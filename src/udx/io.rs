@@ -6,9 +6,14 @@ use std::sync::{Arc, RwLock};
 use std::{
     collections::BTreeMap,
     net::SocketAddr,
+    pin::Pin,
     sync::atomic::{AtomicU16, Ordering},
+    task::Poll,
 };
+
+use futures::{Sink, Stream};
 use tokio::sync::{
+    mpsc::{self, UnboundedReceiver, UnboundedSender},
     oneshot::{channel, Receiver, Sender},
     RwLock as TRwLock,
 };
@@ -36,7 +41,13 @@ pub struct Reply {
     pub value: Option<Vec<u8>>,
 }
 
-#[derive(Debug, PartialEq)]
+impl Reply {
+    fn encode(&self) -> Result<Vec<u8>> {
+        todo!()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Request {
     pub tid: u16,
     pub from: Option<Addr>,
@@ -74,7 +85,7 @@ impl Request {
     fn get_table_id(&self) -> [u8; 32] {
         todo!()
     }
-    pub fn encode_request(&self, io: &Io, is_server_socket: bool) -> Result<Vec<u8>> {
+    pub fn encode(&self, io: &Io, is_server_socket: bool) -> Result<Vec<u8>> {
         // this useses...
         // io.ephemeral
         // is_server_socket
@@ -196,8 +207,7 @@ impl Request {
             self.token
                 .as_ref()
                 .map(|x| pretty_hash::fmt(x).unwrap())
-                .unwrap_or("null".to_string())
-                .to_string(),
+                .unwrap_or("null".to_string()),
             self.command,
             self.target
                 .as_ref()
@@ -215,31 +225,126 @@ impl Request {
 }
 
 type Inflight = Arc<RwLock<BTreeMap<u16, (Sender<Reply>, Request)>>>;
+
+impl Stream for Io {
+    type Item = Message;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        Pin::new(&mut self.stream_rx).poll_recv(cx)
+    }
+}
+
+impl Sink<Message> for Io {
+    type Error = crate::Error;
+
+    fn poll_ready(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::result::Result<(), Self::Error>> {
+        // we were born ready to SEND
+        Poll::Ready(Ok(()))
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: Message) -> Result<()> {
+        match item {
+            Message::Request(request) => {
+                // Encode and send the request
+                let buff = request.encode(&self, false)?;
+                let to = request.to.as_ref().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "Request missing destination",
+                    )
+                })?;
+                let socket_addr = SocketAddr::from(to);
+
+                // Store request in inflight if it needs a response
+                let (tx, _rx) = channel();
+                self.inflight
+                    .write()
+                    .unwrap()
+                    .insert(request.tid, (tx, request));
+
+                // Send the encoded request
+                let socket = self.socket.clone();
+                tokio::spawn(async move {
+                    socket.read().await.send(socket_addr, &buff);
+                });
+
+                Ok(())
+            }
+            Message::Reply(_reply) => {
+                // TODO: Implement reply encoding and sending
+                // This would be similar to request handling but with reply.encode_reply()
+                todo!("Implement reply sending")
+            }
+        }
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::result::Result<(), Self::Error>> {
+        todo!()
+    }
+
+    fn poll_close(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::result::Result<(), Self::Error>> {
+        todo!()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    Request(Request),
+    Reply(Reply),
+}
+
 #[derive(Debug)]
 pub struct Io {
     tid: AtomicU16,
     ephemeral: bool,
     socket: Arc<TRwLock<UdxSocket>>,
     inflight: Inflight,
+    stream_rx: UnboundedReceiver<Message>,
+    stream_tx: UnboundedSender<Message>,
 }
-
-pub enum Message {
-    Request(Request),
-    Reply(Reply),
-}
-
 impl Io {
     pub fn new() -> Result<Self> {
         let socket = Arc::new(TRwLock::new(UdxSocket::bind("0.0.0.0:0")?));
         let recv_socket = socket.clone();
         let inflight: Inflight = Default::default();
         let recv_inflight = inflight.clone();
+        // Create channel for Stream implementation
+        let (stream_tx, stream_rx) = mpsc::unbounded_channel();
+        let loop_stream_tx = stream_tx.clone();
         tokio::spawn(async move {
             loop {
                 // TODO add timeout so rw is not locked forever
                 let x = recv_socket.read().await.recv().await;
                 if let Ok((addr, buff)) = x {
-                    on_message(&recv_inflight, buff, addr)?
+                    if let Ok(message) = decode_message(buff, addr) {
+                        // Forward decoded message to stream
+                        if loop_stream_tx.send(message.clone()).is_err() {
+                            todo!()
+                        }
+                        match message {
+                            Message::Reply(reply) => {
+                                // Handle reply with existing inflight logic
+                                if let Some((sender, _)) =
+                                    recv_inflight.write().unwrap().remove(&reply.tid)
+                                {
+                                    let _ = sender.send(reply);
+                                }
+                            }
+                            Message::Request(_) => {} // Requests handled via the Stream
+                        }
+                    }
                 }
             }
             Ok::<(), crate::Error>(())
@@ -249,6 +354,8 @@ impl Io {
             ephemeral: true,
             socket,
             inflight,
+            stream_rx,
+            stream_tx,
         })
     }
     pub fn create_ping(&self, to: &Addr) -> Request {
@@ -265,16 +372,21 @@ impl Io {
 
     pub async fn send_find_node(&self, to: &Addr, target: &[u8; 32]) -> Result<Receiver<Reply>> {
         let req = self.create_find_node(to, target);
-        self.send(to, req).await
+        self.send(req).await
     }
     pub async fn send_ping(&self, to: &Addr) -> Result<Receiver<Reply>> {
         let req = self.create_ping(to);
-        self.send(to, req).await
+        self.send(req).await
     }
 
-    pub async fn send(&self, to: &Addr, request: Request) -> Result<Receiver<Reply>> {
-        let buff = request.encode_request(self, false)?;
-        let socket_addr = SocketAddr::from(to);
+    pub async fn send(&self, request: Request) -> Result<Receiver<Reply>> {
+        let buff = request.encode(self, false)?;
+        let socket_addr = SocketAddr::from(
+            request
+                .to
+                .as_ref()
+                .ok_or_else(|| crate::Error::RequestRequiresToField)?,
+        );
         let (tx, rx) = channel();
         self.inflight
             .write()
