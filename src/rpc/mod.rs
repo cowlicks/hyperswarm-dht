@@ -415,16 +415,6 @@ impl RpcDht {
         )
     }
 
-    pub fn holepunch(&mut self, peer: Peer) -> bool {
-        if peer.referrer.is_some() {
-            let id = self.queries.next_query_id();
-            self.io.query(Command::Holepunch, None, None, peer, id);
-            true
-        } else {
-            false
-        }
-    }
-
     pub fn query(
         &mut self,
         cmd: impl Into<Command>,
@@ -618,7 +608,7 @@ impl RpcDht {
             match cmd {
                 Command::Ping => self.on_ping(msg, peer),
                 Command::FindNode => self.on_findnode(msg, peer),
-                Command::Holepunch => self.on_holepunch(msg, peer),
+                Command::PingNat => self.on_ping_nat(msg, peer),
                 Command::Unknown(s) => self.on_command_req(ty, s, msg, peer),
             };
         } else {
@@ -663,29 +653,19 @@ impl RpcDht {
         }
     }
 
-    fn on_holepunch(&mut self, mut msg: Message, mut peer: Peer) {
-        if let Some(value) = msg.decode_holepunch() {
-            if value.to.is_some() {
-                if let Some(to) = value.decode_to_peer() {
-                    if to == peer.addr {
-                        // don't forward to self
-                        return;
-                    }
-                    msg.version = Some(VERSION);
-                    msg.id = self.io.msg_id();
-                    msg.to = Some(to.encode());
-                    msg.set_holepunch(&Holepunch::with_from(peer.encode()));
-                    self.io.send_message(MessageEvent::Response { msg, peer });
-                    return;
-                } else {
-                    return;
-                }
-            }
-            if let Some(from) = value.decode_from_peer() {
-                peer = Peer::from(from)
-            }
-            self.io.response(msg, None, None, peer)
+    fn on_ping_nat(&mut self, mut msg: Message, mut peer: Peer) {
+        /* JS does this
+        // check if the other side can receive a message to their other socket
+        case PING_NAT: {
+          if (req.value === null || req.value.byteLength < 2) return
+          const port = c.uint16.decode({ start: 0, end: 2, buffer: req.value })
+          if (port === 0) return
+          req.from.port = port
+          req.sendReply(0, null, false, false)
+          return
         }
+        */
+        todo!()
     }
 
     /// Reply to a custom command query.

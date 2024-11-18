@@ -254,11 +254,12 @@ impl Type {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Command {
     Ping,
+    PingNat,
     FindNode,
-    Holepunch,
     Unknown(String),
 }
 
+// TODO reorder to match enum
 impl Command {
     pub fn is_ping(&self) -> bool {
         matches!(self, Command::Ping)
@@ -267,8 +268,8 @@ impl Command {
     pub fn is_find_node(&self) -> bool {
         matches!(self, Command::FindNode)
     }
-    pub fn is_holepunch(&self) -> bool {
-        matches!(self, Command::Holepunch)
+    pub fn is_ping_nat(&self) -> bool {
+        matches!(self, Command::PingNat)
     }
 
     pub fn is_custom(&self, s: &str) -> bool {
@@ -282,7 +283,7 @@ impl Command {
 impl<T: AsRef<str>> From<T> for Command {
     fn from(s: T) -> Self {
         match s.as_ref() {
-            "_holepunch" => Command::Holepunch,
+            "_ping_nat" => Command::PingNat,
             "_find_node" => Command::FindNode,
             "_ping" => Command::Ping,
             s => Command::Unknown(s.to_string()),
@@ -295,7 +296,7 @@ impl fmt::Display for Command {
         match self {
             Command::Ping => f.write_str("_ping"),
             Command::FindNode => f.write_str("_find_node"),
-            Command::Holepunch => f.write_str("_holepunch"),
+            Command::PingNat => f.write_str("_ping_nat"),
             Command::Unknown(s) => f.write_str(s),
         }
     }
