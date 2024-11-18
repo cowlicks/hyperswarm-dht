@@ -1,8 +1,9 @@
 use crate::{
+    kbucket::{KBucketsTable, KeyBytes},
     udx::{
         cenc::{decode_reply, decode_request},
         io::{Io, Reply, Request},
-        Addr, Command, RpcDhtBuilder,
+        thirty_two_random_bytes, Addr, Command, RpcDhtBuilder,
     },
     Result, DEFAULT_BOOTSTRAP,
 };
@@ -28,7 +29,7 @@ const BOOTSTRAP_ADDR: Addr = Addr {
 async fn bootstrap_local() -> Result<()> {
     let hosts = ["127.0.0.1:10001"];
     for bs in hosts {
-        for addr in dbg!(bs.to_socket_addrs().unwrap()) {
+        for addr in bs.to_socket_addrs().unwrap() {
             let mut rpc = RpcDhtBuilder::default().add_bootstrap_node(addr)?.build()?;
             let rec = rpc.bootstrap().await?;
             dbg!(rec);
@@ -40,10 +41,9 @@ async fn bootstrap_local() -> Result<()> {
 #[tokio::test]
 async fn ping_global() -> Result<()> {
     for bs in DEFAULT_BOOTSTRAP {
-        for addr in dbg!(bs.to_socket_addrs().unwrap()) {
+        for addr in bs.to_socket_addrs().unwrap() {
             let rpc = RpcDhtBuilder::default().add_bootstrap_node(addr)?.build()?;
-            let rec = rpc.ping(&addr).await?;
-            dbg!(rec);
+            let _rec = rpc.ping(&addr).await?;
         }
     }
     Ok(())

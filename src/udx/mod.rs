@@ -1,13 +1,15 @@
 //! udx/dht-rpc internnals
 //!
 #![allow(unreachable_code, dead_code)]
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::fmt::Display;
 use std::future::IntoFuture;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
+use crate::kbucket::{Entry, KBucketsTable, KeyBytes};
 use crate::{udx::io::Io, Result};
 use io::Reply;
+use log::debug;
 use rand::{
     rngs::{OsRng, StdRng},
     RngCore, SeedableRng,
@@ -96,6 +98,7 @@ pub struct RpcDht {
     bootstrap_nodes: Vec<SocketAddr>,
     #[builder(default = "Self::default_io()?")]
     io: Io,
+    kbuckets: KBucketsTable<KeyBytes, Addr>,
 }
 
 impl RpcDhtBuilder {
@@ -111,14 +114,41 @@ impl RpcDhtBuilder {
     }
 }
 
+impl From<[u8; 32]> for KeyBytes {
+    fn from(value: [u8; 32]) -> Self {
+        Self::new(value)
+    }
+}
+
 impl RpcDht {
-    async fn bootstrap(&self) -> Result<Reply> {
+    async fn bootstrap(&mut self) -> Result<Reply> {
         let Some(node_addr) = self.bootstrap_nodes.last() else {
             panic!()
         };
         let to = Addr::from(node_addr);
         let receiver = self.io.send_find_node(&to, &self.id).await?;
-        Ok(receiver.into_future().await?)
+        let reply = receiver.into_future().await?;
+        self.add_node(&reply.from)?;
+        Ok(reply)
+    }
+
+    fn add_node(&mut self, peer: &Addr) -> Result<()> {
+        use crate::kbucket::InsertResult::*;
+        let Some(id) = peer.id.clone() else {
+            todo!("No peer.id: {peer:?}")
+        };
+        let kb: [u8; 32] = id.clone().try_into().unwrap();
+        let kb: KeyBytes = kb.into();
+        if let Entry::Absent(entry) = self.kbuckets.entry(&kb) {
+            match entry.insert(peer.clone(), crate::kbucket::NodeStatus::Connected) {
+                Inserted => debug!("Inserted [id = {id:?}] into kbuckets"),
+                Pending { .. } => debug!("Pending? [id = {id:?}]"),
+                Full => debug!("Bucket full [id = {id:?}] not added to kbuckets"),
+            }
+        } else {
+            todo!()
+        }
+        Ok(())
     }
 
     async fn ping(&self, addr: &SocketAddr) -> Result<Reply> {
