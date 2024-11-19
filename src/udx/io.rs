@@ -37,7 +37,7 @@ pub struct Reply {
     pub from: Addr,
     pub to: Addr,
     pub token: Option<[u8; 32]>,
-    pub closer_nodes: Option<Vec<Addr>>,
+    pub closer_nodes: Vec<Addr>,
     pub error: u8,
     pub value: Option<Vec<u8>>,
 }
@@ -59,9 +59,9 @@ impl Reply {
         if self.token.is_some() {
             state.add_end(32)?;
         }
-        if let Some(nodes) = &self.closer_nodes {
-            state.preencode_usize_var(&nodes.len())?;
-            for n in nodes {
+        if !self.closer_nodes.is_empty() {
+            state.preencode_usize_var(&self.closer_nodes.len())?;
+            for n in &self.closer_nodes {
                 state.preencode(n)?;
             }
         }
@@ -84,12 +84,7 @@ impl Reply {
         if self.token.is_some() {
             flags |= 1 << 1;
         }
-        if self
-            .closer_nodes
-            .as_ref()
-            .map(|x| !x.is_empty())
-            .unwrap_or(false)
-        {
+        if !self.closer_nodes.is_empty() {
             flags |= 1 << 2;
         }
         if self.error > 0 {
@@ -109,9 +104,9 @@ impl Reply {
         if let Some(t) = self.token {
             state.encode_fixed_32(&t, &mut buff)?;
         }
-        if let Some(nodes) = &self.closer_nodes {
-            state.encode_usize_var(&nodes.len(), &mut buff)?;
-            for n in nodes {
+        if !self.closer_nodes.is_empty() {
+            state.encode_usize_var(&self.closer_nodes.len(), &mut buff)?;
+            for n in &self.closer_nodes {
                 state.encode(n, &mut buff)?;
             }
         }

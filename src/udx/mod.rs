@@ -63,6 +63,7 @@ impl TryFrom<u8> for Command {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Addr {
+    // TODO change ot [u8; 32]
     pub id: Option<Vec<u8>>,
     pub host: Ipv4Addr,
     pub port: u16,

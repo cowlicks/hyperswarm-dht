@@ -241,7 +241,7 @@ fn test_decode_reply() -> Result<()> {
         from,
         to,
         token,
-        closer_nodes: Some(closer_nodes),
+        closer_nodes,
         error,
         value,
     };
@@ -296,7 +296,7 @@ fn test_decode_reply2() -> Result<()> {
             port: 44990,
         },
         token: None,
-        closer_nodes: None,
+        closer_nodes: vec![],
         error: 0,
         value: None,
     };
@@ -449,7 +449,7 @@ fn test_decode_reply3() -> Result<()> {
             port: 37433,
         },
         token: None,
-        closer_nodes: Some(closer_nodes),
+        closer_nodes,
         error: 0,
         value: None,
     };

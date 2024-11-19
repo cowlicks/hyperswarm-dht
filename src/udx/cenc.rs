@@ -201,10 +201,10 @@ pub fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Re
     let id = decode_fixed_32_flag(flags, 1, state, buff)?;
     let token = decode_fixed_32_flag(flags, 2, state, buff)?;
 
-    let closer_nodes: Option<Vec<Addr>> = if flags & 4 > 0 {
-        Some(decode_addr_array(state, buff)?)
+    let closer_nodes: Vec<Addr> = if flags & 4 > 0 {
+        decode_addr_array(state, buff)?
     } else {
-        None
+        vec![]
     };
 
     let error: u8 = if flags & 8 > 0 {
