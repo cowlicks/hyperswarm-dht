@@ -25,7 +25,7 @@ mod test;
 /// TODO in js this is de/encoded with c.uint which is for a variable sized unsigned integer.
 // but it is always one byte. We use a u8 instead of a usize here. So there is a limit on 256
 // commands.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Copy, Debug, Clone, PartialEq)]
 #[repr(u8)]
 pub enum Command {
     Ping = 0,
@@ -65,7 +65,7 @@ impl TryFrom<u8> for Command {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Addr {
     // TODO change ot [u8; 32]
-    pub id: Option<Vec<u8>>,
+    pub id: Option<[u8; 32]>,
     pub host: Ipv4Addr,
     pub port: u16,
 }

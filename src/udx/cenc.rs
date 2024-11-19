@@ -159,9 +159,7 @@ pub fn decode_request(buff: &[u8], mut from: Addr, state: &mut State) -> Result<
     };
 
     if let Some(id) = id {
-        if let Some(valid_id) = validate_id(&id, &from) {
-            from.id = valid_id.to_vec().into();
-        }
+        from.id = validate_id(&id, &from);
     }
 
     Ok(Request {
@@ -238,9 +236,7 @@ pub fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Re
     };
 
     if let Some(id) = id {
-        if let Some(valid_id) = validate_id(&id, &from) {
-            from.id = valid_id.to_vec().into();
-        }
+        from.id = validate_id(&id, &from);
     }
     Ok(Reply {
         tid,
@@ -279,7 +275,7 @@ pub enum MsgData {
 }
 
 impl RequestMsgData {
-    fn encode(&self) -> Result<Vec<u8>> {
+    pub fn encode(&self) -> Result<Vec<u8>> {
         let mut state = State::new();
         state.add_end(1 + 1 + 6 + 2)?;
 

@@ -10,7 +10,6 @@ use std::{
 };
 
 use tokio::sync::{
-    mpsc::{self, UnboundedReceiver, UnboundedSender},
     oneshot::{channel, Receiver, Sender},
     RwLock as TRwLock,
 };
@@ -30,7 +29,9 @@ use super::{
 pub struct Reply {
     pub tid: u16,
     pub rtt: usize,
+    // who sent reply
     pub from: Addr,
+    // who recieved it
     pub to: Addr,
     pub token: Option<[u8; 32]>,
     pub closer_nodes: Vec<Addr>,
@@ -46,9 +47,7 @@ impl Reply {
     fn from_data(from: &Addr, data: ReplyMsgData) -> Result<Self> {
         let mut new_from = from.clone();
         if let Some(id) = data.id {
-            if let Some(valid_id) = validate_id(&id, from) {
-                new_from.id = valid_id.to_vec().into();
-            }
+            new_from.id = validate_id(&id, from);
         }
         Ok(Reply {
             tid: data.tid,
@@ -78,74 +77,10 @@ impl Reply {
         table_id: &[u8; 32],
         ephemeral: bool,
         is_server_socket: bool,
+        token: bool,
     ) -> Result<Vec<u8>> {
         let id = !ephemeral && is_server_socket;
-        let mut state = State::new();
-        // (type | version) + flags + to + tid
-        state.add_end(1 + 1 + 6 + 2)?;
-        if id {
-            state.add_end(32)?;
-        }
-        if self.token.is_some() {
-            state.add_end(32)?;
-        }
-        if !self.closer_nodes.is_empty() {
-            state.preencode_usize_var(&self.closer_nodes.len())?;
-            for n in &self.closer_nodes {
-                state.preencode(n)?;
-            }
-        }
-        if self.error > 0 {
-            state.preencode(&self.error)?;
-        }
-        if let Some(v) = &self.value {
-            state.preencode(v)?;
-        }
-
-        let mut buff = state.create_buffer();
-        buff[state.start()] = RESPONSE_ID;
-        state.add_start(1)?;
-
-        let mut flags: u8 = 0;
-        if id {
-            flags |= 1 << 0;
-        }
-        if self.token.is_some() {
-            flags |= 1 << 1;
-        }
-        if !self.closer_nodes.is_empty() {
-            flags |= 1 << 2;
-        }
-        if self.error > 0 {
-            flags |= 1 << 3;
-        }
-        if self.value.is_some() {
-            flags |= 1 << 4;
-        }
-        buff[state.start()] = flags;
-
-        state.encode_u16(self.tid, &mut buff)?;
-        state.encode(&self.from, &mut buff)?;
-
-        if id {
-            state.encode_fixed_32(table_id, &mut buff)?;
-        }
-        if let Some(t) = self.token {
-            state.encode_fixed_32(&t, &mut buff)?;
-        }
-        if !self.closer_nodes.is_empty() {
-            state.encode_usize_var(&self.closer_nodes.len(), &mut buff)?;
-            for n in &self.closer_nodes {
-                state.encode(n, &mut buff)?;
-            }
-        }
-        if self.error > 0 {
-            state.encode(&self.error, &mut buff)?;
-        }
-        if let Some(v) = &self.value {
-            state.encode_fixed_32(v, &mut buff)?;
-        }
-        Ok(buff.into())
+        todo!()
     }
 }
 
@@ -170,9 +105,7 @@ impl Request {
     fn from_data(data: RequestMsgData, from: &Addr) -> Result<Self> {
         let mut new_from = from.clone();
         if let Some(id) = data.id {
-            if let Some(valid_id) = validate_id(&id, from) {
-                new_from.id = valid_id.to_vec().into();
-            }
+            new_from.id = validate_id(&id, from);
         }
         Ok(Request {
             tid: data.tid,
@@ -212,124 +145,23 @@ impl Request {
         todo!()
     }
     pub fn encode(&self, io: &Io, is_server_socket: bool) -> Result<Vec<u8>> {
-        let id = !io.ephemeral && is_server_socket;
-        let mut state = State::new();
-        state.add_end(1 + 1 + 6 + 2)?;
-
-        if is_server_socket {
-            state.add_end(ID_SIZE)?;
-        }
-        if self.token.is_some() {
-            state.add_end(32)?;
-        }
-
-        let cmd = self.command.clone() as usize;
-        state.preencode_usize_var(&cmd)?;
-
-        if self.target.is_some() {
-            state.add_end(32)?;
-        }
-
-        if let Some(v) = &self.value {
-            state.preencode_buffer(v)?;
-        }
-
-        let mut buff = state.create_buffer();
-
-        buff[state.start()] = REQUEST_ID;
-        state.add_start(1)?;
-
-        let mut flags: u8 = 0;
-        if id {
-            flags |= 1 << 0;
-        }
-        if self.token.is_some() {
-            flags |= 1 << 1;
-        }
-        if self.internal {
-            flags |= 1 << 2;
-        }
-        if self.target.is_some() {
-            flags |= 1 << 3;
-        }
-        if self.value.is_some() {
-            flags |= 1 << 4;
-        }
-        buff[state.start()] = flags;
-        state.add_start(1)?;
-
-        state.encode_u16(self.tid, &mut buff)?;
-
-        let Some(to) = self.to.as_ref() else {
-            // Maybe Req should have *one* field for To/From that's just Addr
-            todo!()
+        let id = if !io.ephemeral && is_server_socket {
+            Some(self.get_table_id())
+        } else {
+            None
         };
-        state.encode(to, &mut buff)?;
 
-        if id {
-            state.encode_fixed_32(&self.get_table_id(), &mut buff)?;
+        RequestMsgData {
+            tid: self.tid,
+            to: self.to.clone().expect("todo rm to field?"),
+            id,
+            internal: self.internal,
+            token: self.token,
+            command: self.command,
+            target: self.target,
+            value: self.value.clone(),
         }
-        if let Some(t) = self.token {
-            // c.fixed32.encode(state, token)
-            state.encode_fixed_32(&t, &mut buff)?;
-        }
-
-        buff[state.start()] = self.command.clone() as u8;
-        state.add_start(1)?;
-
-        // c.uint.encode(state, this.command)
-        if let Some(t) = &self.target {
-            // c.fixed32.encode(state, this.target)
-            state.encode_fixed_32(t, &mut buff)?;
-        }
-        if let Some(v) = self.value.as_ref() {
-            state.encode_buffer(v, &mut buff)?;
-        }
-        println!(
-            "Request {{
-          flags = {{
-              id = {id},
-              token? = {},
-              internal = {},
-              target? = {},
-              value? = {}
-          }}
-          flags = {flags}
-          tid = {},
-          to = {:?},
-          table_id = TODO 
-          token = {},
-          command = {},
-          target = {},
-          value = {},
-        }}",
-            self.token.is_some(),
-            self.internal,
-            self.target.is_some(),
-            self.value.is_some(),
-            self.tid,
-            self.to
-                .as_ref()
-                .map(|x| SocketAddr::from(x).to_string())
-                .unwrap_or("null".to_string()),
-            //self.get_table_id(),
-            self.token
-                .as_ref()
-                .map(|x| pretty_hash::fmt(x).unwrap())
-                .unwrap_or("null".to_string()),
-            self.command,
-            self.target
-                .as_ref()
-                .map(|x| pretty_hash::fmt(x).unwrap())
-                .unwrap_or("null".to_string()),
-            self.value
-                .as_ref()
-                .map(|x| pretty_hash::fmt(x).unwrap())
-                .unwrap_or("null".to_string())
-        );
-
-        // use prettyhash
-        Ok(buff.into())
+        .encode()
     }
 }
 

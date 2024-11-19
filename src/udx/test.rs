@@ -285,7 +285,7 @@ fn test_decode_reply2() -> Result<()> {
         tid: 22527,
         rtt: 0,
         from: Addr {
-            id: Some(id.to_vec()),
+            id: Some(id),
             host: Ipv4Addr::new(194, 113, 75, 189),
             port: 55922,
         },
@@ -438,7 +438,7 @@ fn test_decode_reply3() -> Result<()> {
         tid: 31999,
         rtt: 0,
         from: Addr {
-            id: Some(id.to_vec()),
+            id: Some(id),
             host,
             port,
         },
