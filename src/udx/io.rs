@@ -357,8 +357,6 @@ pub struct Io {
     ephemeral: bool,
     socket: Arc<TRwLock<UdxSocket>>,
     inflight: Inflight,
-    stream_rx: UnboundedReceiver<Message>,
-    stream_tx: UnboundedSender<Message>,
 }
 
 impl Io {
@@ -367,19 +365,12 @@ impl Io {
         let recv_socket = socket.clone();
         let inflight: Inflight = Default::default();
         let recv_inflight = inflight.clone();
-        // Create channel for Stream implementation
-        let (stream_tx, stream_rx) = mpsc::unbounded_channel();
-        let loop_stream_tx = stream_tx.clone();
         tokio::spawn(async move {
             loop {
                 // TODO add timeout so rw is not locked forever
                 let x = recv_socket.read().await.recv().await;
                 if let Ok((addr, buff)) = x {
                     if let Ok(message) = decode_message(buff, addr) {
-                        // Forward decoded message to stream
-                        if loop_stream_tx.send(message.clone()).is_err() {
-                            todo!()
-                        }
                         match message {
                             Message::Reply(reply) => {
                                 // Handle reply with existing inflight logic
@@ -401,8 +392,6 @@ impl Io {
             ephemeral: true,
             socket,
             inflight,
-            stream_rx,
-            stream_tx,
         })
     }
 
