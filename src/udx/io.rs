@@ -26,7 +26,7 @@ use crate::{
 use compact_encoding::{CompactEncoding, State};
 
 use super::{
-    cenc::{decode_reply, decode_request, generic_hash, generic_hash_with_key},
+    cenc::{generic_hash, generic_hash_with_key, validate_id, ReplyMsgData, RequestMsgData},
     thirty_two_random_bytes, Addr, Command,
 };
 
@@ -43,6 +43,28 @@ pub struct Reply {
 }
 
 impl Reply {
+    pub fn decode(from: &Addr, buff: &[u8], state: &mut State) -> Result<Self> {
+        let data = ReplyMsgData::decode(buff, state)?;
+        Self::from_data(from, data)
+    }
+    fn from_data(from: &Addr, data: ReplyMsgData) -> Result<Self> {
+        let mut new_from = from.clone();
+        if let Some(id) = data.id {
+            if let Some(valid_id) = validate_id(&id, from) {
+                new_from.id = valid_id.to_vec().into();
+            }
+        }
+        Ok(Reply {
+            tid: data.tid,
+            rtt: 0,
+            from: new_from,
+            to: data.to,
+            token: data.token,
+            closer_nodes: data.closer_nodes,
+            error: data.error,
+            value: data.value,
+        })
+    }
     /// in js we use table_id if :
     /// `const id = this._io.ephemeral === false && socket === this._io.serverSocket`
     /// token is io.secrets(Req.from, 1)
@@ -135,7 +157,7 @@ impl Reply {
 pub struct Request {
     pub tid: u16,
     pub from: Option<Addr>,
-    // TODO remove this field
+    // TODO remove this field?
     pub to: Option<Addr>,
     pub token: Option<[u8; 32]>,
     pub internal: bool,
@@ -145,6 +167,29 @@ pub struct Request {
 }
 
 impl Request {
+    pub fn decode(from: &Addr, buff: &[u8], state: &mut State) -> Result<Self> {
+        let data = RequestMsgData::decode(buff, state);
+        Request::from_data(data?, from)
+    }
+    fn from_data(data: RequestMsgData, from: &Addr) -> Result<Self> {
+        let mut new_from = from.clone();
+        if let Some(id) = data.id {
+            if let Some(valid_id) = validate_id(&id, from) {
+                new_from.id = valid_id.to_vec().into();
+            }
+        }
+        Ok(Request {
+            tid: data.tid,
+            from: Some(new_from),
+            to: Some(data.to),
+            token: data.token,
+            internal: data.internal,
+            command: data.command,
+            target: data.target,
+            value: data.value,
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn new(
         tid: u16,
@@ -310,17 +355,6 @@ pub enum Message {
     Reply(Reply),
 }
 
-pub struct WireRequest {
-    ephemeral: bool,
-    is_server_socket: bool,
-    request: Request,
-}
-
-pub enum WireMessage {
-    Request(WireRequest),
-    Reply(Reply),
-}
-
 #[derive(Debug)]
 pub struct Io {
     tid: AtomicU16,
@@ -466,8 +500,8 @@ pub fn decode_message(buff: Vec<u8>, addr: SocketAddr) -> Result<Message> {
     let mut state = State::new_with_start_and_end(1, buff.len());
     let from = Addr::from(&addr);
     Ok(match buff[0] {
-        REQUEST_ID => Message::Request(decode_request(&buff, from, &mut state)?),
-        RESPONSE_ID => Message::Reply(decode_reply(&buff, from, &mut state)?),
+        REQUEST_ID => Message::Request(Request::decode(&from, &buff, &mut state)?),
+        RESPONSE_ID => Message::Reply(Reply::decode(&from, &buff, &mut state)?),
         _ => todo!("eror"),
     })
 }

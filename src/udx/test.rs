@@ -1,7 +1,6 @@
 use crate::{
     kbucket::{KBucketsTable, KeyBytes},
     udx::{
-        cenc::{decode_reply, decode_request},
         io::{Io, Reply, Request},
         thirty_two_random_bytes, Addr, Command, RpcDhtBuilder,
     },
@@ -182,7 +181,7 @@ fn test_decode_request() -> Result<()> {
     ];
 
     let mut state = State::new_with_start_and_end(state_start, state_end);
-    let res = decode_request(&buff, from.clone(), &mut state)?;
+    let res = Request::decode(&from, &buff, &mut state)?;
     from.id = res.from.as_ref().unwrap().id.clone();
     let expected = Request {
         tid,
@@ -233,7 +232,7 @@ fn test_decode_reply() -> Result<()> {
     let value: Option<Vec<u8>> = None;
 
     let mut state = State::new_with_start_and_end(state_start, state_end);
-    let result = decode_reply(&state_buff, from.clone(), &mut state)?;
+    let result = Reply::decode(&from, &state_buff, &mut state)?;
 
     let expected = Reply {
         tid,
@@ -302,7 +301,7 @@ fn test_decode_reply2() -> Result<()> {
     };
 
     let mut state = State::new_with_start_and_end(1, buff.len());
-    let result = decode_reply(&buff, from, &mut state)?;
+    let result = Reply::decode(&from, &buff, &mut state)?;
     assert_eq!(result, reply);
 
     Ok(())
@@ -455,7 +454,7 @@ fn test_decode_reply3() -> Result<()> {
     };
 
     let mut state = State::new_with_start_and_end(1, buff.len());
-    let result = decode_reply(&buff, from, &mut state)?;
+    let result = Reply::decode(&from, &buff, &mut state)?;
 
     assert_eq!(result, reply);
 
@@ -481,6 +480,6 @@ fn test_just_reply_buff() -> Result<()> {
         136, 243, 5, 20, 80, 215,
     ];
     let mut state = State::new_with_start_and_end(1, buff.len());
-    let _ = decode_reply(&buff, from, &mut state)?;
+    let _ = Reply::decode(&from, &buff, &mut state)?;
     Ok(())
 }

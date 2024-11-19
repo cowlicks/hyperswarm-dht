@@ -335,7 +335,7 @@ impl RequestMsgData {
         }
         Ok(buff.to_vec())
     }
-    fn decode(buff: &[u8], state: &mut State) -> Result<RequestMsgData> {
+    pub fn decode(buff: &[u8], state: &mut State) -> Result<RequestMsgData> {
         let flags = buff[state.start()];
         state.add_start(1)?;
 
@@ -451,7 +451,7 @@ impl ReplyMsgData {
         Ok(buff.into())
     }
 
-    fn decode(buff: &[u8], state: &mut State) -> Result<ReplyMsgData> {
+    pub fn decode(buff: &[u8], state: &mut State) -> Result<ReplyMsgData> {
         let flags = buff[state.start()];
         state.add_start(1)?;
 
