@@ -63,7 +63,7 @@ fn encode_ip(
 
 impl CompactEncoding<Addr> for State {
     fn preencode(&mut self, _value: &Addr) -> std::result::Result<usize, EncodingError> {
-        Ok(self.add_end(6)?)
+        self.add_end(6)
     }
 
     fn encode(

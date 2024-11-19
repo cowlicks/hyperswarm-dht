@@ -4,11 +4,12 @@ use rand::Rng;
 #[allow(unreachable_code, dead_code)]
 use std::sync::{Arc, RwLock};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
+    future::Future,
     net::SocketAddr,
     pin::Pin,
     sync::atomic::{AtomicU16, Ordering},
-    task::Poll,
+    task::{Context, Poll},
 };
 
 use futures::{Sink, Stream};
@@ -42,8 +43,85 @@ pub struct Reply {
 }
 
 impl Reply {
-    fn encode(&self) -> Result<Vec<u8>> {
-        todo!()
+    fn encode(
+        &self,
+        table_id: &[u8; 32],
+        ephemeral: bool,
+        is_server_socket: bool,
+    ) -> Result<Vec<u8>> {
+        let id = !ephemeral && is_server_socket;
+        let mut state = State::new();
+        // (type | version) + flags + to + tid
+        state.add_end(1 + 1 + 6 + 2)?;
+        if id {
+            state.add_end(32)?;
+        }
+        if self.token.is_some() {
+            state.add_end(32)?;
+        }
+        if let Some(nodes) = &self.closer_nodes {
+            state.preencode_usize_var(&nodes.len())?;
+            for n in nodes {
+                state.preencode(n)?;
+            }
+        }
+        if self.error > 0 {
+            state.preencode(&self.error)?;
+        }
+        if let Some(v) = &self.value {
+            state.preencode(v)?;
+        }
+
+        let mut buff = state.create_buffer();
+        buff[state.start()] = RESPONSE_ID;
+        state.add_start(1)?;
+
+        let mut flags: u8 = 0;
+
+        if id {
+            flags |= 1 << 0;
+        }
+        if self.token.is_some() {
+            flags |= 1 << 1;
+        }
+        if self
+            .closer_nodes
+            .as_ref()
+            .map(|x| !x.is_empty())
+            .unwrap_or(false)
+        {
+            flags |= 1 << 2;
+        }
+        if self.error > 0 {
+            flags |= 1 << 3;
+        }
+        if self.value.is_some() {
+            flags |= 1 << 4;
+        }
+        buff[state.start()] = flags;
+
+        state.encode_u16(self.tid, &mut buff)?;
+        state.encode(&self.from, &mut buff)?;
+
+        if id {
+            state.encode_fixed_32(table_id, &mut buff)?;
+        }
+        if let Some(t) = self.token {
+            state.encode_fixed_32(&t, &mut buff)?;
+        }
+        if let Some(nodes) = &self.closer_nodes {
+            state.encode_usize_var(&nodes.len(), &mut buff)?;
+            for n in nodes {
+                state.encode(n, &mut buff)?;
+            }
+        }
+        if self.error > 0 {
+            state.encode(&self.error, &mut buff)?;
+        }
+        if let Some(v) = &self.value {
+            state.encode_fixed_32(&v, &mut buff)?;
+        }
+        Ok(buff.into())
     }
 }
 
