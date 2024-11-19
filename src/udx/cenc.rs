@@ -100,7 +100,7 @@ pub(crate) fn calculate_id(from: &Addr) -> Result<[u8; ID_SIZE]> {
     generic_hash(&from_buff)
 }
 
-fn generic_hash(input: &[u8]) -> Result<[u8; HASH_SIZE]> {
+pub(crate) fn generic_hash(input: &[u8]) -> Result<[u8; HASH_SIZE]> {
     let mut out = [0; HASH_SIZE];
     let ret = unsafe {
         libsodium_sys::crypto_generichash(
@@ -110,6 +110,24 @@ fn generic_hash(input: &[u8]) -> Result<[u8; HASH_SIZE]> {
             input.len() as u64,
             std::ptr::null(),
             0,
+        )
+    };
+    if ret != 0 {
+        return Err(Error::LibSodiumGenericHashError(ret));
+    }
+    Ok(out)
+}
+
+pub(crate) fn generic_hash_with_key(input: &[u8], key: &[u8]) -> Result<[u8; HASH_SIZE]> {
+    let mut out = [0; HASH_SIZE];
+    let ret = unsafe {
+        libsodium_sys::crypto_generichash(
+            out.as_mut_ptr(),
+            out.len(),
+            input.as_ptr(),
+            input.len() as u64,
+            key.as_ptr(),
+            key.len(),
         )
     };
     if ret != 0 {

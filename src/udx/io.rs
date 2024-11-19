@@ -26,8 +26,8 @@ use crate::{
 use compact_encoding::{CompactEncoding, State};
 
 use super::{
-    cenc::{decode_reply, decode_request},
-    Addr, Command,
+    cenc::{decode_reply, decode_request, generic_hash, generic_hash_with_key},
+    thirty_two_random_bytes, Addr, Command,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -531,5 +531,37 @@ impl Sink<(Message, SocketAddr)> for UdxMessageStream {
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
         // No special cleanup needed
         Poll::Ready(Ok(()))
+    }
+}
+
+struct Secrets {
+    rotate_secrets: usize,
+    // NB starts null in js. Not initialized until token call.
+    // so my behavior diverges when drain called until token
+    // bc drain checks if secrets initialized
+    secrets: [[u8; 32]; 2],
+}
+
+impl Secrets {
+    fn new() -> Self {
+        Self {
+            rotate_secrets: 10,
+            secrets: [thirty_two_random_bytes(), thirty_two_random_bytes()],
+        }
+    }
+
+    fn drain(&mut self) -> Result<()> {
+        self.rotate_secrets -= 1;
+        if self.rotate_secrets == 0 {
+            self.rotate_secrets = 10;
+            let tmp = self.secrets[0];
+            self.secrets[0] = self.secrets[1];
+            self.secrets[1] = generic_hash(&tmp)?;
+        }
+        Ok(())
+    }
+
+    fn token(&self, addr: &Addr, secret_index: usize) -> Result<[u8; 32]> {
+        generic_hash_with_key(&addr.host.octets(), &self.secrets[secret_index])
     }
 }
