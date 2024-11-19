@@ -17,6 +17,7 @@ use rand::{
 
 mod cenc;
 mod io;
+mod stream;
 
 #[cfg(test)]
 mod test;

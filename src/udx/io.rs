@@ -4,15 +4,11 @@ use rand::Rng;
 #[allow(unreachable_code, dead_code)]
 use std::sync::{Arc, RwLock};
 use std::{
-    collections::{BTreeMap, VecDeque},
-    future::Future,
+    collections::BTreeMap,
     net::SocketAddr,
-    pin::Pin,
     sync::atomic::{AtomicU16, Ordering},
-    task::{Context, Poll},
 };
 
-use futures::{Sink, Stream};
 use tokio::sync::{
     mpsc::{self, UnboundedReceiver, UnboundedSender},
     oneshot::{channel, Receiver, Sender},
@@ -505,81 +501,6 @@ pub fn decode_message(buff: Vec<u8>, addr: SocketAddr) -> Result<Message> {
         _ => todo!("eror"),
     })
 }
-
-// Wrapper struct around UdxSocket that handles Messages
-pub struct UdxMessageStream {
-    socket: UdxSocket,
-    // Buffer for incoming messages that couldn't be processed immediately
-    recv_queue: VecDeque<(Message, SocketAddr)>,
-}
-
-impl UdxMessageStream {
-    pub fn new(socket: UdxSocket) -> Self {
-        Self {
-            socket,
-            recv_queue: VecDeque::new(),
-        }
-    }
-}
-
-impl Stream for UdxMessageStream {
-    type Item = Result<(Message, SocketAddr)>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // First check if we have any buffered messages
-        if let Some(msg) = self.recv_queue.pop_front() {
-            return Poll::Ready(Some(Ok(msg)));
-        }
-
-        // Try to receive data from the socket
-        let mut fut = self.socket.recv();
-        match Pin::new(&mut fut).poll(cx) {
-            Poll::Ready(Ok((addr, buff))) => {
-                // Try to decode the received message
-                match decode_message(buff, addr) {
-                    Ok(message) => Poll::Ready(Some(Ok((message, addr)))),
-                    Err(e) => Poll::Ready(Some(Err(e))),
-                }
-            }
-            Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e.into()))),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
-impl Sink<(Message, SocketAddr)> for UdxMessageStream {
-    type Error = crate::Error;
-
-    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
-        // UdxSocket's send is always ready as it's using UnboundedSender internally
-        Poll::Ready(Ok(()))
-    }
-
-    fn start_send(self: Pin<&mut Self>, item: (Message, SocketAddr)) -> Result<()> {
-        let (message, _addr) = item;
-
-        // Encode the message based on its type
-        let _buff = match &message {
-            Message::Request(req) => req.encode(todo!(), false)?, // You'll need to handle the io parameter appropriately
-            Message::Reply(_reply) => todo!("Implement reply encoding"),
-        };
-
-        // Send the encoded message
-        self.socket.send(_addr, &_buff);
-        Ok(())
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
-        // No buffering in UdxSocket, so no need to flush
-        Poll::Ready(Ok(()))
-    }
-
-    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
-        // No special cleanup needed
-        Poll::Ready(Ok(()))
-    }
-}
-
 struct Secrets {
     rotate_secrets: usize,
     // NB starts null in js. Not initialized until token call.

@@ -263,6 +263,21 @@ pub struct RequestMsgData {
     pub target: Option<[u8; 32]>,
     pub value: Option<Vec<u8>>,
 }
+pub struct ReplyMsgData {
+    pub tid: u16,
+    pub to: Addr,
+    pub id: Option<[u8; 32]>,
+    pub token: Option<[u8; 32]>,
+    pub closer_nodes: Vec<Addr>,
+    pub error: usize,
+    pub value: Option<Vec<u8>>,
+}
+
+pub enum MsgData {
+    Request(RequestMsgData),
+    Reply(ReplyMsgData),
+}
+
 impl RequestMsgData {
     fn encode(&self) -> Result<Vec<u8>> {
         let mut state = State::new();
@@ -368,16 +383,6 @@ impl RequestMsgData {
             value,
         })
     }
-}
-
-pub struct ReplyMsgData {
-    pub tid: u16,
-    pub to: Addr,
-    pub id: Option<[u8; 32]>,
-    pub token: Option<[u8; 32]>,
-    pub closer_nodes: Vec<Addr>,
-    pub error: usize,
-    pub value: Option<Vec<u8>>,
 }
 
 impl ReplyMsgData {
@@ -486,6 +491,20 @@ impl ReplyMsgData {
             closer_nodes,
             error,
             value,
+        })
+    }
+}
+
+impl MsgData {
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        todo!()
+    }
+    pub fn decode(buff: &[u8]) -> Result<MsgData> {
+        let mut state = State::new_with_start_and_end(1, buff.len());
+        Ok(match buff[0] {
+            REQUEST_ID => MsgData::Request(RequestMsgData::decode(buff, &mut state)?),
+            RESPONSE_ID => MsgData::Reply(ReplyMsgData::decode(buff, &mut state)?),
+            _ => todo!(),
         })
     }
 }
