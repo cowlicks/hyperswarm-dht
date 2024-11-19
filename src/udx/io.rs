@@ -139,6 +139,7 @@ pub struct Request {
 }
 
 impl Request {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         tid: u16,
         from: Option<Addr>,
@@ -164,22 +165,6 @@ impl Request {
         todo!()
     }
     pub fn encode(&self, io: &Io, is_server_socket: bool) -> Result<Vec<u8>> {
-        // this useses...
-        // io.ephemeral
-        // is_server_socket
-        //
-        // REQUEST_ID
-        // flags: {
-        //  id | token | internal | target | value
-        //  }
-        //  tid
-        //  to
-        //  table_id
-        //
-        //  token
-        //  command
-        //  target
-        //  value
         let id = !io.ephemeral && is_server_socket;
         let mut state = State::new();
         state.add_end(1 + 1 + 6 + 2)?;
@@ -226,7 +211,6 @@ impl Request {
         buff[state.start()] = flags;
         state.add_start(1)?;
 
-        // TODO add state.encode_u16 function to compact_encoding
         state.encode_u16(self.tid, &mut buff)?;
 
         let Some(to) = self.to.as_ref() else {
@@ -304,82 +288,30 @@ impl Request {
 
 type Inflight = Arc<RwLock<BTreeMap<u16, (Sender<Reply>, Request)>>>;
 
-impl Stream for Io {
-    type Item = Message;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        Pin::new(&mut self.stream_rx).poll_recv(cx)
-    }
-}
-
-impl Sink<Message> for Io {
-    type Error = crate::Error;
-
-    fn poll_ready(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::result::Result<(), Self::Error>> {
-        // we were born ready to SEND
-        Poll::Ready(Ok(()))
-    }
-
-    fn start_send(self: Pin<&mut Self>, item: Message) -> Result<()> {
-        match item {
-            Message::Request(request) => {
-                // Encode and send the request
-                let buff = request.encode(&self, false)?;
-                let to = request.to.as_ref().ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "Request missing destination",
-                    )
-                })?;
-                let socket_addr = SocketAddr::from(to);
-
-                // Store request in inflight if it needs a response
-                let (tx, _rx) = channel();
-                self.inflight
-                    .write()
-                    .unwrap()
-                    .insert(request.tid, (tx, request));
-
-                // Send the encoded request
-                let socket = self.socket.clone();
-                tokio::spawn(async move {
-                    socket.read().await.send(socket_addr, &buff);
-                });
-
-                Ok(())
-            }
-            Message::Reply(_reply) => {
-                // TODO: Implement reply encoding and sending
-                // This would be similar to request handling but with reply.encode_reply()
-                todo!("Implement reply sending")
-            }
-        }
-    }
-
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::result::Result<(), Self::Error>> {
-        todo!()
-    }
-
-    fn poll_close(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::result::Result<(), Self::Error>> {
-        todo!()
-    }
+/// Io recieves data events to and uses it, and it's own data to construct [`Message`]
+pub enum MessageEvents {
+    Ping,
+    FindNode { target: [u8; 32] },
+    PingNat { value: Vec<u8> },
+    DownHint { value: Vec<u8> },
+    // add stuff for custom commands later
+    // Reply { error, value, token, hase_closer_nodes },
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     Request(Request),
+    Reply(Reply),
+}
+
+pub struct WireRequest {
+    ephemeral: bool,
+    is_server_socket: bool,
+    request: Request,
+}
+
+pub enum WireMessage {
+    Request(WireRequest),
     Reply(Reply),
 }
 
@@ -392,6 +324,7 @@ pub struct Io {
     stream_rx: UnboundedReceiver<Message>,
     stream_tx: UnboundedSender<Message>,
 }
+
 impl Io {
     pub fn new() -> Result<Self> {
         let socket = Arc::new(TRwLock::new(UdxSocket::bind("0.0.0.0:0")?));
@@ -446,6 +379,11 @@ impl Io {
 
     pub fn create_find_node(&self, to: &Addr, target: &[u8; 32]) -> Request {
         self.create_request(to, None, true, Command::FindNode, Some(*target), None)
+    }
+    //this.dht._request(node, true,     DOWN_HINT, null,   state.buffer, this._session, noop,       noop)
+    //_request (          to,   internal, command, target, value,        session,       onresponse, onerror) {
+    pub fn create_down_hint(&self, to: &Addr, value: Vec<u8>) -> Request {
+        self.create_request(to, None, true, Command::DownHint, None, Some(value))
     }
 
     pub async fn send_find_node(&self, to: &Addr, target: &[u8; 32]) -> Result<Receiver<Reply>> {
@@ -525,4 +463,78 @@ pub fn decode_message(buff: Vec<u8>, addr: SocketAddr) -> Result<Message> {
         RESPONSE_ID => Message::Reply(decode_reply(&buff, from, &mut state)?),
         _ => todo!("eror"),
     })
+}
+
+// Wrapper struct around UdxSocket that handles Messages
+pub struct UdxMessageStream {
+    socket: UdxSocket,
+    // Buffer for incoming messages that couldn't be processed immediately
+    recv_queue: VecDeque<(Message, SocketAddr)>,
+}
+
+impl UdxMessageStream {
+    pub fn new(socket: UdxSocket) -> Self {
+        Self {
+            socket,
+            recv_queue: VecDeque::new(),
+        }
+    }
+}
+
+impl Stream for UdxMessageStream {
+    type Item = Result<(Message, SocketAddr)>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        // First check if we have any buffered messages
+        if let Some(msg) = self.recv_queue.pop_front() {
+            return Poll::Ready(Some(Ok(msg)));
+        }
+
+        // Try to receive data from the socket
+        let mut fut = self.socket.recv();
+        match Pin::new(&mut fut).poll(cx) {
+            Poll::Ready(Ok((addr, buff))) => {
+                // Try to decode the received message
+                match decode_message(buff, addr) {
+                    Ok(message) => Poll::Ready(Some(Ok((message, addr)))),
+                    Err(e) => Poll::Ready(Some(Err(e))),
+                }
+            }
+            Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e.into()))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Sink<(Message, SocketAddr)> for UdxMessageStream {
+    type Error = crate::Error;
+
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
+        // UdxSocket's send is always ready as it's using UnboundedSender internally
+        Poll::Ready(Ok(()))
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: (Message, SocketAddr)) -> Result<()> {
+        let (message, _addr) = item;
+
+        // Encode the message based on its type
+        let _buff = match &message {
+            Message::Request(req) => req.encode(todo!(), false)?, // You'll need to handle the io parameter appropriately
+            Message::Reply(_reply) => todo!("Implement reply encoding"),
+        };
+
+        // Send the encoded message
+        self.socket.send(_addr, &_buff);
+        Ok(())
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
+        // No buffering in UdxSocket, so no need to flush
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
+        // No special cleanup needed
+        Poll::Ready(Ok(()))
+    }
 }
