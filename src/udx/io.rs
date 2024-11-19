@@ -21,6 +21,7 @@ use tokio::sync::{
 
 use crate::{
     constants::{ID_SIZE, REQUEST_ID, RESPONSE_ID},
+    udx::cenc::{decode_addr_array, decode_fixed_32_flag},
     Result,
 };
 use compact_encoding::{CompactEncoding, State};
@@ -38,11 +39,23 @@ pub struct Reply {
     pub to: Addr,
     pub token: Option<[u8; 32]>,
     pub closer_nodes: Vec<Addr>,
-    pub error: u8,
+    pub error: usize,
     pub value: Option<Vec<u8>>,
 }
 
 impl Reply {
+    /// in js we use table_id if :
+    /// `const id = this._io.ephemeral === false && socket === this._io.serverSocket`
+    /// token is io.secrets(Req.from, 1)
+    /// closer_nodes is req.target && io.table.closes(req.target)
+    //fn encode(
+    //    &self,
+    //    _table_id: Option<[u8; 32]>,
+    //    _error: u8,
+    //    _token: Option<[u8; 32]>,
+    //    _closer_nodes: Vec<Addr>,
+    //    _destination: Addr,
+    //) -> Result<Vec<u8>> {
     fn encode(
         &self,
         table_id: &[u8; 32],
@@ -77,7 +90,6 @@ impl Reply {
         state.add_start(1)?;
 
         let mut flags: u8 = 0;
-
         if id {
             flags |= 1 << 0;
         }
@@ -114,9 +126,128 @@ impl Reply {
             state.encode(&self.error, &mut buff)?;
         }
         if let Some(v) = &self.value {
-            state.encode_fixed_32(&v, &mut buff)?;
+            state.encode_fixed_32(v, &mut buff)?;
         }
         Ok(buff.into())
+    }
+}
+
+pub struct ReplyMsgData {
+    pub tid: u16,
+    pub to: Addr,
+    pub id: Option<[u8; 32]>,
+    pub token: Option<[u8; 32]>,
+    pub closer_nodes: Vec<Addr>,
+    pub error: usize,
+    pub value: Option<Vec<u8>>,
+}
+impl ReplyMsgData {
+    fn encode(&self) -> Result<Vec<u8>> {
+        let mut state = State::new();
+        // (type | version) + flags + to + tid
+        state.add_end(1 + 1 + 6 + 2)?;
+        if self.id.is_some() {
+            state.add_end(32)?;
+        }
+        if self.token.is_some() {
+            state.add_end(32)?;
+        }
+        if !self.closer_nodes.is_empty() {
+            state.preencode_usize_var(&self.closer_nodes.len())?;
+            for n in &self.closer_nodes {
+                state.preencode(n)?;
+            }
+        }
+        if self.error > 0 {
+            state.preencode(&self.error)?;
+        }
+        if let Some(v) = &self.value {
+            state.preencode(v)?;
+        }
+
+        let mut buff = state.create_buffer();
+        buff[state.start()] = RESPONSE_ID;
+        state.add_start(1)?;
+
+        let mut flags: u8 = 0;
+
+        if self.id.is_some() {
+            flags |= 1 << 0;
+        }
+        if self.token.is_some() {
+            flags |= 1 << 1;
+        }
+        if !self.closer_nodes.is_empty() {
+            flags |= 1 << 2;
+        }
+        if self.error > 0 {
+            flags |= 1 << 3;
+        }
+        if self.value.is_some() {
+            flags |= 1 << 4;
+        }
+        buff[state.start()] = flags;
+
+        state.encode_u16(self.tid, &mut buff)?;
+        state.encode(&self.to, &mut buff)?;
+
+        if let Some(id) = &self.id {
+            state.encode_fixed_32(id, &mut buff)?;
+        }
+        if let Some(token) = self.token {
+            state.encode_fixed_32(&token, &mut buff)?;
+        }
+        if !self.closer_nodes.is_empty() {
+            state.encode_usize_var(&self.closer_nodes.len(), &mut buff)?;
+            for n in &self.closer_nodes {
+                state.encode(n, &mut buff)?;
+            }
+        }
+        if self.error > 0 {
+            state.encode(&self.error, &mut buff)?;
+        }
+        if let Some(value) = &self.value {
+            state.encode_fixed_32(value, &mut buff)?;
+        }
+        Ok(buff.into())
+    }
+
+    fn decode(buff: &[u8], state: &mut State) -> Result<ReplyMsgData> {
+        let flags = buff[state.start()];
+        state.add_start(1)?;
+
+        let tid = state.decode_u16(buff)?;
+        let to: Addr = state.decode(buff)?;
+
+        let id = decode_fixed_32_flag(flags, 1, state, buff)?;
+        let token = decode_fixed_32_flag(flags, 2, state, buff)?;
+
+        let closer_nodes: Vec<Addr> = if flags & 4 > 0 {
+            decode_addr_array(state, buff)?
+        } else {
+            vec![]
+        };
+
+        let error = if flags & 8 > 0 {
+            state.decode_usize_var(buff)?
+        } else {
+            0
+        };
+
+        let value = if flags & 16 > 0 {
+            Some(state.decode_buffer(buff)?.to_vec())
+        } else {
+            None
+        };
+        Ok(ReplyMsgData {
+            tid,
+            to,
+            id,
+            token,
+            closer_nodes,
+            error,
+            value,
+        })
     }
 }
 
@@ -364,6 +495,7 @@ impl Io {
             stream_tx,
         })
     }
+
     pub fn create_ping(&self, to: &Addr) -> Request {
         self.create_request(to, None, true, Command::Ping, None, None)
     }

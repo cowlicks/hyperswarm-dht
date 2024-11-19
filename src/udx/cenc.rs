@@ -185,7 +185,7 @@ pub(crate) fn validate_id(id: &[u8; ID_SIZE], from: &Addr) -> Option<[u8; ID_SIZ
     None
 }
 
-fn decode_fixed_32_flag(
+pub(crate) fn decode_fixed_32_flag(
     flags: u8,
     shift: u8,
     state: &mut State,
@@ -225,8 +225,8 @@ pub fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Re
         vec![]
     };
 
-    let error: u8 = if flags & 8 > 0 {
-        state.decode_u8(buff)?
+    let error = if flags & 8 > 0 {
+        state.decode_usize_var(buff)?
     } else {
         0
     };
