@@ -11,6 +11,7 @@ use futures::{Future, Sink, Stream};
 use crate::{udx::cenc::MsgData, Result};
 
 // Wrapper struct around UdxSocket that handles Messages
+#[derive(Debug)]
 pub struct MessageDataStream {
     socket: UdxSocket,
     // Buffer for incoming messages that couldn't be processed immediately

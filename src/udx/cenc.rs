@@ -249,6 +249,7 @@ pub fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Re
         value,
     })
 }
+#[derive(Debug)]
 pub struct RequestMsgData {
     pub tid: u16,
     pub to: Addr,
@@ -259,6 +260,7 @@ pub struct RequestMsgData {
     pub target: Option<[u8; 32]>,
     pub value: Option<Vec<u8>>,
 }
+#[derive(Debug)]
 pub struct ReplyMsgData {
     pub tid: u16,
     pub to: Addr,
@@ -269,6 +271,7 @@ pub struct ReplyMsgData {
     pub value: Option<Vec<u8>>,
 }
 
+#[derive(Debug)]
 pub enum MsgData {
     Request(RequestMsgData),
     Reply(ReplyMsgData),

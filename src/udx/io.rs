@@ -167,16 +167,6 @@ impl Request {
 
 type Inflight = Arc<RwLock<BTreeMap<u16, (Sender<Reply>, Request)>>>;
 
-/// Io recieves data events to and uses it, and it's own data to construct [`Message`]
-pub enum MessageEvents {
-    Ping,
-    FindNode { target: [u8; 32] },
-    PingNat { value: Vec<u8> },
-    DownHint { value: Vec<u8> },
-    // add stuff for custom commands later
-    // Reply { error, value, token, hase_closer_nodes },
-}
-
 #[derive(Debug, Clone)]
 pub enum Message {
     Request(Request),
