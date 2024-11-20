@@ -25,6 +25,15 @@ impl MessageDataStream {
             recv_queue: VecDeque::new(),
         }
     }
+    pub fn defualt_bind() -> Result<Self> {
+        Ok(MessageDataStream {
+            socket: UdxSocket::bind("0.0.0.0:0")?,
+            recv_queue: Default::default(),
+        })
+    }
+    pub fn local_addr(&self) -> Result<SocketAddr> {
+        Ok(self.socket.local_addr()?)
+    }
 }
 
 impl Stream for MessageDataStream {
@@ -75,5 +84,37 @@ impl Sink<(MsgData, SocketAddr)> for MessageDataStream {
     fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
         // No special cleanup needed
         Poll::Ready(Ok(()))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::udx::{cenc::ReplyMsgData, Addr};
+    use futures::{SinkExt, StreamExt};
+    use std::net::Ipv4Addr;
+
+    use super::*;
+    #[tokio::test]
+    async fn bar() -> Result<()> {
+        let mut one = MessageDataStream::defualt_bind()?;
+        let mut two = MessageDataStream::defualt_bind()?;
+        let expected = MsgData::Reply(ReplyMsgData {
+            tid: 0,
+            to: Addr {
+                id: None,
+                host: Ipv4Addr::new(0, 0, 0, 0),
+                port: 666,
+            },
+            id: None,
+            token: None,
+            closer_nodes: vec![],
+            error: 0,
+            value: None,
+        });
+        let _ = one.send((expected.clone(), two.local_addr()?)).await?;
+        let (result, _sender) = two.next().await.unwrap()?;
+        assert_eq!(result, expected);
+
+        Ok(())
     }
 }

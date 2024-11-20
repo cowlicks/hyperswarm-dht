@@ -15,13 +15,14 @@ use tokio::sync::{
 };
 
 use crate::{
-    constants::{ID_SIZE, REQUEST_ID, RESPONSE_ID},
+    constants::{REQUEST_ID, RESPONSE_ID},
     Result,
 };
-use compact_encoding::{CompactEncoding, State};
+use compact_encoding::State;
 
 use super::{
     cenc::{generic_hash, generic_hash_with_key, validate_id, ReplyMsgData, RequestMsgData},
+    stream::MessageDataStream,
     thirty_two_random_bytes, Addr, Command,
 };
 
@@ -60,28 +61,6 @@ impl Reply {
             value: data.value,
         })
     }
-    /// in js we use table_id if :
-    /// `const id = this._io.ephemeral === false && socket === this._io.serverSocket`
-    /// token is io.secrets(Req.from, 1)
-    /// closer_nodes is req.target && io.table.closes(req.target)
-    //fn encode(
-    //    &self,
-    //    _table_id: Option<[u8; 32]>,
-    //    _error: u8,
-    //    _token: Option<[u8; 32]>,
-    //    _closer_nodes: Vec<Addr>,
-    //    _destination: Addr,
-    //) -> Result<Vec<u8>> {
-    fn encode(
-        &self,
-        table_id: &[u8; 32],
-        ephemeral: bool,
-        is_server_socket: bool,
-        token: bool,
-    ) -> Result<Vec<u8>> {
-        let id = !ephemeral && is_server_socket;
-        todo!()
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -89,7 +68,7 @@ pub struct Request {
     pub tid: u16,
     pub from: Option<Addr>,
     // TODO remove this field?
-    pub to: Option<Addr>,
+    pub to: Addr,
     pub token: Option<[u8; 32]>,
     pub internal: bool,
     pub command: Command,
@@ -102,6 +81,18 @@ impl Request {
         let data = RequestMsgData::decode(buff, state);
         Request::from_data(data?, from)
     }
+    fn to_data(&self, id: Option<[u8; 32]>) -> Result<RequestMsgData> {
+        Ok(RequestMsgData {
+            tid: self.tid,
+            to: self.to.clone(),
+            id,
+            internal: true,
+            token: self.token,
+            command: self.command,
+            target: self.target,
+            value: self.value.clone(),
+        })
+    }
     fn from_data(data: RequestMsgData, from: &Addr) -> Result<Self> {
         let mut new_from = from.clone();
         if let Some(id) = data.id {
@@ -110,7 +101,7 @@ impl Request {
         Ok(Request {
             tid: data.tid,
             from: Some(new_from),
-            to: Some(data.to),
+            to: data.to,
             token: data.token,
             internal: data.internal,
             command: data.command,
@@ -123,7 +114,7 @@ impl Request {
     fn new(
         tid: u16,
         from: Option<Addr>,
-        to: Option<Addr>,
+        to: Addr,
         token: Option<[u8; 32]>,
         internal: bool,
         command: Command,
@@ -153,7 +144,7 @@ impl Request {
 
         RequestMsgData {
             tid: self.tid,
-            to: self.to.clone().expect("todo rm to field?"),
+            to: self.to.clone(),
             id,
             internal: self.internal,
             token: self.token,
@@ -178,6 +169,7 @@ pub struct Io {
     tid: AtomicU16,
     ephemeral: bool,
     socket: Arc<TRwLock<UdxSocket>>,
+    socket_stream: MessageDataStream,
     inflight: Inflight,
 }
 
@@ -213,6 +205,7 @@ impl Io {
             tid: AtomicU16::new(rand::thread_rng().gen()),
             ephemeral: true,
             socket,
+            socket_stream: MessageDataStream::new(UdxSocket::bind("0.0.0.0:0")?),
             inflight,
         })
     }
@@ -243,14 +236,17 @@ impl Io {
         self.send(req).await
     }
 
+    // TODO
+    pub async fn send_ping2(&self, _to: &Addr) -> Result<Receiver<Reply>> {
+        //let req = self.create_ping(to);
+        //self.send(req).await
+        //todo!()
+        todo!()
+    }
+
     pub async fn send(&self, request: Request) -> Result<Receiver<Reply>> {
         let buff = request.encode(self, false)?;
-        let socket_addr = SocketAddr::from(
-            request
-                .to
-                .as_ref()
-                .ok_or_else(|| crate::Error::RequestRequiresToField)?,
-        );
+        let socket_addr = SocketAddr::from(&request.to);
         let (tx, rx) = channel();
         self.inflight
             .write()
@@ -273,7 +269,7 @@ impl Io {
         Request::new(
             tid,
             None,
-            Some(to.clone()),
+            to.clone(),
             token,
             internal,
             command,

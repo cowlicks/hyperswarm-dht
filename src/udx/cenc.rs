@@ -142,7 +142,7 @@ pub fn decode_request(buff: &[u8], mut from: Addr, state: &mut State) -> Result<
 
     let tid = state.decode_u16(buff)?;
 
-    let to = Some(state.decode(buff)?);
+    let to = state.decode(buff)?;
 
     let id = decode_fixed_32_flag(flags, 1, state, buff)?;
     let token = decode_fixed_32_flag(flags, 2, state, buff)?;
@@ -249,7 +249,7 @@ pub fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Re
         value,
     })
 }
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RequestMsgData {
     pub tid: u16,
     pub to: Addr,
@@ -260,7 +260,7 @@ pub struct RequestMsgData {
     pub target: Option<[u8; 32]>,
     pub value: Option<Vec<u8>>,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ReplyMsgData {
     pub tid: u16,
     pub to: Addr,
@@ -271,7 +271,7 @@ pub struct ReplyMsgData {
     pub value: Option<Vec<u8>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MsgData {
     Request(RequestMsgData),
     Reply(ReplyMsgData),
@@ -430,6 +430,7 @@ impl ReplyMsgData {
             flags |= 1 << 4;
         }
         buff[state.start()] = flags;
+        state.add_start(1)?;
 
         state.encode_u16(self.tid, &mut buff)?;
         state.encode(&self.to, &mut buff)?;
@@ -496,7 +497,10 @@ impl ReplyMsgData {
 
 impl MsgData {
     pub fn encode(&self) -> Result<Vec<u8>> {
-        todo!()
+        match self {
+            MsgData::Request(request) => request.encode(),
+            MsgData::Reply(reply) => reply.encode(),
+        }
     }
     pub fn decode(buff: &[u8]) -> Result<MsgData> {
         let mut state = State::new_with_start_and_end(1, buff.len());

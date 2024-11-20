@@ -87,11 +87,11 @@ async fn bootstrap_global() -> Result<()> {
 // node in dht-rpc 6.15.1
 fn mk_request() -> Request {
     Request {
-        to: Some(Addr {
+        to: Addr {
             id: None,
             host: HOST,
             port: BOOTSTRAP_PORT,
-        }),
+        },
         from: Some(Addr {
             id: None,
             host: HOST,
@@ -186,7 +186,7 @@ fn test_decode_request() -> Result<()> {
     let expected = Request {
         tid,
         from: Some(from),
-        to: Some(to),
+        to,
         token,
         internal,
         command: command.try_into()?,
