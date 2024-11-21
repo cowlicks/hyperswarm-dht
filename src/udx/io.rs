@@ -1,9 +1,11 @@
 use async_udx::UdxSocket;
+use futures::SinkExt;
 use log::warn;
 use rand::Rng;
 #[allow(unreachable_code, dead_code)]
 use std::sync::{Arc, RwLock};
 use std::{
+    cell::RefCell,
     collections::BTreeMap,
     net::SocketAddr,
     sync::atomic::{AtomicU16, Ordering},
@@ -16,6 +18,7 @@ use tokio::sync::{
 
 use crate::{
     constants::{REQUEST_ID, RESPONSE_ID},
+    udx::cenc::MsgData,
     Result,
 };
 use compact_encoding::State;
@@ -166,6 +169,7 @@ pub enum Message {
 
 #[derive(Debug)]
 pub struct Io {
+    id: Arc<RefCell<[u8; 32]>>,
     tid: AtomicU16,
     ephemeral: bool,
     socket: Arc<TRwLock<UdxSocket>>,
@@ -174,7 +178,7 @@ pub struct Io {
 }
 
 impl Io {
-    pub fn new() -> Result<Self> {
+    pub fn new(id: Arc<RefCell<[u8; 32]>>) -> Result<Self> {
         let socket = Arc::new(TRwLock::new(UdxSocket::bind("0.0.0.0:0")?));
         let recv_socket = socket.clone();
         let inflight: Inflight = Default::default();
@@ -202,6 +206,7 @@ impl Io {
             Ok::<(), crate::Error>(())
         });
         Ok(Self {
+            id,
             tid: AtomicU16::new(rand::thread_rng().gen()),
             ephemeral: true,
             socket,
@@ -236,12 +241,42 @@ impl Io {
         self.send(req).await
     }
 
-    // TODO
-    pub async fn send_ping2(&self, _to: &Addr) -> Result<Receiver<Reply>> {
-        //let req = self.create_ping(to);
-        //self.send(req).await
-        //todo!()
-        todo!()
+    pub async fn create_request_s(
+        &self,
+        to: &Addr,
+        token: Option<[u8; 32]>,
+        internal: bool,
+        command: Command,
+        target: Option<[u8; 32]>,
+        value: Option<Vec<u8>>,
+    ) -> RequestMsgData {
+        let tid = self.tid.fetch_add(1, Ordering::Relaxed);
+        let id = if !self.ephemeral {
+            Some(*self.id.borrow())
+        } else {
+            None
+        };
+
+        RequestMsgData {
+            tid,
+            to: to.clone(),
+            id,
+            internal,
+            token,
+            command,
+            target,
+            value,
+        }
+    }
+
+    pub async fn ping_s(&mut self, to: &Addr) -> Result<()> {
+        let msg = self
+            .create_request_s(to, None, true, Command::Ping, None, None)
+            .await;
+        self.socket_stream
+            .send((MsgData::Request(msg), to.into()))
+            .await?;
+        Ok(())
     }
 
     pub async fn send(&self, request: Request) -> Result<Receiver<Reply>> {
@@ -308,7 +343,9 @@ pub fn decode_message(buff: Vec<u8>, addr: SocketAddr) -> Result<Message> {
         _ => todo!("eror"),
     })
 }
-struct Secrets {
+/// TODO hide secrets in fmt::Debug
+#[derive(Debug)]
+pub struct Secrets {
     rotate_secrets: usize,
     // NB starts null in js. Not initialized until token call.
     // so my behavior diverges when drain called until token
@@ -317,7 +354,7 @@ struct Secrets {
 }
 
 impl Secrets {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             rotate_secrets: 10,
             secrets: [thirty_two_random_bytes(), thirty_two_random_bytes()],
@@ -335,7 +372,7 @@ impl Secrets {
         Ok(())
     }
 
-    fn token(&self, addr: &Addr, secret_index: usize) -> Result<[u8; 32]> {
+    pub fn token(&self, addr: &Addr, secret_index: usize) -> Result<[u8; 32]> {
         generic_hash_with_key(&addr.host.octets(), &self.secrets[secret_index])
     }
 }
