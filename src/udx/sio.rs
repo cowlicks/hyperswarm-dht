@@ -8,6 +8,7 @@ use crate::{
         udp::UdpFramed,
         IdBytes, Peer, RequestId,
     },
+    udx,
 };
 use blake2::{
     crypto_mac::generic_array::{typenum::U64, GenericArray},
@@ -20,13 +21,34 @@ use futures::{
     Sink,
 };
 use prost::Message as ProtoMessage;
-use std::{collections::VecDeque, fmt, io, net::SocketAddr, ops::Deref, pin::Pin, time::Duration};
+use rand::Rng;
+use std::{
+    cell::RefCell,
+    collections::VecDeque,
+    fmt, io,
+    net::SocketAddr,
+    ops::Deref,
+    pin::Pin,
+    sync::{
+        atomic::{AtomicU16, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tokio::net::UdpSocket;
 use wasm_timer::Instant;
+
+use super::{
+    cenc::{MsgData, ReplyMsgData, RequestMsgData},
+    stream::MessageDataStream,
+    Addr,
+};
 
 pub const VERSION: u64 = 1;
 
 const ROTATE_INTERVAL: u64 = 300_000;
+
+type Tid = u16;
 
 #[derive(Debug, Clone)]
 struct InflightRequest<TUserData: fmt::Debug + Clone> {
@@ -59,6 +81,23 @@ impl<TUserData: fmt::Debug + Clone> InflightRequest<TUserData> {
         } else {
             Err(self)
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct InflightRequest2 {
+    /// The message send
+    message: MsgData,
+    /// The remote peer
+    peer: Addr,
+    /// Timestamp when the request was sent
+    #[allow(unused)] // FIXME not read. Why not?
+    timestamp: Instant,
+}
+
+impl InflightRequest2 {
+    fn into_event(self) -> Result<MsgData, Self> {
+        Ok(self.message)
     }
 }
 
@@ -117,6 +156,147 @@ pub struct IoHandler<TUserData: fmt::Debug + Clone> {
     last_rotation: Instant,
 }
 
+use super::io::Secrets;
+
+#[derive(Debug)]
+pub struct IoHandler2 {
+    id: Arc<RefCell<[u8; 32]>>,
+    ephemeral: bool,
+    socket: MessageDataStream,
+    /// Messages to send
+    pending_send: VecDeque<MsgData>,
+    /// Current message
+    pending_flush: Option<MsgData>,
+    /// Sent requests we currently wait for a response
+    pending_recv: FnvHashMap<Tid, InflightRequest2>,
+    secrets: Secrets,
+    tid: AtomicU16,
+    rotation: Duration,
+    last_rotation: Instant,
+}
+
+impl IoHandler2 {
+    pub fn new(id: Arc<RefCell<[u8; 32]>>, socket: MessageDataStream, config: IoConfig) -> Self {
+        Self {
+            id,
+            ephemeral: true,
+            socket,
+            pending_send: Default::default(),
+            pending_flush: None,
+            pending_recv: Default::default(),
+            secrets: Secrets::new(),
+            tid: AtomicU16::new(rand::thread_rng().gen()),
+            rotation: config
+                .rotation
+                .unwrap_or_else(|| Duration::from_millis(ROTATE_INTERVAL)),
+            last_rotation: Instant::now(),
+        }
+    }
+    pub fn is_ephemeral(&self) -> bool {
+        self.ephemeral
+    }
+
+    pub fn local_addr(&self) -> crate::Result<SocketAddr> {
+        Ok(self.socket.local_addr()?)
+    }
+    /// TODO check this is correct.
+    fn token(&self, peer: &Addr, secret_index: usize) -> crate::Result<[u8; 32]> {
+        self.secrets.token(peer, secret_index)
+    }
+
+    fn request(&mut self, ev: MsgData) {
+        self.pending_send.push_back(ev)
+    }
+
+    pub fn query(
+        &mut self,
+        command: udx::Command,
+        target: Option<[u8; 32]>,
+        value: Option<Vec<u8>>,
+        peer: Addr,
+    ) {
+        let id = if !self.ephemeral {
+            Some(*self.id.borrow())
+        } else {
+            None
+        };
+
+        self.request(MsgData::Request(RequestMsgData {
+            tid: self.tid.fetch_add(1, Ordering::Relaxed),
+            to: peer,
+            id,
+            internal: true,
+            token: None,
+            command,
+            target,
+            value,
+        }));
+    }
+    pub fn error(
+        &mut self,
+        request: RequestMsgData,
+        error: usize,
+        value: Option<Vec<u8>>,
+        closer_nodes: Option<Vec<Addr>>,
+        peer: &Addr,
+    ) -> crate::Result<()> {
+        let id = if !self.ephemeral {
+            Some(*self.id.borrow())
+        } else {
+            None
+        };
+
+        let token = Some(self.token(peer, 1)?);
+
+        self.pending_send.push_back(MsgData::Reply(ReplyMsgData {
+            tid: request.tid,
+            to: peer.clone(),
+            id,
+            token,
+            closer_nodes: closer_nodes.unwrap_or_else(|| Vec::new()),
+            error,
+            value,
+        }));
+        Ok(())
+    }
+    pub fn reply(&mut self, mut _msg: RequestMsgData, _peer: Addr) {
+        todo!()
+    }
+    pub fn response(
+        &mut self,
+        request: RequestMsgData,
+        value: Option<Vec<u8>>,
+        closer_nodes: Option<Vec<Addr>>,
+        peer: Addr,
+    ) -> crate::Result<()> {
+        let id = if !self.ephemeral {
+            Some(*self.id.borrow())
+        } else {
+            None
+        };
+        let token = Some(self.token(&peer, 1)?);
+        self.pending_send.push_back(MsgData::Reply(ReplyMsgData {
+            tid: request.tid,
+            to: peer.clone(),
+            id,
+            token,
+            closer_nodes: closer_nodes.unwrap_or_else(|| Vec::new()),
+            error: 0,
+            value,
+        }));
+        Ok(())
+    }
+    fn on_response(&mut self, recv: ReplyMsgData, peer: Addr) -> IoHandlerEvent2 {
+        if let Some(req) = self.pending_recv.remove(&recv.tid) {
+            return IoHandlerEvent2::InResponse {
+                peer,
+                resp: recv,
+                req: Box::new(req.message),
+            };
+        }
+        IoHandlerEvent2::InResponseBadRequestId { peer, msg: recv }
+    }
+}
 #[derive(Debug, Clone, Default)]
 pub struct IoConfig {
     pub rotation: Option<Duration>,
@@ -162,6 +342,7 @@ where
         RequestId(rand::thread_rng().gen_range(0, u16::MAX as u64))
     }
 
+    // msg.id not read?
     #[inline]
     pub(crate) fn msg_id(&self) -> Option<Vec<u8>> {
         self.id.as_ref().map(|k| k.preimage().clone().to_vec())
@@ -569,4 +750,37 @@ pub enum IoHandlerEvent<TUserData> {
     /// Received a response with a request id that was doesn't match any pending
     /// responses.
     InResponseBadRequestId { msg: Message, peer: Peer },
+}
+
+/// Event generated by the IO handler
+#[derive(Debug)]
+pub enum IoHandlerEvent2 {
+    ///  A response was sent
+    OutResponse { msg: MsgData, peer: Addr },
+    /// A request was sent
+    OutRequest { id: Tid },
+    /// A Response to a Message was recieved
+    InResponse {
+        req: Box<MsgData>,
+        resp: ReplyMsgData,
+        peer: Addr,
+    },
+    /// A Request was receieved
+    InRequest { msg: MsgData, peer: Addr, ty: Type },
+    /// Error while sending a message
+    OutSocketErr { err: io::Error },
+    /// A request did not recieve a response within the given timeout
+    RequestTimeout {
+        msg: MsgData,
+        peer: Addr,
+        sent: Instant,
+    },
+    /// Error while decoding a message from socket
+    /// TODO unused
+    InMessageErr { err: io::Error, peer: Addr },
+    /// Error while reading from socket
+    InSocketErr { err: io::Error },
+    /// Received a response with a request id that was doesn't match any pending
+    /// responses.
+    InResponseBadRequestId { msg: ReplyMsgData, peer: Addr },
 }
