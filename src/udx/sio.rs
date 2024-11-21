@@ -296,6 +296,27 @@ impl IoHandler2 {
         }
         IoHandlerEvent2::InResponseBadRequestId { peer, msg: recv }
     }
+    /// A new `Message` was read from the socket.
+    fn on_message(&mut self, msg: MsgData, rinfo: SocketAddr) -> IoHandlerEvent2 {
+        let peer = Addr::from(&rinfo);
+        match msg {
+            MsgData::Request(req) => IoHandlerEvent2::InRequest { msg: req, peer },
+            MsgData::Reply(rep) => self.on_response(rep, peer),
+        }
+    }
+
+    fn start_send_next(&mut self) -> crate::Result<()> {
+        if self.pending_flush.is_none() {
+            if let Some(msg) = self.pending_send.pop_front() {
+                //log::trace!("send to {}: {}", peer.addr, msg);
+                let addr = SocketAddr::from(&msg.to());
+
+                Sink::start_send(Pin::new(&mut self.socket), (msg.clone(), addr))?;
+                self.pending_flush = Some(msg);
+            }
+        }
+        Ok(())
+    }
 }
 #[derive(Debug, Clone, Default)]
 pub struct IoConfig {
@@ -766,7 +787,7 @@ pub enum IoHandlerEvent2 {
         peer: Addr,
     },
     /// A Request was receieved
-    InRequest { msg: MsgData, peer: Addr, ty: Type },
+    InRequest { msg: RequestMsgData, peer: Addr },
     /// Error while sending a message
     OutSocketErr { err: io::Error },
     /// A request did not recieve a response within the given timeout

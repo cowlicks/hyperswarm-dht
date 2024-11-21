@@ -277,6 +277,15 @@ pub enum MsgData {
     Reply(ReplyMsgData),
 }
 
+impl MsgData {
+    pub fn to(&self) -> Addr {
+        match self {
+            MsgData::Request(x) => x.to.clone(),
+            MsgData::Reply(x) => x.to.clone(),
+        }
+    }
+}
+
 impl RequestMsgData {
     pub fn encode(&self) -> Result<Vec<u8>> {
         let mut state = State::new();
