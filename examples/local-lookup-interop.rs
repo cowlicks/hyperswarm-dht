@@ -70,11 +70,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let event = node.next().await;
             println!("looup node sent query got evt: {event:?}");
 
-            match event {
-                Some(hyperswarm_dht::HyperDhtEvent::LookupResult { lookup, .. }) => {
-                    println!("{:?}", lookup.all_peers().collect::<Vec<_>>());
-                }
-                _ => {}
+            if let Some(hyperswarm_dht::HyperDhtEvent::LookupResult { lookup, .. }) = event {
+                println!("{:?}", lookup.all_peers().collect::<Vec<_>>());
             };
 
             let query = QueryOpts::new(topic).port(12345);

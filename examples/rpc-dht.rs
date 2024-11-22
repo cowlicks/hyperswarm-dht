@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut b = RpcDht::with_config(
             DhtConfig::default()
                 .set_bootstrap_nodes(&[bootstrap])
-                .register_commands(&["values"])
+                .register_commands(["values"])
                 .bind("127.0.0.1:3402")
                 .await
                 .expect("Failed to create dht with socket"),
