@@ -83,7 +83,7 @@ impl IoHandler {
     }
 
     pub fn local_addr(&self) -> crate::Result<SocketAddr> {
-        Ok(self.socket.local_addr()?)
+        self.socket.local_addr()
     }
     /// TODO check this is correct.
     fn token(&self, peer: &Addr, secret_index: usize) -> crate::Result<[u8; 32]> {
@@ -139,7 +139,7 @@ impl IoHandler {
             to: peer.clone(),
             id,
             token,
-            closer_nodes: closer_nodes.unwrap_or_else(|| Vec::new()),
+            closer_nodes: closer_nodes.unwrap_or_default(),
             error,
             value,
         }));
@@ -166,7 +166,7 @@ impl IoHandler {
             to: peer.clone(),
             id,
             token,
-            closer_nodes: closer_nodes.unwrap_or_else(|| Vec::new()),
+            closer_nodes: closer_nodes.unwrap_or_default(),
             error: 0,
             value,
         }));
@@ -318,14 +318,12 @@ mod test {
         let mut a = {
             let id = Arc::new(RefCell::new(thirty_two_random_bytes()));
             let socket = MessageDataStream::new(UdxSocket::bind("0.0.0.0:0").unwrap());
-            let io = IoHandler::new(id, socket, Default::default());
-            io
+            IoHandler::new(id, socket, Default::default())
         };
         let mut b = {
             let id = Arc::new(RefCell::new(thirty_two_random_bytes()));
             let socket = MessageDataStream::new(UdxSocket::bind("0.0.0.0:0").unwrap());
-            let io = IoHandler::new(id, socket, Default::default());
-            io
+            IoHandler::new(id, socket, Default::default())
         };
         let to = Addr::from(&b.local_addr()?);
         let id = Some(thirty_two_random_bytes());
@@ -341,7 +339,7 @@ mod test {
         };
         a.request(MsgData::Request(msg.clone()));
         a.next().await;
-        let IoHandlerEvent::InRequest { message: res, peer } = b.next().await.unwrap() else {
+        let IoHandlerEvent::InRequest { message: res, .. } = b.next().await.unwrap() else {
             panic!()
         };
         assert_eq!(res, msg);
