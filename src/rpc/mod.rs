@@ -35,7 +35,7 @@ use crate::{
 };
 
 pub mod io;
-mod jobs;
+pub(crate) mod jobs;
 pub mod message;
 #[cfg(test)]
 mod old_test;

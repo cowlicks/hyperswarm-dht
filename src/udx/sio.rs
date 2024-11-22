@@ -317,12 +317,12 @@ mod test {
     async fn foo() -> crate::Result<()> {
         let mut a = {
             let id = Arc::new(RefCell::new(thirty_two_random_bytes()));
-            let socket = MessageDataStream::new(UdxSocket::bind("0.0.0.0:0").unwrap());
+            let socket = MessageDataStream::defualt_bind()?;
             IoHandler::new(id, socket, Default::default())
         };
         let mut b = {
             let id = Arc::new(RefCell::new(thirty_two_random_bytes()));
-            let socket = MessageDataStream::new(UdxSocket::bind("0.0.0.0:0").unwrap());
+            let socket = MessageDataStream::defualt_bind()?;
             IoHandler::new(id, socket, Default::default())
         };
         let to = Addr::from(&b.local_addr()?);

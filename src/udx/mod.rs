@@ -20,6 +20,7 @@ use rand::{
 mod cenc;
 mod io;
 mod sio;
+mod smod;
 mod stream;
 
 #[cfg(test)]
@@ -68,7 +69,6 @@ impl TryFrom<u8> for Command {
 #[derive(Debug, PartialEq, Clone)]
 // TODO rename to Peer
 pub struct Addr {
-    // TODO change ot [u8; 32]
     pub id: Option<[u8; 32]>,
     pub host: Ipv4Addr,
     pub port: u16,
@@ -94,7 +94,6 @@ impl From<&SocketAddr> for Addr {
 #[derive(Debug, derive_builder::Builder)]
 #[builder(pattern = "owned")]
 pub struct RpcDht {
-    // TODO this should be a `Cell` since it is only mutated from  one place (this struct).
     #[builder(default = "Arc::new(RefCell::new(thirty_two_random_bytes()))")]
     pub id: Arc<RefCell<[u8; 32]>>,
     #[builder(field(ty = "Vec<SocketAddr>"))]

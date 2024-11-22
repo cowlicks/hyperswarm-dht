@@ -25,6 +25,12 @@ impl MessageDataStream {
             recv_queue: VecDeque::new(),
         }
     }
+    pub fn bind<A: std::net::ToSocketAddrs>(addr: A) -> Result<Self> {
+        Ok(MessageDataStream {
+            socket: UdxSocket::bind(addr)?,
+            recv_queue: Default::default(),
+        })
+    }
     pub fn defualt_bind() -> Result<Self> {
         Ok(MessageDataStream {
             socket: UdxSocket::bind("0.0.0.0:0")?,
