@@ -9,12 +9,12 @@ use crate::{
 use async_udx::UdxSocket;
 use compact_encoding::State;
 use std::{
+    cell::RefCell,
     convert::TryInto,
     net::{Ipv4Addr, SocketAddr, ToSocketAddrs},
     sync::Arc,
     time::Duration,
 };
-use tokio::sync::RwLock;
 
 use super::cenc::validate_id;
 const HOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
@@ -76,7 +76,7 @@ async fn bootstrap_global() -> Result<()> {
         Duration::from_secs(DEFAULT_KBUCKET_PENDING_TIMEOUT_SECS),
     );
     let mut rpc = RpcDhtBuilder::default()
-        .id(Arc::new(RwLock::new(id)))
+        .id(Arc::new(RefCell::new(id)))
         .add_bootstrap_node(addr)?
         .kbuckets(kbuckets)
         .build()?;
@@ -116,7 +116,7 @@ fn mk_request() -> Request {
 #[tokio::test]
 async fn test_ping() -> Result<()> {
     let sock = UdxSocket::bind("127.0.0.1:0")?;
-    let io = Io::new(Arc::new(RwLock::new(thirty_two_random_bytes())))?;
+    let io = Io::new(Arc::new(RefCell::new(thirty_two_random_bytes())))?;
     let ping_req = io.create_ping(&BOOTSTRAP_ADDR);
     let buff = ping_req.encode(&io, false)?;
     println!("{buff:?}");
@@ -136,7 +136,7 @@ async fn test_encode_buffer() -> Result<()> {
         161, 173,
     ];
     let req = mk_request();
-    let io = Io::new(Arc::new(RwLock::new(thirty_two_random_bytes())))?;
+    let io = Io::new(Arc::new(RefCell::new(thirty_two_random_bytes())))?;
 
     let res = req.encode(&io, false)?;
     assert_eq!(res, expected_buffer);

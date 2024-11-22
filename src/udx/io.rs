@@ -360,14 +360,18 @@ impl Secrets {
             secrets: [thirty_two_random_bytes(), thirty_two_random_bytes()],
         }
     }
+    fn rotate_secrets(&mut self) -> Result<()> {
+        let tmp = self.secrets[0];
+        self.secrets[0] = self.secrets[1];
+        self.secrets[1] = generic_hash(&tmp)?;
+        Ok(())
+    }
 
     fn drain(&mut self) -> Result<()> {
         self.rotate_secrets -= 1;
         if self.rotate_secrets == 0 {
             self.rotate_secrets = 10;
-            let tmp = self.secrets[0];
-            self.secrets[0] = self.secrets[1];
-            self.secrets[1] = generic_hash(&tmp)?;
+            self.rotate_secrets()?;
         }
         Ok(())
     }
