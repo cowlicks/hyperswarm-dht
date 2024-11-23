@@ -19,6 +19,7 @@ use rand::{
 
 mod cenc;
 mod io;
+mod mslave;
 mod sio;
 mod smod;
 mod stream;
