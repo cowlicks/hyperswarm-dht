@@ -889,7 +889,7 @@ pub struct PeerId {
 }
 
 impl PeerId {
-    fn new(addr: SocketAddr, id: IdBytes) -> Self {
+    pub fn new(addr: SocketAddr, id: IdBytes) -> Self {
         Self { addr, id }
     }
 }
