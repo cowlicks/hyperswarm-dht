@@ -440,7 +440,7 @@ impl RpcDht {
         roundtrip_token: Option<Vec<u8>>,
         to: Option<SocketAddr>,
     ) {
-        let key = kbucket::Key::new(id);
+        let key = Key::new(id);
         match self.kbuckets.entry(&key) {
             Entry::Present(mut entry, _) => {
                 entry.value().next_ping = Instant::now() + self.ping_job.interval;
@@ -486,18 +486,15 @@ impl RpcDht {
     pub fn remove_peer(
         &mut self,
         key: &Key<IdBytes>,
-    ) -> Option<kbucket::EntryView<kbucket::Key<IdBytes>, Node>> {
+    ) -> Option<kbucket::EntryView<Key<IdBytes>, Node>> {
         match self.kbuckets.entry(key) {
-            kbucket::Entry::Present(entry, _) => Some(entry.remove()),
-            kbucket::Entry::Pending(entry, _) => Some(entry.remove()),
-            kbucket::Entry::Absent(..) | kbucket::Entry::SelfEntry => None,
+            Entry::Present(entry, _) => Some(entry.remove()),
+            Entry::Pending(entry, _) => Some(entry.remove()),
+            Entry::Absent(..) | Entry::SelfEntry => None,
         }
     }
 
-    fn remove_node(
-        &mut self,
-        peer: &Peer,
-    ) -> Option<kbucket::EntryView<kbucket::Key<IdBytes>, Node>> {
+    fn remove_node(&mut self, peer: &Peer) -> Option<kbucket::EntryView<Key<IdBytes>, Node>> {
         let id = self
             .kbuckets
             .iter()
