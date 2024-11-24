@@ -1,25 +1,31 @@
 //! Make RPC calls over a Kademlia based DHT.
 
 use std::{
-    cell::RefCell,
     collections::{HashSet, VecDeque},
-    convert::TryInto,
     net::{SocketAddr, ToSocketAddrs},
-    sync::Arc,
     time::Duration,
 };
 
 use crate::{
-    kbucket::{KBucketsTable, Key, KeyBytes},
+    kbucket::{
+        KBucketsTable,
+        Key,
+        K_VALUE, //KeyBytes,
+    },
     rpc::{
         jobs::PeriodicJob,
-        query::{CommandQuery, QueryConfig, QueryId, QueryPool, QueryStats},
+        query::{CommandQuery, QueryConfig, QueryId, QueryPool, QueryStats, QueryType},
     },
-    IdBytes,
+    IdBytes, PeerId,
 };
 
 use super::{
-    cenc::{MsgData, ReplyMsgData, RequestMsgData},
+    cenc::{
+        // MsgData,
+        ReplyMsgData,
+        RequestMsgData,
+    },
+    mslave::Master,
     sio::{IoConfig, IoHandler},
     stream::MessageDataStream,
     thirty_two_random_bytes, Addr, Command,
@@ -29,8 +35,8 @@ use super::{
 #[builder(pattern = "owned")]
 pub struct RpcDht {
     // TODO use message passing to update id's in IoHandler
-    #[builder(default = "Arc::new(RefCell::new(thirty_two_random_bytes()))")]
-    pub id: Arc<RefCell<[u8; 32]>>,
+    #[builder(default = "Master::new(Key::new(IdBytes::from(thirty_two_random_bytes())))")]
+    pub id: Master<Key<IdBytes>>,
     kbuckets: KBucketsTable<Key<IdBytes>, Addr>,
     io: IoHandler,
     bootstrap_job: PeriodicJob,
@@ -97,16 +103,16 @@ impl DhtConfig {
 impl RpcDht {
     pub async fn with_config(config: DhtConfig) -> crate::Result<Self> {
         let bites = config.local_id.unwrap_or_else(thirty_two_random_bytes);
-        let id_bytes = IdBytes::from(bites.clone());
+        let id_bytes = IdBytes::from(bites);
         let local_id = Key::new(id_bytes.clone());
-        let id = Arc::new(RefCell::new(bites.clone()));
+        let id = Master::new(local_id.clone());
 
         let socket = config
             .socket
             .map(Result::Ok)
             .unwrap_or_else(MessageDataStream::defualt_bind)?;
 
-        let io = IoHandler::new(id.clone(), socket, config.io_config);
+        let io = IoHandler::new(id.view(), socket, config.io_config);
 
         let mut dht = Self {
             id,
@@ -121,13 +127,13 @@ impl RpcDht {
             bootstrapped: false,
         };
 
-        //dht.bootstrap();
+        dht.bootstrap();
         Ok(dht)
     }
 
     pub fn bootstrap(&mut self) {
         if !self.bootstrap_nodes.is_empty() {
-            //self.query(Command::FindNode, self.id.clone(), None);
+            self.query(Command::FindNode, self.id.get().clone(), None);
         } else if !self.bootstrapped {
             self.queued_events.push_back(RpcDhtEvent::Bootstrapped {
                 stats: QueryStats::empty(),
@@ -142,8 +148,38 @@ impl RpcDht {
         target: Key<IdBytes>,
         value: Option<Vec<u8>>,
     ) -> QueryId {
-        //self.run_command(cmd, target, value, QueryType::Query)
+        self.run_command(cmd, target, value, QueryType::Query)
+    }
+
+    fn run_command(
+        &mut self,
+        _cmd: impl Into<Command>,
+        target: Key<IdBytes>,
+        _value: Option<Vec<u8>>,
+        _query_type: QueryType,
+    ) -> QueryId {
+        let _peers = self
+            .kbuckets
+            .closest(&target)
+            .take(usize::from(K_VALUE))
+            .map(|e| {
+                let sa = SocketAddr::from((e.node.value.host, e.node.value.port));
+                PeerId::new(sa, e.node.key.preimage().clone())
+            })
+            .map(Key::new)
+            .collect::<Vec<_>>();
+
         todo!()
+        /*
+        self.queries.add_stream(
+            cmd.to_string(),
+            peers,
+            query_type,
+            target,
+            value,
+            self.bootstrap_nodes.iter().cloned().map(Peer::from),
+        )
+            */
     }
 }
 

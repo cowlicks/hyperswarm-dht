@@ -1,4 +1,5 @@
-use crate::udx;
+use crate::kbucket::Key;
+use crate::{udx, IdBytes};
 use fnv::FnvHashMap;
 use futures::Stream;
 use futures::{
@@ -7,19 +8,16 @@ use futures::{
 };
 use rand::Rng;
 use std::{
-    cell::RefCell,
     collections::VecDeque,
     io,
     net::SocketAddr,
     pin::Pin,
-    sync::{
-        atomic::{AtomicU16, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicU16, Ordering},
     time::Duration,
 };
 use wasm_timer::Instant;
 
+use super::mslave::Slave;
 use super::{
     cenc::{MsgData, ReplyMsgData, RequestMsgData},
     io::Secrets,
@@ -46,7 +44,7 @@ struct InflightRequest {
 
 #[derive(Debug)]
 pub struct IoHandler {
-    id: Arc<RefCell<[u8; 32]>>,
+    id: Slave<Key<IdBytes>>,
     ephemeral: bool,
     socket: MessageDataStream,
     /// Messages to send
@@ -62,7 +60,7 @@ pub struct IoHandler {
 }
 
 impl IoHandler {
-    pub fn new(id: Arc<RefCell<[u8; 32]>>, socket: MessageDataStream, config: IoConfig) -> Self {
+    pub fn new(id: Slave<Key<IdBytes>>, socket: MessageDataStream, config: IoConfig) -> Self {
         Self {
             id,
             ephemeral: true,
@@ -102,7 +100,7 @@ impl IoHandler {
         peer: Addr,
     ) {
         let id = if !self.ephemeral {
-            Some(*self.id.borrow())
+            Some(self.id.get().preimage().0)
         } else {
             None
         };
@@ -127,7 +125,7 @@ impl IoHandler {
         peer: &Addr,
     ) -> crate::Result<()> {
         let id = if !self.ephemeral {
-            Some(*self.id.borrow())
+            Some(self.id.get().preimage().0)
         } else {
             None
         };
@@ -156,7 +154,7 @@ impl IoHandler {
         peer: Addr,
     ) -> crate::Result<()> {
         let id = if !self.ephemeral {
-            Some(*self.id.borrow())
+            Some(self.id.get().preimage().0)
         } else {
             None
         };
@@ -307,24 +305,21 @@ pub enum IoHandlerEvent {
 
 #[cfg(test)]
 mod test {
-    use async_udx::UdxSocket;
     use futures::StreamExt;
-    use udx::{thirty_two_random_bytes, Command};
+    use udx::{mslave::Master, thirty_two_random_bytes, Command};
 
     use super::*;
 
+    fn new_io() -> IoHandler {
+        let view = Master::new(Key::new(IdBytes::from(thirty_two_random_bytes()))).view();
+        let socket = MessageDataStream::defualt_bind().unwrap();
+        IoHandler::new(view, socket, Default::default())
+    }
     #[tokio::test]
     async fn foo() -> crate::Result<()> {
-        let mut a = {
-            let id = Arc::new(RefCell::new(thirty_two_random_bytes()));
-            let socket = MessageDataStream::defualt_bind()?;
-            IoHandler::new(id, socket, Default::default())
-        };
-        let mut b = {
-            let id = Arc::new(RefCell::new(thirty_two_random_bytes()));
-            let socket = MessageDataStream::defualt_bind()?;
-            IoHandler::new(id, socket, Default::default())
-        };
+        let mut a = new_io();
+        let mut b = new_io();
+
         let to = Addr::from(&b.local_addr()?);
         let id = Some(thirty_two_random_bytes());
         let msg = RequestMsgData {
