@@ -10,6 +10,7 @@ use crate::{
     rpc::{
         io::VERSION,
         message::{Command, Message, Type},
+        query::QueryId,
         IdBytes, Peer, PeerId, RequestId, Response,
     },
 };
@@ -577,10 +578,6 @@ pub struct QueryResult<TInner, TPeers> {
     /// The Command of the query.
     pub cmd: Command,
 }
-
-/// Unique identifier for an active query.
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub struct QueryId(usize);
 
 /// Execution statistics of a query.
 #[derive(Clone, Debug, PartialEq, Eq)]

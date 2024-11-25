@@ -579,7 +579,7 @@ pub struct QueryResult<TInner, TPeers> {
 
 /// Unique identifier for an active query.
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub struct QueryId(usize);
+pub struct QueryId(pub usize);
 
 /// Execution statistics of a query.
 #[derive(Clone, Debug, PartialEq, Eq)]
