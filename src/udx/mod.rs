@@ -53,6 +53,31 @@ impl Display for InternalCommand {
     }
 }
 
+impl Into<Command> for InternalCommand {
+    fn into(self) -> Command {
+        Command::Internal(self)
+    }
+}
+
+#[derive(Copy, Debug, Clone, PartialEq)]
+pub struct ExternalCommand(pub usize);
+
+/// TODO This is encoded as u8 which might not always be true
+#[derive(Copy, Debug, Clone, PartialEq)]
+pub enum Command {
+    Internal(InternalCommand),
+    External(ExternalCommand),
+}
+
+impl Command {
+    fn encode(&self) -> u8 {
+        match &self {
+            Command::Internal(cmd) => cmd.clone() as u8,
+            Command::External(ExternalCommand(cmd)) => cmd.clone() as u8,
+        }
+    }
+}
+
 impl TryFrom<u8> for InternalCommand {
     type Error = crate::Error;
 

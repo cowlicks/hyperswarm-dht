@@ -11,7 +11,10 @@ use crate::{
     Error, Result,
 };
 
-use super::io::{Reply, Request};
+use super::{
+    io::{Reply, Request},
+    Command, ExternalCommand,
+};
 
 impl CompactEncoding<InternalCommand> for State {
     fn preencode(&mut self, _value: &InternalCommand) -> std::result::Result<usize, EncodingError> {
@@ -148,7 +151,13 @@ pub fn decode_request(buff: &[u8], mut from: Addr, state: &mut State) -> Result<
     let token = decode_fixed_32_flag(flags, 2, state, buff)?;
 
     let internal = (flags & 4) != 0;
-    let command: InternalCommand = state.decode(buff)?;
+    let command = if internal {
+        let cmd: InternalCommand = state.decode(buff)?;
+        Command::Internal(cmd)
+    } else {
+        let cmd: u8 = state.decode(buff)?;
+        Command::External(ExternalCommand(cmd as usize))
+    };
 
     let target = decode_fixed_32_flag(flags, 8, state, buff)?;
 
@@ -256,7 +265,7 @@ pub struct RequestMsgData {
     pub id: Option<[u8; 32]>,
     pub internal: bool,
     pub token: Option<[u8; 32]>,
-    pub command: InternalCommand,
+    pub command: Command,
     pub target: Option<[u8; 32]>,
     pub value: Option<Vec<u8>>,
 }
@@ -298,8 +307,10 @@ impl RequestMsgData {
             state.add_end(32)?;
         }
 
-        let cmd = self.command.clone() as usize;
-        state.preencode_usize_var(&cmd)?;
+        //let cmd = self.command.clone() as usize;
+        //state.preencode_usize_var(&self.command)?;
+        // One byte for command as u8
+        state.add_end(1)?;
 
         if self.target.is_some() {
             state.add_end(32)?;
@@ -345,7 +356,7 @@ impl RequestMsgData {
             state.encode_fixed_32(&t, &mut buff)?;
         }
 
-        buff[state.start()] = self.command.clone() as u8;
+        buff[state.start()] = self.command.encode();
         state.add_start(1)?;
 
         // c.uint.encode(state, this.command)
@@ -370,7 +381,13 @@ impl RequestMsgData {
         let token = decode_fixed_32_flag(flags, 2, state, buff)?;
 
         let internal = (flags & 4) != 0;
-        let command: InternalCommand = state.decode(buff)?;
+        let command = if internal {
+            let cmd: InternalCommand = state.decode(buff)?;
+            Command::Internal(cmd)
+        } else {
+            let cmd: u8 = state.decode(buff)?;
+            Command::External(ExternalCommand(cmd as usize))
+        };
 
         let target = decode_fixed_32_flag(flags, 8, state, buff)?;
 

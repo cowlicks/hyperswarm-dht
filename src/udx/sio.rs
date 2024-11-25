@@ -94,7 +94,7 @@ impl IoHandler {
 
     pub fn query(
         &mut self,
-        command: udx::InternalCommand,
+        command: udx::Command,
         target: Option<[u8; 32]>,
         value: Option<Vec<u8>>,
         peer: Addr,
@@ -328,7 +328,7 @@ mod test {
             id,
             internal: true,
             token: None,
-            command: InternalCommand::Ping,
+            command: InternalCommand::Ping.into(),
             target: None,
             value: None,
         };

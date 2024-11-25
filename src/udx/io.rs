@@ -26,7 +26,7 @@ use compact_encoding::State;
 use super::{
     cenc::{generic_hash, generic_hash_with_key, validate_id, ReplyMsgData, RequestMsgData},
     stream::MessageDataStream,
-    thirty_two_random_bytes, Addr, InternalCommand,
+    thirty_two_random_bytes, Addr, Command, InternalCommand,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -74,7 +74,7 @@ pub struct Request {
     pub to: Addr,
     pub token: Option<[u8; 32]>,
     pub internal: bool,
-    pub command: InternalCommand,
+    pub command: Command,
     pub target: Option<[u8; 32]>,
     pub value: Option<Vec<u8>>,
 }
@@ -120,7 +120,7 @@ impl Request {
         to: Addr,
         token: Option<[u8; 32]>,
         internal: bool,
-        command: InternalCommand,
+        command: Command,
         target: Option<[u8; 32]>,
         value: Option<Vec<u8>>,
     ) -> Self {
@@ -253,7 +253,7 @@ impl Io {
         to: &Addr,
         token: Option<[u8; 32]>,
         internal: bool,
-        command: InternalCommand,
+        command: Command,
         target: Option<[u8; 32]>,
         value: Option<Vec<u8>>,
     ) -> RequestMsgData {
@@ -278,7 +278,7 @@ impl Io {
 
     pub async fn ping_s(&mut self, to: &Addr) -> Result<()> {
         let msg = self
-            .create_request_s(to, None, true, InternalCommand::Ping, None, None)
+            .create_request_s(to, None, true, InternalCommand::Ping.into(), None, None)
             .await;
         self.socket_stream
             .send((MsgData::Request(msg), to.into()))
@@ -314,7 +314,7 @@ impl Io {
             to.clone(),
             token,
             internal,
-            command,
+            command.into(),
             target,
             value,
         )
