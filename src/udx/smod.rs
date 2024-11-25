@@ -28,7 +28,7 @@ use super::{
     mslave::Master,
     sio::{IoConfig, IoHandler},
     stream::MessageDataStream,
-    thirty_two_random_bytes, Addr, Command,
+    thirty_two_random_bytes, Addr, InternalCommand,
 };
 
 #[derive(Debug, derive_builder::Builder)]
@@ -133,7 +133,7 @@ impl RpcDht {
 
     pub fn bootstrap(&mut self) {
         if !self.bootstrap_nodes.is_empty() {
-            self.query(Command::FindNode, self.id.get().clone(), None);
+            self.query(InternalCommand::FindNode, self.id.get().clone(), None);
         } else if !self.bootstrapped {
             self.queued_events.push_back(RpcDhtEvent::Bootstrapped {
                 stats: QueryStats::empty(),
@@ -144,7 +144,7 @@ impl RpcDht {
 
     pub fn query(
         &mut self,
-        cmd: impl Into<Command>,
+        cmd: impl Into<InternalCommand>,
         target: Key<IdBytes>,
         value: Option<Vec<u8>>,
     ) -> QueryId {
@@ -153,7 +153,7 @@ impl RpcDht {
 
     fn run_command(
         &mut self,
-        _cmd: impl Into<Command>,
+        _cmd: impl Into<InternalCommand>,
         target: Key<IdBytes>,
         _value: Option<Vec<u8>>,
         _query_type: QueryType,
@@ -210,7 +210,7 @@ pub enum RpcDhtEvent {
         /// The ID of the query that finished.
         id: QueryId,
         /// The command of the executed query.
-        cmd: Command,
+        cmd: InternalCommand,
         /// Execution statistics from the query.
         stats: QueryStats,
     },

@@ -26,7 +26,7 @@ use compact_encoding::State;
 use super::{
     cenc::{generic_hash, generic_hash_with_key, validate_id, ReplyMsgData, RequestMsgData},
     stream::MessageDataStream,
-    thirty_two_random_bytes, Addr, Command,
+    thirty_two_random_bytes, Addr, InternalCommand,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -74,7 +74,7 @@ pub struct Request {
     pub to: Addr,
     pub token: Option<[u8; 32]>,
     pub internal: bool,
-    pub command: Command,
+    pub command: InternalCommand,
     pub target: Option<[u8; 32]>,
     pub value: Option<Vec<u8>>,
 }
@@ -120,7 +120,7 @@ impl Request {
         to: Addr,
         token: Option<[u8; 32]>,
         internal: bool,
-        command: Command,
+        command: InternalCommand,
         target: Option<[u8; 32]>,
         value: Option<Vec<u8>>,
     ) -> Self {
@@ -216,20 +216,27 @@ impl Io {
     }
 
     pub fn create_ping(&self, to: &Addr) -> Request {
-        self.create_request(to, None, true, Command::Ping, None, None)
+        self.create_request(to, None, true, InternalCommand::Ping, None, None)
     }
 
     pub fn create_ping_nat(&self, to: &Addr, value: Vec<u8>) -> Request {
-        self.create_request(to, None, true, Command::PingNat, None, Some(value))
+        self.create_request(to, None, true, InternalCommand::PingNat, None, Some(value))
     }
 
     pub fn create_find_node(&self, to: &Addr, target: &[u8; 32]) -> Request {
-        self.create_request(to, None, true, Command::FindNode, Some(*target), None)
+        self.create_request(
+            to,
+            None,
+            true,
+            InternalCommand::FindNode,
+            Some(*target),
+            None,
+        )
     }
     //this.dht._request(node, true,     DOWN_HINT, null,   state.buffer, this._session, noop,       noop)
     //_request (          to,   internal, command, target, value,        session,       onresponse, onerror) {
     pub fn create_down_hint(&self, to: &Addr, value: Vec<u8>) -> Request {
-        self.create_request(to, None, true, Command::DownHint, None, Some(value))
+        self.create_request(to, None, true, InternalCommand::DownHint, None, Some(value))
     }
 
     pub async fn send_find_node(&self, to: &Addr, target: &[u8; 32]) -> Result<Receiver<Reply>> {
@@ -246,7 +253,7 @@ impl Io {
         to: &Addr,
         token: Option<[u8; 32]>,
         internal: bool,
-        command: Command,
+        command: InternalCommand,
         target: Option<[u8; 32]>,
         value: Option<Vec<u8>>,
     ) -> RequestMsgData {
@@ -271,7 +278,7 @@ impl Io {
 
     pub async fn ping_s(&mut self, to: &Addr) -> Result<()> {
         let msg = self
-            .create_request_s(to, None, true, Command::Ping, None, None)
+            .create_request_s(to, None, true, InternalCommand::Ping, None, None)
             .await;
         self.socket_stream
             .send((MsgData::Request(msg), to.into()))
@@ -296,7 +303,7 @@ impl Io {
         to: &Addr,
         token: Option<[u8; 32]>,
         internal: bool,
-        command: Command,
+        command: InternalCommand,
         target: Option<[u8; 32]>,
         value: Option<Vec<u8>>,
     ) -> Request {

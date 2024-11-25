@@ -2,7 +2,7 @@ use crate::{
     kbucket::{KBucketsTable, KeyBytes},
     udx::{
         io::{Io, Reply, Request},
-        thirty_two_random_bytes, Addr, Command, RpcDhtBuilder,
+        thirty_two_random_bytes, Addr, InternalCommand, RpcDhtBuilder,
     },
     Result, DEFAULT_BOOTSTRAP,
 };
@@ -99,7 +99,7 @@ fn mk_request() -> Request {
             host: HOST,
             port: 12345,
         }),
-        command: Command::FindNode,
+        command: InternalCommand::FindNode,
         target: Some([
             235, 159, 119, 93, 35, 250, 85, 76, 120, 152, 96, 17, 175, 157, 204, 216, 8, 191, 189,
             16, 140, 146, 202, 172, 84, 232, 73, 218, 113, 136, 161, 173,

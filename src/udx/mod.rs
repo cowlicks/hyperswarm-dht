@@ -33,16 +33,16 @@ mod test;
 // commands.
 #[derive(Copy, Debug, Clone, PartialEq)]
 #[repr(u8)]
-pub enum Command {
+pub enum InternalCommand {
     Ping = 0,
     PingNat,
     FindNode,
     DownHint,
 }
 
-impl Display for Command {
+impl Display for InternalCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use Command::*;
+        use InternalCommand::*;
         write!(f, "COMMAND")?;
         match self {
             Ping => write!(f, "::Ping"),
@@ -53,11 +53,11 @@ impl Display for Command {
     }
 }
 
-impl TryFrom<u8> for Command {
+impl TryFrom<u8> for InternalCommand {
     type Error = crate::Error;
 
     fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
-        use Command::*;
+        use InternalCommand::*;
         Ok(match value {
             0 => Ping,
             1 => PingNat,
@@ -170,7 +170,7 @@ impl RpcDht {
         Ok(receiver.into_future().await?)
     }
 
-    fn query(&mut self, _command: Command, _id: [u8; 32], _value: Option<Vec<u8>>) {
+    fn query(&mut self, _command: InternalCommand, _id: [u8; 32], _value: Option<Vec<u8>>) {
         todo!()
     }
 }

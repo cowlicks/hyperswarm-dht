@@ -94,7 +94,7 @@ impl IoHandler {
 
     pub fn query(
         &mut self,
-        command: udx::Command,
+        command: udx::InternalCommand,
         target: Option<[u8; 32]>,
         value: Option<Vec<u8>>,
         peer: Addr,
@@ -306,7 +306,7 @@ pub enum IoHandlerEvent {
 #[cfg(test)]
 mod test {
     use futures::StreamExt;
-    use udx::{mslave::Master, thirty_two_random_bytes, Command};
+    use udx::{mslave::Master, thirty_two_random_bytes, InternalCommand};
 
     use super::*;
 
@@ -328,7 +328,7 @@ mod test {
             id,
             internal: true,
             token: None,
-            command: Command::Ping,
+            command: InternalCommand::Ping,
             target: None,
             value: None,
         };

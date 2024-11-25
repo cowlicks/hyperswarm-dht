@@ -7,20 +7,20 @@ use compact_encoding::{CompactEncoding, EncodingError, State};
 
 use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
-    udx::{Addr, Command},
+    udx::{Addr, InternalCommand},
     Error, Result,
 };
 
 use super::io::{Reply, Request};
 
-impl CompactEncoding<Command> for State {
-    fn preencode(&mut self, _value: &Command) -> std::result::Result<usize, EncodingError> {
+impl CompactEncoding<InternalCommand> for State {
+    fn preencode(&mut self, _value: &InternalCommand) -> std::result::Result<usize, EncodingError> {
         Ok(self.add_end(1)?)
     }
 
     fn encode(
         &mut self,
-        value: &Command,
+        value: &InternalCommand,
         buff: &mut [u8],
     ) -> std::result::Result<usize, EncodingError> {
         buff[self.start()] = value.clone() as u8;
@@ -28,8 +28,8 @@ impl CompactEncoding<Command> for State {
         Ok(self.start())
     }
 
-    fn decode(&mut self, buff: &[u8]) -> std::result::Result<Command, EncodingError> {
-        let cmd = Command::try_from(buff[self.start()]).map_err(|e| e.into())?;
+    fn decode(&mut self, buff: &[u8]) -> std::result::Result<InternalCommand, EncodingError> {
+        let cmd = InternalCommand::try_from(buff[self.start()]).map_err(|e| e.into())?;
         self.add_start(1)?;
         Ok(cmd)
     }
@@ -148,7 +148,7 @@ pub fn decode_request(buff: &[u8], mut from: Addr, state: &mut State) -> Result<
     let token = decode_fixed_32_flag(flags, 2, state, buff)?;
 
     let internal = (flags & 4) != 0;
-    let command: Command = state.decode(buff)?;
+    let command: InternalCommand = state.decode(buff)?;
 
     let target = decode_fixed_32_flag(flags, 8, state, buff)?;
 
@@ -256,7 +256,7 @@ pub struct RequestMsgData {
     pub id: Option<[u8; 32]>,
     pub internal: bool,
     pub token: Option<[u8; 32]>,
-    pub command: Command,
+    pub command: InternalCommand,
     pub target: Option<[u8; 32]>,
     pub value: Option<Vec<u8>>,
 }
@@ -370,7 +370,7 @@ impl RequestMsgData {
         let token = decode_fixed_32_flag(flags, 2, state, buff)?;
 
         let internal = (flags & 4) != 0;
-        let command: Command = state.decode(buff)?;
+        let command: InternalCommand = state.decode(buff)?;
 
         let target = decode_fixed_32_flag(flags, 8, state, buff)?;
 
