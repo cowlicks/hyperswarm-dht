@@ -12,10 +12,7 @@ use crate::{
         Key,
         K_VALUE, //KeyBytes,
     },
-    rpc::{
-        jobs::PeriodicJob,
-        query::{CommandQuery, QueryConfig, QueryId, QueryPool, QueryStats, QueryType},
-    },
+    rpc::{jobs::PeriodicJob, query::QueryId},
     IdBytes, PeerId,
 };
 
@@ -26,9 +23,10 @@ use super::{
         RequestMsgData,
     },
     mslave::Master,
+    query::{table::Peer, CommandQuery, QueryConfig, QueryPool, QueryStats, QueryType},
     sio::{IoConfig, IoHandler},
     stream::MessageDataStream,
-    thirty_two_random_bytes, Addr, InternalCommand,
+    thirty_two_random_bytes, Addr, Command, InternalCommand,
 };
 
 #[derive(Debug, derive_builder::Builder)]
@@ -133,7 +131,11 @@ impl RpcDht {
 
     pub fn bootstrap(&mut self) {
         if !self.bootstrap_nodes.is_empty() {
-            self.query(InternalCommand::FindNode, self.id.get().clone(), None);
+            self.query(
+                InternalCommand::FindNode.into(),
+                self.id.get().clone(),
+                None,
+            );
         } else if !self.bootstrapped {
             self.queued_events.push_back(RpcDhtEvent::Bootstrapped {
                 stats: QueryStats::empty(),
@@ -142,23 +144,17 @@ impl RpcDht {
         }
     }
 
-    pub fn query(
-        &mut self,
-        cmd: impl Into<InternalCommand>,
-        target: Key<IdBytes>,
-        value: Option<Vec<u8>>,
-    ) -> QueryId {
-        self.run_command(cmd, target, value, QueryType::Query)
+    pub fn query(&mut self, cmd: Command, target: Key<IdBytes>, value: Option<Vec<u8>>) -> QueryId {
+        self.run_command(cmd, target, value)
     }
 
     fn run_command(
         &mut self,
-        _cmd: impl Into<InternalCommand>,
+        cmd: Command,
         target: Key<IdBytes>,
-        _value: Option<Vec<u8>>,
-        _query_type: QueryType,
+        value: Option<Vec<u8>>,
     ) -> QueryId {
-        let _peers = self
+        let peers = self
             .kbuckets
             .closest(&target)
             .take(usize::from(K_VALUE))
@@ -169,17 +165,24 @@ impl RpcDht {
             .map(Key::new)
             .collect::<Vec<_>>();
 
-        todo!()
         /*
+        let nodes: Vec<Peer> = self
+            .bootstrap_nodes
+            .clone()
+            .into_iter()
+            .map(Peer::from)
+            .collect();
+        */
         self.queries.add_stream(
-            cmd.to_string(),
+            cmd,
             peers,
-            query_type,
+            todo!(),
             target,
             value,
-            self.bootstrap_nodes.iter().cloned().map(Peer::from),
+            //
+            //nodes)
+            todo!(),
         )
-            */
     }
 }
 

@@ -9,7 +9,7 @@ use crate::{
     peers::PeersEncoding,
     rpc::{
         io::VERSION,
-        message::{Command, Message, Type},
+        message::{Message, Type},
         query::QueryId,
         IdBytes, Peer, PeerId, RequestId, Response,
     },
@@ -24,6 +24,7 @@ use self::{
     peers::PeersIterState,
     table::{PeerState, QueryTable},
 };
+use super::{Command, InternalCommand};
 
 /// A `QueryPool` provides an aggregate state machine for driving `Query`s to
 /// completion.
@@ -90,19 +91,18 @@ impl QueryPool {
     }
 
     /// Adds a query to the pool.
-    pub fn add_stream<T, I, S>(
+    pub fn add_stream<I>(
         &mut self,
-        cmd: T,
+        cmd: Command,
         peers: I,
         query_type: QueryType,
         target: Key<IdBytes>,
         value: Option<Vec<u8>>,
-        bootstrap: S,
+        bootstrap: Vec<Peer>,
     ) -> QueryId
     where
-        T: Into<Command>,
         I: IntoIterator<Item = Key<PeerId>>,
-        S: IntoIterator<Item = Peer>,
+        //S: IntoIterator<Item = Peer>,
     {
         let id = self.next_query_id();
         let query = QueryStream::bootstrap(
@@ -220,9 +220,9 @@ pub struct QueryStream {
 
 impl QueryStream {
     #[allow(clippy::too_many_arguments)]
-    pub fn bootstrap<T, I, S>(
+    pub fn bootstrap<I, S>(
         id: QueryId,
-        cmd: T,
+        cmd: Command,
         parallelism: NonZeroUsize,
         ty: QueryType,
         local_id: Key<IdBytes>,
@@ -232,7 +232,6 @@ impl QueryStream {
         bootstrap: S,
     ) -> Self
     where
-        T: Into<Command>,
         I: IntoIterator<Item = Key<PeerId>>,
         S: IntoIterator<Item = Peer>,
     {
@@ -240,7 +239,7 @@ impl QueryStream {
             id,
             parallelism,
             peer_iter: QueryPeerIter::Bootstrap(FixedPeersIter::new(bootstrap, parallelism)),
-            cmd: cmd.into(),
+            cmd,
             stats: QueryStats::empty(),
             value,
             ty,
@@ -319,7 +318,8 @@ impl QueryStream {
         Some(Response {
             query: todo!(),
             ty: todo!(),
-            cmd: self.cmd.clone(),
+            //cmd: self.cmd.clone(),
+            cmd: todo!(),
             to: resp.decode_to_peer(),
             peer: peer.addr,
             peer_id: resp.valid_id_bytes(),
@@ -405,7 +405,7 @@ impl QueryStream {
             }
         } else {
             QueryEvent::Query {
-                command: Command::FindNode,
+                command: Command::Internal(InternalCommand::FindNode),
                 target: self.target().preimage().clone(),
                 value: None,
                 peer,
