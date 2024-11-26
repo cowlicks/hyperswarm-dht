@@ -4,7 +4,8 @@ use fnv::FnvHashMap;
 
 use crate::{
     kbucket::{Key, K_VALUE},
-    rpc::{self, IdBytes, PeerId},
+    rpc::{IdBytes, PeerId},
+    udx,
 };
 
 use super::fixed::FixedPeersIter;
@@ -43,15 +44,15 @@ impl QueryTable {
         &self.target
     }
 
-    pub fn get_peer(&self, peer: &rpc::Peer) -> Option<rpc::Peer> {
+    pub fn get_peer(&self, peer: &udx::smod::Peer) -> Option<udx::smod::Peer> {
         self.peers
             .keys()
             .filter(|p| p.preimage().addr == peer.addr)
-            .map(|p| rpc::Peer::from(p.preimage().addr))
+            .map(|p| udx::smod::Peer::from(p.preimage().addr))
             .next()
     }
 
-    pub fn get_token(&self, peer: &rpc::Peer) -> Option<&Vec<u8>> {
+    pub fn get_token(&self, peer: &udx::smod::Peer) -> Option<&Vec<u8>> {
         self.peers
             .iter()
             .filter(|(p, _)| p.preimage().addr == peer.addr)
@@ -65,7 +66,7 @@ impl QueryTable {
             self.peers
                 .iter()
                 .filter(|(_, s)| s.is_not_contacted())
-                .map(|(p, _)| rpc::Peer::from(p.preimage().addr)),
+                .map(|(p, _)| udx::smod::Peer::from(p.preimage().addr)),
             parallelism,
         )
     }
@@ -84,7 +85,7 @@ impl QueryTable {
             peers
                 .into_iter()
                 .take(usize::from(K_VALUE))
-                .map(|p| rpc::Peer::from(p.preimage().addr)),
+                .map(|p| udx::smod::Peer::from(p.preimage().addr)),
             parallelism,
         )
     }

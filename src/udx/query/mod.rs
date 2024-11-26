@@ -6,12 +6,11 @@ use wasm_timer::Instant;
 
 use crate::{
     kbucket::{Key, ALPHA_VALUE, K_VALUE},
-    peers::PeersEncoding,
     rpc::{
         io::VERSION,
         message::{Message, Type},
         query::QueryId,
-        IdBytes, Peer, PeerId, RequestId, Response,
+        IdBytes, PeerId, RequestId, Response,
     },
 };
 
@@ -24,7 +23,7 @@ use self::{
     peers::PeersIterState,
     table::{PeerState, QueryTable},
 };
-use super::{Command, InternalCommand};
+use super::{cenc::ReplyMsgData, smod::Peer, Command, InternalCommand};
 
 /// A `QueryPool` provides an aggregate state machine for driving `Query`s to
 /// completion.
@@ -274,10 +273,19 @@ impl QueryStream {
     }
 
     /// Received a response to a requested driven by this query.
-    pub(crate) fn inject_response(&mut self, mut resp: Message, peer: Peer) -> Option<Response> {
+    pub(crate) fn inject_response(
+        &mut self,
+        mut resp: ReplyMsgData,
+        peer: Peer,
+    ) -> Option<Response> {
         // check for errors
 
-        let remote = resp.key(&peer);
+        // resp is Message. This is the Message::id
+        // What is the Message::id in new RPC?
+        // if Message::id is None
+        let remote = resp
+            .id
+            .map(|id| Key::new(PeerId::new(peer.addr, IdBytes::from(id))));
 
         if resp.is_error() {
             self.stats.failure += 1;
@@ -299,19 +307,19 @@ impl QueryStream {
             }
             if !self.ty.is_query() {
                 let to = resp.decode_to_peer();
-                if let Some(token) = resp.roundtrip_token {
+                if let Some(token) = resp.token {
                     if let Some(remote) = remote {
-                        self.inner.add_verified(remote, token, to);
+                        self.inner.add_verified(remote, token.to_vec(), to);
                     }
                 }
                 return None;
             }
         }
 
-        if let Some(token) = resp.roundtrip_token.take() {
+        if let Some(token) = resp.token.take() {
             if let Some(remote) = remote {
                 self.inner
-                    .add_verified(remote, token, resp.decode_to_peer());
+                    .add_verified(remote, token.to_vec(), resp.decode_to_peer());
             }
         }
 
@@ -528,43 +536,12 @@ pub struct CommandQuery {
     pub value: Option<Vec<u8>>,
 }
 
-impl CommandQuery {
-    pub fn into_response_with_error(self, err: impl Into<String>) -> CommandQueryResponse {
-        let mut resp = CommandQueryResponse::from(self);
-        resp.msg.error = Some(err.into());
-        resp
-    }
-}
 /// Outgoing response to a `CommandQuery`
 #[derive(Debug, Clone)]
 pub struct CommandQueryResponse {
     pub msg: Message,
     pub peer: Peer,
     pub target: IdBytes,
-}
-
-impl From<CommandQuery> for CommandQueryResponse {
-    fn from(q: CommandQuery) -> Self {
-        let msg = Message {
-            version: Some(VERSION),
-            r#type: Type::Response.id(),
-            rid: q.rid.0,
-            to: Some(q.peer.encode()),
-            id: None,
-            target: None,
-            closer_nodes: None,
-            roundtrip_token: None,
-            command: None,
-            error: None,
-            value: q.value,
-        };
-
-        Self {
-            msg,
-            peer: q.peer,
-            target: q.target,
-        }
-    }
 }
 
 /// The result of a `Query`.

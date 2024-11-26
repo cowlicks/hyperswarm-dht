@@ -16,6 +16,7 @@ use rand::{
     rngs::{OsRng, StdRng},
     RngCore, SeedableRng,
 };
+use smod::Peer;
 
 mod cenc;
 mod io;
@@ -99,6 +100,12 @@ pub struct Addr {
     pub id: Option<[u8; 32]>,
     pub host: Ipv4Addr,
     pub port: u16,
+}
+
+impl From<&Peer> for Addr {
+    fn from(value: &Peer) -> Self {
+        Self::from(&value.addr)
+    }
 }
 
 impl From<&Addr> for SocketAddr {

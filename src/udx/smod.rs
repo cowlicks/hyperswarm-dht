@@ -23,11 +23,36 @@ use super::{
         RequestMsgData,
     },
     mslave::Master,
-    query::{table::Peer, CommandQuery, QueryConfig, QueryPool, QueryStats, QueryType},
+    query::{CommandQuery, QueryConfig, QueryPool, QueryStats},
     sio::{IoConfig, IoHandler},
     stream::MessageDataStream,
     thirty_two_random_bytes, Addr, Command, InternalCommand,
 };
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+pub struct Peer {
+    pub addr: SocketAddr,
+    /// Referrer that told us about this node.
+    pub referrer: Option<SocketAddr>,
+}
+
+impl From<&SocketAddr> for Peer {
+    fn from(value: &SocketAddr) -> Self {
+        Peer {
+            addr: value.clone(),
+            referrer: None,
+        }
+    }
+}
+
+impl From<SocketAddr> for Peer {
+    fn from(value: SocketAddr) -> Self {
+        Peer {
+            addr: value.clone(),
+            referrer: None,
+        }
+    }
+}
 
 #[derive(Debug, derive_builder::Builder)]
 #[builder(pattern = "owned")]
@@ -165,24 +190,9 @@ impl RpcDht {
             .map(Key::new)
             .collect::<Vec<_>>();
 
-        /*
-        let nodes: Vec<Peer> = self
-            .bootstrap_nodes
-            .clone()
-            .into_iter()
-            .map(Peer::from)
-            .collect();
-        */
-        self.queries.add_stream(
-            cmd,
-            peers,
-            todo!(),
-            target,
-            value,
-            //
-            //nodes)
-            todo!(),
-        )
+        let nodes: Vec<Peer> = self.bootstrap_nodes.iter().map(Peer::from).collect();
+        self.queries
+            .add_stream(cmd, peers, todo!(), target, value, nodes)
     }
 }
 

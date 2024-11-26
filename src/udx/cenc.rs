@@ -1,6 +1,6 @@
 use std::{
     convert::{TryFrom, TryInto},
-    net::Ipv4Addr,
+    net::{Ipv4Addr, SocketAddr},
 };
 
 use compact_encoding::{CompactEncoding, EncodingError, State};
@@ -8,7 +8,7 @@ use compact_encoding::{CompactEncoding, EncodingError, State};
 use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
     udx::{Addr, InternalCommand},
-    Error, Result,
+    Error, IdBytes, PeerId, Result,
 };
 
 use super::{
@@ -18,7 +18,7 @@ use super::{
 
 impl CompactEncoding<InternalCommand> for State {
     fn preencode(&mut self, _value: &InternalCommand) -> std::result::Result<usize, EncodingError> {
-        Ok(self.add_end(1)?)
+        self.add_end(1)
     }
 
     fn encode(
@@ -26,7 +26,7 @@ impl CompactEncoding<InternalCommand> for State {
         value: &InternalCommand,
         buff: &mut [u8],
     ) -> std::result::Result<usize, EncodingError> {
-        buff[self.start()] = value.clone() as u8;
+        buff[self.start()] = *value as u8;
         self.add_start(1)?;
         Ok(self.start())
     }
@@ -365,7 +365,7 @@ impl RequestMsgData {
             state.encode_fixed_32(t, &mut buff)?;
         }
         if let Some(v) = &self.value {
-            state.encode_buffer(&v, &mut buff)?;
+            state.encode_buffer(v, &mut buff)?;
         }
         Ok(buff.to_vec())
     }
@@ -411,6 +411,26 @@ impl RequestMsgData {
 }
 
 impl ReplyMsgData {
+    pub fn is_error(&self) -> bool {
+        self.error != 0
+    }
+    /// Decode the `to` field into `PeerId`
+    pub(crate) fn decode_closer_nodes(&self) -> Vec<PeerId> {
+        todo!()
+        /*
+        self.closer_nodes
+            .as_ref()
+            .map(decode_peer_ids)
+            .unwrap_or_default()
+            */
+    }
+    pub(crate) fn valid_id_bytes(&self) -> Option<IdBytes> {
+        todo!()
+    }
+    pub(crate) fn decode_to_peer(&self) -> Option<SocketAddr> {
+        todo!()
+    }
+
     fn encode(&self) -> Result<Vec<u8>> {
         let mut state = State::new();
         // (type | version) + flags + to + tid

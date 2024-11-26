@@ -1,4 +1,4 @@
-use crate::rpc::Peer;
+use crate::udx::smod::Peer;
 
 /// The state of a peer iterator.
 #[derive(Debug, Clone, PartialEq, Eq)]
