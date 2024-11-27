@@ -286,15 +286,6 @@ pub enum MsgData {
     Reply(ReplyMsgData),
 }
 
-impl MsgData {
-    pub fn to(&self) -> Addr {
-        match self {
-            MsgData::Request(x) => x.to.clone(),
-            MsgData::Reply(x) => x.to.clone(),
-        }
-    }
-}
-
 impl RequestMsgData {
     pub fn encode(&self) -> Result<Vec<u8>> {
         let mut state = State::new();
@@ -425,8 +416,9 @@ impl ReplyMsgData {
             */
     }
     pub(crate) fn valid_id_bytes(&self) -> Option<IdBytes> {
-        todo!()
+        self.id.map(IdBytes::from)
     }
+
     pub(crate) fn decode_to_peer(&self) -> Option<SocketAddr> {
         todo!()
     }

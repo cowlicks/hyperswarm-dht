@@ -3,8 +3,13 @@
 use std::{
     collections::{HashSet, VecDeque},
     net::{SocketAddr, ToSocketAddrs},
+    pin::Pin,
+    task::{Context, Poll},
     time::Duration,
 };
+use wasm_timer::Instant;
+
+use futures::Stream;
 
 use crate::{
     kbucket::{
@@ -22,9 +27,10 @@ use super::{
         ReplyMsgData,
         RequestMsgData,
     },
+    message::valid_id_bytes,
     mslave::Master,
     query::{CommandQuery, QueryConfig, QueryPool, QueryStats},
-    sio::{IoConfig, IoHandler},
+    sio::{IoConfig, IoHandler, IoHandlerEvent},
     stream::MessageDataStream,
     thirty_two_random_bytes, Addr, Command, InternalCommand,
 };
@@ -36,10 +42,19 @@ pub struct Peer {
     pub referrer: Option<SocketAddr>,
 }
 
+impl From<Addr> for Peer {
+    fn from(value: Addr) -> Self {
+        Self {
+            addr: SocketAddr::from(&value),
+            referrer: None,
+        }
+    }
+}
+
 impl From<&SocketAddr> for Peer {
     fn from(value: &SocketAddr) -> Self {
         Peer {
-            addr: value.clone(),
+            addr: *value,
             referrer: None,
         }
     }
@@ -60,7 +75,7 @@ pub struct RpcDht {
     // TODO use message passing to update id's in IoHandler
     #[builder(default = "Master::new(Key::new(IdBytes::from(thirty_two_random_bytes())))")]
     pub id: Master<Key<IdBytes>>,
-    kbuckets: KBucketsTable<Key<IdBytes>, Addr>,
+    kbuckets: KBucketsTable<Key<IdBytes>, Node>,
     io: IoHandler,
     bootstrap_job: PeriodicJob,
     ping_job: PeriodicJob,
@@ -183,16 +198,164 @@ impl RpcDht {
             .kbuckets
             .closest(&target)
             .take(usize::from(K_VALUE))
-            .map(|e| {
-                let sa = SocketAddr::from((e.node.value.host, e.node.value.port));
-                PeerId::new(sa, e.node.key.preimage().clone())
-            })
+            .map(|e| PeerId::new(e.node.value.addr, e.node.key.preimage().clone()))
             .map(Key::new)
             .collect::<Vec<_>>();
 
-        let nodes: Vec<Peer> = self.bootstrap_nodes.iter().map(Peer::from).collect();
+        let bootstrap_nodes: Vec<Peer> = self.bootstrap_nodes.iter().map(Peer::from).collect();
         self.queries
-            .add_stream(cmd, peers, todo!(), target, value, nodes)
+            .add_stream(cmd, peers, target, value, bootstrap_nodes)
+    }
+
+    fn ping_some(&mut self) {
+        let cnt = if self.queries.len() > 2 { 3 } else { 5 };
+        let now = Instant::now();
+        for peer in self
+            .kbuckets
+            .iter()
+            .filter_map(|entry| {
+                if now > entry.node.value.next_ping {
+                    Some(PeerId::new(
+                        entry.node.value.addr,
+                        entry.node.key.preimage().clone(),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .take(cnt)
+            .collect::<Vec<_>>()
+        {
+            self.ping(&peer)
+        }
+    }
+
+    /// Ping a remote
+    pub fn ping(&mut self, peer: &PeerId) {
+        self.io.query(
+            Command::Internal(InternalCommand::Ping),
+            None,
+            Some(peer.id.clone().to_vec()),
+            (&peer.addr).into(),
+        )
+    }
+
+    /// Handle the event generated from the underlying IO
+    fn inject_event(&mut self, event: IoHandlerEvent) {
+        match event {
+            IoHandlerEvent::OutResponse { .. } => {}
+            IoHandlerEvent::OutSocketErr { .. } => {}
+            IoHandlerEvent::InRequest { message, peer } => {
+                self.on_request(message, peer.into());
+            }
+            IoHandlerEvent::InMessageErr { .. } => {}
+            IoHandlerEvent::InSocketErr { .. } => {}
+            IoHandlerEvent::InResponseBadRequestId { peer, .. } => {
+                // received a response that did not match any issued requests
+                //self.remove_node(&peer);
+                todo!()
+            }
+            IoHandlerEvent::OutRequest { .. } => {
+                // sent a request
+            }
+            IoHandlerEvent::InResponse { req, resp, peer } => {
+                //self.on_response(req, resp, peer, user_data);
+                todo!()
+            }
+            IoHandlerEvent::RequestTimeout {
+                message,
+                peer,
+                sent: _,
+            } => {
+                todo!()
+                //if let Some(query) = self.queries.get_mut(&user_data) {
+                //    query.on_timeout(peer);
+                //}
+            }
+        }
+    }
+
+    /// Handle an incoming request.
+    ///
+    /// Eventually send a response.
+    fn on_request(&mut self, mut msg: RequestMsgData, peer: Peer) {
+        if let Some(id) = valid_id_bytes(msg.id) {
+            //self.add_node(id, peer.clone(), None, msg.to);
+        }
+
+        /*
+        if let Some(cmd) = msg.get_command() {
+            match cmd {
+                Command::Ping => self.on_ping(msg, peer),
+                Command::FindNode => self.on_findnode(msg, peer),
+                Command::PingNat => self.on_ping_nat(msg, peer),
+                Command::Unknown(s) => self.on_command_req(ty, s, msg, peer),
+            };
+        } else {
+            // TODO refactor with oncommand fn
+            if msg.target.is_none() {
+                self.queued_events.push_back(RpcDhtEvent::RequestResult(Err(
+                    RequestError::MissingTarget { peer, msg },
+                )));
+                return;
+            }
+            if let Some(key) = msg.valid_target_id_bytes() {
+                msg.error = Some("Unsupported command".to_string());
+                self.reply(msg, peer.clone(), key);
+            }
+            self.queued_events.push_back(RpcDhtEvent::RequestResult(Err(
+                RequestError::MissingCommand { peer },
+            )));
+        }
+            */
+    }
+
+    fn add_node(
+        &mut self,
+        id: IdBytes,
+        peer: Peer,
+        roundtrip_token: Option<Vec<u8>>,
+        to: Option<SocketAddr>,
+    ) {
+        let key = Key::new(id);
+        /*
+        match self.kbuckets.entry(&key) {
+            Entry::Present(mut entry, _) => {
+                entry.value().next_ping = Instant::now() + self.ping_job.interval;
+            }
+            Entry::Pending(mut entry, _) => {
+                let n = entry.value();
+                n.addr = peer.addr;
+                n.next_ping = Instant::now() + self.ping_job.interval;
+            }
+            Entry::Absent(entry) => {
+                let node = Node {
+                    addr: peer.addr,
+                    roundtrip_token,
+                    to,
+                    next_ping: Instant::now() + self.ping_job.interval,
+                    referrers: vec![],
+                };
+
+                match entry.insert(node, NodeStatus::Connected) {
+                    kbucket::InsertResult::Inserted => {
+                        self.queued_events.push_back(RpcDhtEvent::RoutingUpdated {
+                            peer,
+                            old_peer: None,
+                        });
+                    }
+                    kbucket::InsertResult::Full => {
+                        log::debug!("Bucket full. Peer not added to routing table: {:?}", peer)
+                    }
+                    kbucket::InsertResult::Pending { disconnected: _ } => {
+
+                        // TODO dial remote
+                    }
+                }
+            }
+            Entry::SelfEntry => {}
+        }
+        */
     }
 }
 
@@ -285,4 +448,82 @@ pub enum ResponseOk {
 pub enum ResponseError {
     /// We received a bad pong to our ping request
     InvalidPong(Addr),
+}
+
+#[derive(Debug, Clone)]
+pub struct Node {
+    /// Address of the peer.
+    pub addr: SocketAddr,
+    /// last roundtrip token in a req/resp exchanged with the peer
+    pub roundtrip_token: Option<Vec<u8>>,
+    /// Decoded address of the `to` message field
+    pub to: Option<SocketAddr>,
+    /// When a new ping is due
+    pub next_ping: Instant,
+    /// Known referrers available for holepunching
+    pub referrers: Vec<SocketAddr>,
+}
+
+impl Stream for RpcDht {
+    type Item = RpcDhtEvent;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let pin = self.get_mut();
+
+        let now = Instant::now();
+
+        if let Poll::Ready(()) = pin.bootstrap_job.poll(cx, now) {
+            if pin.kbuckets.iter().count() < 20 {
+                pin.bootstrap();
+            }
+        }
+
+        if let Poll::Ready(()) = pin.ping_job.poll(cx, now) {
+            pin.ping_some()
+        }
+        loop {
+            // Drain queued events first.
+            if let Some(event) = pin.queued_events.pop_front() {
+                return Poll::Ready(Some(event));
+            }
+
+            // Look for a sent/received message
+            loop {
+                if let Poll::Ready(Some(event)) = Stream::poll_next(Pin::new(&mut pin.io), cx) {
+                    pin.inject_event(event);
+                    if let Some(event) = pin.queued_events.pop_front() {
+                        return Poll::Ready(Some(event));
+                    }
+                } else {
+                    /*
+                    match pin.queries.poll(now) {
+                        QueryPoolState::Waiting(Some((query, event))) => {
+                            let id = query.id();
+                            pin.inject_query_event(id, event);
+                        }
+                        QueryPoolState::Finished(q) => {
+                            let event = pin.query_finished(q);
+                            return Poll::Ready(Some(event));
+                        }
+                        QueryPoolState::Timeout(q) => {
+                            let event = pin.query_timeout(q);
+                            return Poll::Ready(Some(event));
+                        }
+                        QueryPoolState::Waiting(None) | QueryPoolState::Idle => {
+                            break;
+                        }
+                    }
+                    */
+                    todo!()
+                }
+            }
+
+            // No immediate event was produced as a result of a finished query or socket.
+            // If no new events have been queued either, signal `Pending` to
+            // be polled again later.
+            if pin.queued_events.is_empty() {
+                return Poll::Pending;
+            }
+        }
+    }
 }

@@ -354,7 +354,7 @@ impl RpcDht {
         )
     }
 
-    fn ping_some(&mut self) {
+    pub fn ping_some(&mut self) {
         let cnt = if self.queries.len() > 2 { 3 } else { 5 };
         let now = Instant::now();
         for peer in self

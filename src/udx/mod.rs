@@ -20,6 +20,7 @@ use smod::Peer;
 
 mod cenc;
 mod io;
+mod message;
 mod mslave;
 mod query;
 mod sio;

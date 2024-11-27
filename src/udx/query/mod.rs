@@ -7,7 +7,6 @@ use wasm_timer::Instant;
 use crate::{
     kbucket::{Key, ALPHA_VALUE, K_VALUE},
     rpc::{
-        io::VERSION,
         message::{Message, Type},
         query::QueryId,
         IdBytes, PeerId, RequestId, Response,
@@ -94,7 +93,6 @@ impl QueryPool {
         &mut self,
         cmd: Command,
         peers: I,
-        query_type: QueryType,
         target: Key<IdBytes>,
         value: Option<Vec<u8>>,
         bootstrap: Vec<Peer>,
@@ -108,7 +106,6 @@ impl QueryPool {
             id,
             cmd,
             self.config.parallelism,
-            query_type,
             self.local_id.clone(),
             target,
             value,
@@ -208,9 +205,6 @@ pub struct QueryStream {
     cmd: Command,
     /// Stats about this query
     stats: QueryStats,
-    /// Whether this stream should produce rpc messages of type [`Type::Query`]
-    /// or [`Type::Update`]
-    ty: QueryType,
     /// The value to include in each message
     value: Option<Vec<u8>>,
     /// The inner query state.
@@ -223,7 +217,6 @@ impl QueryStream {
         id: QueryId,
         cmd: Command,
         parallelism: NonZeroUsize,
-        ty: QueryType,
         local_id: Key<IdBytes>,
         target: Key<IdBytes>,
         value: Option<Vec<u8>>,
@@ -241,7 +234,6 @@ impl QueryStream {
             cmd,
             stats: QueryStats::empty(),
             value,
-            ty,
             inner: QueryTable::new(local_id, target, peers),
         }
     }
@@ -305,15 +297,6 @@ impl QueryStream {
             for node in resp.decode_closer_nodes() {
                 self.inner.add_unverified(node);
             }
-            if !self.ty.is_query() {
-                let to = resp.decode_to_peer();
-                if let Some(token) = resp.token {
-                    if let Some(remote) = remote {
-                        self.inner.add_verified(remote, token.to_vec(), to);
-                    }
-                }
-                return None;
-            }
         }
 
         if let Some(token) = resp.token.take() {
@@ -363,15 +346,7 @@ impl QueryStream {
                 }
             }
             PeersIterState::WaitingAtCapacity => Poll::Pending,
-            PeersIterState::Finished => {
-                if self.ty.is_update() {
-                    self.peer_iter =
-                        QueryPeerIter::Updating(self.inner.closest_peers_iter(self.parallelism));
-                    self.poll_iter()
-                } else {
-                    Poll::Ready(None)
-                }
-            }
+            PeersIterState::Finished => Poll::Ready(None),
         }
     }
 
@@ -393,7 +368,7 @@ impl QueryStream {
         if update {
             if let Some(token) = self.inner.get_token(&peer) {
                 QueryEvent::Update {
-                    command: self.cmd.clone(),
+                    command: self.cmd,
                     token: Some(token.clone()),
                     target: self.target().preimage().clone(),
                     peer,
@@ -404,18 +379,11 @@ impl QueryStream {
                 self.peer_iter.on_failure(&peer);
                 QueryEvent::MissingRoundtripToken { peer }
             }
-        } else if self.ty.is_query() {
-            QueryEvent::Query {
-                command: self.cmd.clone(),
-                target: self.target().preimage().clone(),
-                value: self.value.clone(),
-                peer,
-            }
         } else {
             QueryEvent::Query {
-                command: Command::Internal(InternalCommand::FindNode),
+                command: self.cmd,
                 target: self.target().preimage().clone(),
-                value: None,
+                value: self.value.clone(),
                 peer,
             }
         }

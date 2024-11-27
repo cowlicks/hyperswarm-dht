@@ -296,15 +296,6 @@ impl QueryStream {
             for node in resp.decode_closer_nodes() {
                 self.inner.add_unverified(node);
             }
-            if !self.ty.is_query() {
-                let to = resp.decode_to_peer();
-                if let Some(token) = resp.roundtrip_token {
-                    if let Some(remote) = remote {
-                        self.inner.add_verified(remote, token, to);
-                    }
-                }
-                return None;
-            }
         }
 
         if let Some(token) = resp.roundtrip_token.take() {
@@ -353,15 +344,7 @@ impl QueryStream {
                 }
             }
             PeersIterState::WaitingAtCapacity => Poll::Pending,
-            PeersIterState::Finished => {
-                if self.ty.is_update() {
-                    self.peer_iter =
-                        QueryPeerIter::Updating(self.inner.closest_peers_iter(self.parallelism));
-                    self.poll_iter()
-                } else {
-                    Poll::Ready(None)
-                }
-            }
+            PeersIterState::Finished => Poll::Ready(None),
         }
     }
 
@@ -382,33 +365,25 @@ impl QueryStream {
     fn send(&mut self, peer: Peer, update: bool) -> QueryEvent {
         if update {
             if let Some(token) = self.inner.get_token(&peer) {
-                QueryEvent::Update {
+                return QueryEvent::Update {
                     command: self.cmd.clone(),
                     token: Some(token.clone()),
                     target: self.target().preimage().clone(),
                     peer,
                     value: self.value.clone(),
-                }
+                };
             } else {
                 // don't wait for a response
                 self.peer_iter.on_failure(&peer);
-                QueryEvent::MissingRoundtripToken { peer }
-            }
-        } else if self.ty.is_query() {
-            QueryEvent::Query {
-                command: self.cmd.clone(),
-                target: self.target().preimage().clone(),
-                value: self.value.clone(),
-                peer,
-            }
-        } else {
-            QueryEvent::Query {
-                command: Command::FindNode,
-                target: self.target().preimage().clone(),
-                value: None,
-                peer,
+                return QueryEvent::MissingRoundtripToken { peer };
             }
         }
+        return QueryEvent::Query {
+            command: self.cmd.clone(),
+            target: self.target().preimage().clone(),
+            value: self.value.clone(),
+            peer,
+        };
     }
 
     fn poll_iter(&mut self) -> Poll<Option<QueryEvent>> {
