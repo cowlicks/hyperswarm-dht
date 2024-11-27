@@ -205,6 +205,7 @@ impl IoHandler {
                 peer,
                 resp: recv,
                 req: Box::new(req.message),
+                query_id: req.query_id,
             };
         }
         IoHandlerEvent::InResponseBadRequestId {
@@ -312,6 +313,7 @@ pub enum IoHandlerEvent {
         req: Box<RequestMsgData>,
         resp: ReplyMsgData,
         peer: Addr,
+        query_id: QueryId,
     },
     /// A Request was receieved
     InRequest { message: RequestMsgData, peer: Addr },
@@ -322,6 +324,7 @@ pub enum IoHandlerEvent {
         message: MsgData,
         peer: Addr,
         sent: Instant,
+        query_id: QueryId,
     },
     /// Error while decoding a message from socket
     /// TODO unused

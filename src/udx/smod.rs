@@ -264,8 +264,13 @@ impl RpcDht {
             IoHandlerEvent::OutRequest { .. } => {
                 // sent a request
             }
-            IoHandlerEvent::InResponse { req, resp, peer } => {
-                self.on_response(req, resp, peer);
+            IoHandlerEvent::InResponse {
+                req,
+                resp,
+                peer,
+                query_id,
+            } => {
+                self.on_response(req, resp, peer, query_id);
             }
             IoHandlerEvent::RequestTimeout { .. } => {
                 todo!()
@@ -282,7 +287,7 @@ impl RpcDht {
         req: Box<RequestMsgData>,
         resp: ReplyMsgData,
         peer: Addr,
-        //id: QueryId,
+        query_id: QueryId,
     ) {
         todo!()
         /*
