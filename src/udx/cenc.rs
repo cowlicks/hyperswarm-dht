@@ -10,6 +10,7 @@ use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
     kbucket::{self, EntryView},
     peers::PeersEncoding,
+    rpc::query::QueryId,
     udx::{Addr, InternalCommand},
     Error, IdBytes, PeerId, Result,
 };

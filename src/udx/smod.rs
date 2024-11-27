@@ -68,7 +68,7 @@ impl From<&SocketAddr> for Peer {
 impl From<SocketAddr> for Peer {
     fn from(value: SocketAddr) -> Self {
         Peer {
-            addr: value.clone(),
+            addr: value,
             referrer: None,
         }
     }
@@ -242,6 +242,7 @@ impl RpcDht {
             None,
             Some(peer.id.clone().to_vec()),
             (&peer.addr).into(),
+            self.queries.next_query_id(),
         )
     }
 
