@@ -13,10 +13,15 @@ use futures::Stream;
 
 use crate::{
     kbucket::{
+        Entry,
+        InsertResult,
         KBucketsTable,
         Key,
+        KeyBytes,
+        NodeStatus,
         K_VALUE, //KeyBytes,
     },
+    peers::PeersEncoding,
     rpc::{jobs::PeriodicJob, query::QueryId},
     IdBytes, PeerId,
 };
@@ -250,7 +255,7 @@ impl RpcDht {
             }
             IoHandlerEvent::InMessageErr { .. } => {}
             IoHandlerEvent::InSocketErr { .. } => {}
-            IoHandlerEvent::InResponseBadRequestId { peer, .. } => {
+            IoHandlerEvent::InResponseBadRequestId { .. } => {
                 // received a response that did not match any issued requests
                 //self.remove_node(&peer);
                 todo!()
@@ -259,14 +264,9 @@ impl RpcDht {
                 // sent a request
             }
             IoHandlerEvent::InResponse { req, resp, peer } => {
-                //self.on_response(req, resp, peer, user_data);
-                todo!()
+                self.on_response(req, resp, peer);
             }
-            IoHandlerEvent::RequestTimeout {
-                message,
-                peer,
-                sent: _,
-            } => {
+            IoHandlerEvent::RequestTimeout { .. } => {
                 todo!()
                 //if let Some(query) = self.queries.get_mut(&user_data) {
                 //    query.on_timeout(peer);
@@ -275,39 +275,47 @@ impl RpcDht {
         }
     }
 
+    /// Process a response.
+    fn on_response(
+        &mut self,
+        req: Box<RequestMsgData>,
+        resp: ReplyMsgData,
+        peer: Addr,
+        //id: QueryId,
+    ) {
+        todo!()
+        /*
+        if req.is_ping() {
+            self.on_pong(resp, peer);
+            return;
+        }
+
+        if let Some(query) = self.queries.get_mut(&id) {
+            if let Some(resp) = query.inject_response(resp, peer) {
+                self.queued_events
+                    .push_back(RpcDhtEvent::ResponseResult(Ok(ResponseOk::Response(resp))))
+            }
+        }
+            */
+    }
     /// Handle an incoming request.
     ///
     /// Eventually send a response.
-    fn on_request(&mut self, mut msg: RequestMsgData, peer: Peer) {
+    fn on_request(&mut self, msg: RequestMsgData, peer: Peer) {
         if let Some(id) = valid_id_bytes(msg.id) {
-            //self.add_node(id, peer.clone(), None, msg.to);
+            self.add_node(id, peer.clone(), None, Some(SocketAddr::from(&msg.to)));
         }
 
-        /*
-        if let Some(cmd) = msg.get_command() {
-            match cmd {
-                Command::Ping => self.on_ping(msg, peer),
-                Command::FindNode => self.on_findnode(msg, peer),
-                Command::PingNat => self.on_ping_nat(msg, peer),
-                Command::Unknown(s) => self.on_command_req(ty, s, msg, peer),
-            };
-        } else {
-            // TODO refactor with oncommand fn
-            if msg.target.is_none() {
-                self.queued_events.push_back(RpcDhtEvent::RequestResult(Err(
-                    RequestError::MissingTarget { peer, msg },
-                )));
-                return;
-            }
-            if let Some(key) = msg.valid_target_id_bytes() {
-                msg.error = Some("Unsupported command".to_string());
-                self.reply(msg, peer.clone(), key);
-            }
-            self.queued_events.push_back(RpcDhtEvent::RequestResult(Err(
-                RequestError::MissingCommand { peer },
-            )));
+        match msg.command {
+            Command::Internal(cmd) => match cmd {
+                InternalCommand::Ping => self.on_ping(msg, peer),
+                InternalCommand::FindNode => self.on_findnode(msg, peer),
+                InternalCommand::PingNat => self.on_ping_nat(msg, peer),
+                //Unknown(s) => self.on_command_req(ty, s, msg, peer),
+                _ => todo!(),
+            },
+            Command::External(_cmd) => todo!(),
         }
-            */
     }
 
     fn add_node(
@@ -318,7 +326,6 @@ impl RpcDht {
         to: Option<SocketAddr>,
     ) {
         let key = Key::new(id);
-        /*
         match self.kbuckets.entry(&key) {
             Entry::Present(mut entry, _) => {
                 entry.value().next_ping = Instant::now() + self.ping_job.interval;
@@ -337,17 +344,18 @@ impl RpcDht {
                     referrers: vec![],
                 };
 
+                use InsertResult::*;
                 match entry.insert(node, NodeStatus::Connected) {
-                    kbucket::InsertResult::Inserted => {
+                    Inserted => {
                         self.queued_events.push_back(RpcDhtEvent::RoutingUpdated {
-                            peer,
+                            peer: Addr::from(&peer),
                             old_peer: None,
                         });
                     }
-                    kbucket::InsertResult::Full => {
+                    Full => {
                         log::debug!("Bucket full. Peer not added to routing table: {:?}", peer)
                     }
-                    kbucket::InsertResult::Pending { disconnected: _ } => {
+                    Pending { disconnected: _ } => {
 
                         // TODO dial remote
                     }
@@ -355,10 +363,57 @@ impl RpcDht {
             }
             Entry::SelfEntry => {}
         }
-        */
+    }
+    /// Handle a ping request
+    fn on_ping(&mut self, msg: RequestMsgData, peer: Peer) {
+        if let Some(ref val) = msg.value {
+            if self.id.get().preimage() != val {
+                // ping wasn't meant for this node
+                self.queued_events.push_back(RpcDhtEvent::RequestResult(Err(
+                    RequestError::InvalidValue {
+                        peer: Addr::from(&peer),
+                        msg,
+                    },
+                )));
+                return;
+            }
+        }
+        // TODO handle result
+        let _todo = self.io.response(
+            msg,
+            Some(PeersEncoding::encode(&peer.addr)),
+            None,
+            Addr::from(&peer),
+        );
+    }
+    /// Handle an incoming find peers request.
+    ///
+    /// Reply only if the remote provided a target to get the closest nodes for.
+    fn on_findnode(&mut self, msg: RequestMsgData, peer: Peer) {
+        if let Some(key) = valid_id_bytes(msg.id) {
+            let closer_nodes = self.closer_nodes(key, usize::from(K_VALUE));
+            // TODO result
+            let _ = self
+                .io
+                .response(msg, None, Some(closer_nodes), Addr::from(&peer));
+        }
+    }
+
+    /// Get the `num` closest nodes in the bucket.
+    fn closer_nodes(&mut self, key: IdBytes, num: usize) -> Vec<Addr> {
+        let nodes = self
+            .kbuckets
+            .closest(&KeyBytes::new(key))
+            .take(num)
+            .map(|p| Addr::from(&p.node.value.addr))
+            .collect::<Vec<_>>();
+        nodes
+        //PeersEncoding::encode(&nodes)
+    }
+    fn on_ping_nat(&self, _msg: RequestMsgData, _peer: Peer) {
+        todo!()
     }
 }
-
 #[derive(Debug)]
 pub enum RpcDhtEvent {
     /// Result wrapping an incomming Request

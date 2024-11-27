@@ -22,7 +22,7 @@ use self::{
     peers::PeersIterState,
     table::{PeerState, QueryTable},
 };
-use super::{cenc::ReplyMsgData, smod::Peer, Command, InternalCommand};
+use super::{cenc::ReplyMsgData, smod::Peer, Command};
 
 /// A `QueryPool` provides an aggregate state machine for driving `Query`s to
 /// completion.

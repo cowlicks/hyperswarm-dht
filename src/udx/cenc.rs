@@ -1,18 +1,22 @@
 use std::{
+    borrow::Borrow,
     convert::{TryFrom, TryInto},
-    net::{Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 
 use compact_encoding::{CompactEncoding, EncodingError, State};
 
 use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
+    kbucket::{self, EntryView},
+    peers::PeersEncoding,
     udx::{Addr, InternalCommand},
     Error, IdBytes, PeerId, Result,
 };
 
 use super::{
     io::{Reply, Request},
+    smod::Node,
     Command, ExternalCommand,
 };
 
@@ -547,5 +551,34 @@ impl MsgData {
             RESPONSE_ID => MsgData::Reply(ReplyMsgData::decode(buff, &mut state)?),
             _ => todo!(),
         })
+    }
+}
+
+impl PeersEncoding for &SocketAddr {
+    fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(6);
+        // TODO what to do with IPV6?
+        if let IpAddr::V4(ip) = self.ip() {
+            buf.extend_from_slice(&ip.octets()[..]);
+            buf.extend_from_slice(&self.port().to_be_bytes()[..]);
+        }
+        buf
+    }
+}
+
+impl PeersEncoding for Vec<EntryView<kbucket::Key<IdBytes>, Node>> {
+    fn encode(&self) -> Vec<u8> {
+        // TODO refactor
+        let mut buf = Vec::with_capacity(self.len() * (32 + 6));
+
+        for peer in self.iter() {
+            let addr = &peer.node.value.addr;
+            if let IpAddr::V4(ip) = addr.ip() {
+                buf.extend_from_slice(peer.node.key.preimage().borrow());
+                buf.extend_from_slice(&ip.octets()[..]);
+                buf.extend_from_slice(&addr.port().to_be_bytes()[..]);
+            }
+        }
+        buf
     }
 }
