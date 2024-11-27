@@ -289,21 +289,19 @@ impl RpcDht {
         peer: Addr,
         query_id: QueryId,
     ) {
-        todo!()
-        /*
-        if req.is_ping() {
+        if matches!(req.command, Command::Internal(InternalCommand::Ping)) {
             self.on_pong(resp, peer);
             return;
         }
 
-        if let Some(query) = self.queries.get_mut(&id) {
-            if let Some(resp) = query.inject_response(resp, peer) {
+        if let Some(query) = self.queries.get_mut(&query_id) {
+            if let Some(resp) = query.inject_response(resp, peer.into()) {
                 self.queued_events
                     .push_back(RpcDhtEvent::ResponseResult(Ok(ResponseOk::Response(resp))))
             }
         }
-            */
     }
+
     /// Handle an incoming request.
     ///
     /// Eventually send a response.
@@ -419,6 +417,33 @@ impl RpcDht {
     fn on_ping_nat(&self, _msg: RequestMsgData, _peer: Peer) {
         todo!()
     }
+    /// Handle a response for our Ping command
+    fn on_pong(&mut self, msg: ReplyMsgData, peer: Addr) {
+        if let Some(id) = msg.valid_id_bytes() {
+            match self.kbuckets.entry(&Key::new(id)) {
+                Entry::Present(mut entry, _) => {
+                    entry.value().next_ping = Instant::now() + self.ping_job.interval;
+                    self.queued_events.push_back(RpcDhtEvent::ResponseResult(Ok(
+                        ResponseOk::Pong(Addr::from(&entry.value().addr)),
+                    )));
+                    return;
+                }
+                Entry::Pending(mut entry, _) => {
+                    entry.value().next_ping = Instant::now() + self.ping_job.interval;
+                    self.queued_events.push_back(RpcDhtEvent::ResponseResult(Ok(
+                        ResponseOk::Pong(Addr::from(&entry.value().addr)),
+                    )));
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        self.queued_events
+            .push_back(RpcDhtEvent::ResponseResult(Err(
+                ResponseError::InvalidPong(peer),
+            )))
+    }
 }
 #[derive(Debug)]
 pub enum RpcDhtEvent {
@@ -502,7 +527,7 @@ pub enum ResponseOk {
     /// Received a pong response to our ping request.
     Pong(Addr),
     /// A remote peer successfully responded to our query
-    Response(ReplyMsgData),
+    Response(Response),
 }
 
 #[derive(Debug)]
@@ -587,4 +612,21 @@ impl Stream for RpcDht {
             }
         }
     }
+}
+
+/// Response received from `peer` to a request submitted by this DHT.
+#[derive(Debug, Clone)]
+pub struct Response {
+    /// The id of the associated query
+    pub query: QueryId,
+    /// Command of the response message
+    pub cmd: Command,
+    /// `to` field of the message
+    pub to: Option<SocketAddr>,
+    /// Peer that issued this reponse
+    pub peer: SocketAddr,
+    /// Included identifier of the peer.
+    pub peer_id: Option<IdBytes>,
+    /// response payload
+    pub value: Option<Vec<u8>>,
 }

@@ -9,7 +9,7 @@ use crate::{
     rpc::{
         message::{Message, Type},
         query::QueryId,
-        IdBytes, PeerId, RequestId, Response,
+        IdBytes, PeerId, RequestId,
     },
 };
 
@@ -22,7 +22,11 @@ use self::{
     peers::PeersIterState,
     table::{PeerState, QueryTable},
 };
-use super::{cenc::ReplyMsgData, smod::Peer, Command};
+use super::{
+    cenc::ReplyMsgData,
+    smod::{Peer, Response},
+    Command,
+};
 
 /// A `QueryPool` provides an aggregate state machine for driving `Query`s to
 /// completion.
@@ -307,8 +311,7 @@ impl QueryStream {
         }
 
         Some(Response {
-            query: todo!(),
-            ty: todo!(),
+            query: self.id,
             //cmd: self.cmd.clone(),
             cmd: todo!(),
             to: resp.decode_to_peer(),
