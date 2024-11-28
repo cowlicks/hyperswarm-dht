@@ -14,6 +14,7 @@ use futures::Stream;
 use crate::{
     kbucket::{
         Entry,
+        EntryView,
         InsertResult,
         KBucketsTable,
         Key,
@@ -34,7 +35,10 @@ use super::{
     },
     message::valid_id_bytes,
     mslave::Master,
-    query::{CommandQuery, QueryConfig, QueryPool, QueryStats},
+    query::{
+        table::PeerState, CommandQuery, QueryConfig, QueryEvent, QueryPool, QueryPoolState,
+        QueryStats, QueryStream,
+    },
     sio::{IoConfig, IoHandler, IoHandlerEvent},
     stream::MessageDataStream,
     thirty_two_random_bytes, Addr, Command, InternalCommand,
@@ -444,6 +448,97 @@ impl RpcDht {
                 ResponseError::InvalidPong(peer),
             )))
     }
+
+    /// Delegate new query event to the io handler
+    fn inject_query_event(&mut self, id: QueryId, event: QueryEvent) {
+        match event {
+            QueryEvent::Query {
+                peer,
+                command,
+                target,
+                value,
+            } => {
+                self.io
+                    .query(command, Some(target.0), value, Addr::from(&peer), id);
+            }
+            QueryEvent::RemoveNode { id } => {
+                self.remove_peer(&Key::new(id));
+            }
+            QueryEvent::MissingRoundtripToken { .. } => {
+                // TODO
+            }
+            _ => {
+                todo!()
+            } /*
+              QueryEvent::Update {
+                  peer,
+                  command,
+                  target,
+                  value,
+                  token,
+              } => {
+                  self.io
+                      .update(command, Some(target), value, peer, token, id);
+              }
+              */
+        }
+    }
+
+    /// Removes a peer from the routing table.
+    ///
+    /// Returns `None` if the peer was not in the routing table,
+    /// not even pending insertion.
+    pub fn remove_peer(&mut self, key: &Key<IdBytes>) -> Option<EntryView<Key<IdBytes>, Node>> {
+        match self.kbuckets.entry(key) {
+            Entry::Present(entry, _) => Some(entry.remove()),
+            Entry::Pending(entry, _) => Some(entry.remove()),
+            Entry::Absent(..) | Entry::SelfEntry => None,
+        }
+    }
+
+    /// Handles a finished query.
+    fn query_finished(&mut self, query: QueryStream) -> RpcDhtEvent {
+        let is_find_node = matches!(
+            query.command(),
+            Command::Internal(InternalCommand::FindNode)
+        );
+
+        let result = query.into_result();
+
+        // add nodes to the table
+        for (peer, state) in result.peers {
+            match state {
+                PeerState::Failed => {
+                    self.remove_peer(&Key::new(peer.id));
+                }
+                PeerState::Succeeded {
+                    roundtrip_token,
+                    to,
+                } => {
+                    self.add_node(peer.id, Peer::from(peer.addr), Some(roundtrip_token), to);
+                }
+                _ => {}
+            }
+        }
+
+        // first `find_node` query is issued as bootstrap
+        if is_find_node && !self.bootstrapped {
+            self.bootstrapped = true;
+            RpcDhtEvent::Bootstrapped {
+                stats: result.stats,
+            }
+        } else {
+            RpcDhtEvent::QueryResult {
+                id: result.inner,
+                cmd: result.cmd,
+                stats: result.stats,
+            }
+        }
+    }
+    /// Handles a query that timed out.
+    fn query_timeout(&mut self, query: QueryStream) -> RpcDhtEvent {
+        self.query_finished(query)
+    }
 }
 #[derive(Debug)]
 pub enum RpcDhtEvent {
@@ -472,7 +567,7 @@ pub enum RpcDhtEvent {
         /// The ID of the query that finished.
         id: QueryId,
         /// The command of the executed query.
-        cmd: InternalCommand,
+        cmd: Command,
         /// Execution statistics from the query.
         stats: QueryStats,
     },
@@ -581,7 +676,6 @@ impl Stream for RpcDht {
                         return Poll::Ready(Some(event));
                     }
                 } else {
-                    /*
                     match pin.queries.poll(now) {
                         QueryPoolState::Waiting(Some((query, event))) => {
                             let id = query.id();
@@ -599,8 +693,6 @@ impl Stream for RpcDht {
                             break;
                         }
                     }
-                    */
-                    todo!()
                 }
             }
 

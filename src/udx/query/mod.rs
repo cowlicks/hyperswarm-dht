@@ -453,7 +453,9 @@ impl QueryPeerIter {
 #[derive(Debug, Clone, Copy)]
 pub enum QueryType {
     Query,
+    // TODO this can be removed
     Update,
+    // TODO this can be removed
     QueryUpdate,
 }
 
@@ -462,6 +464,7 @@ impl QueryType {
         matches!(self, QueryType::Query | QueryType::QueryUpdate)
     }
 
+    // TODO update type is removed
     pub fn is_update(&self) -> bool {
         matches!(self, QueryType::Update | QueryType::QueryUpdate)
     }
@@ -481,6 +484,7 @@ pub enum QueryEvent {
     MissingRoundtripToken {
         peer: Peer,
     },
+    // TODO update type is removed
     Update {
         peer: Peer,
         command: Command,
