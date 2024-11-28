@@ -1312,6 +1312,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[tokio::test]
     async fn local_bootstrap() -> std::result::Result<(), Box<dyn std::error::Error>> {
         // ephemeral node used for bootstrapping

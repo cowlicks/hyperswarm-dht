@@ -24,7 +24,7 @@ mod message;
 mod mslave;
 mod query;
 mod sio;
-mod smod;
+pub mod smod;
 mod stream;
 
 #[cfg(test)]

@@ -55,6 +55,7 @@ async fn ping_global() -> Result<()> {
     let rpc = RpcDhtBuilder::default()
         .kbuckets(kbuckets)
         .add_bootstrap_node(addr)?
+        .with_default_io()?
         .build()?;
     let _rec = rpc.ping(&addr).await?;
     Ok(())
@@ -79,6 +80,7 @@ async fn bootstrap_global() -> Result<()> {
         .id(Arc::new(RefCell::new(id)))
         .add_bootstrap_node(addr)?
         .kbuckets(kbuckets)
+        .with_default_io()?
         .build()?;
     let rec = rpc.bootstrap().await?;
     dbg!(rec);
