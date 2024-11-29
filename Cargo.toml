@@ -38,6 +38,9 @@ pretty-hash = "0.4.1"
 thiserror = "1.0.68"
 libsodium-sys-stable = "1.21.2"
 derive_builder = "0.20.2"
+petgraph = "0.6.5"
+syn = "2.0.89"
+walkdir = "2.5.0"
 
 [dependencies.compact-encoding]
 path = "../compact-encoding"
