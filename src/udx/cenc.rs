@@ -4,20 +4,19 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 
-use compact_encoding::{CompactEncoding, EncodingError, State};
+use compact_encoding::{CompactEncoding, EncodingError, EncodingErrorKind, State};
 
 use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
     kbucket::{self, EntryView},
     peers::PeersEncoding,
-    rpc::query::QueryId,
     udx::{Addr, InternalCommand},
     Error, IdBytes, PeerId, Result,
 };
 
 use super::{
     io::{Reply, Request},
-    smod::Node,
+    smod::{Node, Peer},
     Command, ExternalCommand,
 };
 
@@ -96,6 +95,43 @@ impl CompactEncoding<Addr> for State {
             id: None,
             host,
             port,
+        })
+    }
+}
+
+impl CompactEncoding<Peer> for State {
+    fn preencode(&mut self, _value: &Peer) -> std::result::Result<usize, EncodingError> {
+        self.add_end(6)
+    }
+
+    fn encode(
+        &mut self,
+        value: &Peer,
+        buff: &mut [u8],
+    ) -> std::result::Result<usize, EncodingError> {
+        if let IpAddr::V4(ip) = value.addr.ip() {
+            encode_ip(&ip, buff, self)?;
+            self.encode_u16(value.addr.port(), buff)?;
+            return Ok(self.start());
+        }
+        Err(EncodingError {
+            kind: EncodingErrorKind::InvalidData,
+            message: "ipv6 not supported".to_string(),
+        })
+    }
+
+    fn decode(&mut self, buff: &[u8]) -> std::result::Result<Peer, EncodingError> {
+        let ip_start = self.start();
+        let [ip1, ip2, ip3, ip4, port_1, port_2] = buff[ip_start..(ip_start + 4 + 2)] else {
+            todo!()
+        };
+        self.add_start(4 + 2)?;
+        let host = Ipv4Addr::from([ip1, ip2, ip3, ip4]);
+        let port = u16::from_le_bytes([port_1, port_2]);
+        Ok(Peer {
+            id: None,
+            addr: SocketAddr::from((host, port)),
+            referrer: None,
         })
     }
 }

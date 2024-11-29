@@ -46,6 +46,7 @@ use super::{
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub struct Peer {
+    pub id: Option<[u8; 32]>,
     pub addr: SocketAddr,
     /// Referrer that told us about this node.
     pub referrer: Option<SocketAddr>,
@@ -54,15 +55,28 @@ pub struct Peer {
 impl From<Addr> for Peer {
     fn from(value: Addr) -> Self {
         Self {
+            id: value.id,
             addr: SocketAddr::from(&value),
             referrer: None,
         }
     }
 }
 
+impl From<&Addr> for Peer {
+    fn from(value: &Addr) -> Self {
+        Self {
+            id: value.id,
+            addr: SocketAddr::from(value),
+            referrer: None,
+        }
+    }
+}
+
+// TODO DRY
 impl From<&SocketAddr> for Peer {
     fn from(value: &SocketAddr) -> Self {
         Peer {
+            id: None,
             addr: *value,
             referrer: None,
         }
@@ -72,6 +86,7 @@ impl From<&SocketAddr> for Peer {
 impl From<SocketAddr> for Peer {
     fn from(value: SocketAddr) -> Self {
         Peer {
+            id: None,
             addr: value,
             referrer: None,
         }
