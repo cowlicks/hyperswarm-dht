@@ -431,7 +431,6 @@ impl ReplyMsgData {
                 if let Some(id) = p.id {
                     return Some(PeerId::new(p.addr, IdBytes::from(id)));
                 }
-                warn!("closer_nodes peer is missing ID");
                 None
             })
             .collect()
