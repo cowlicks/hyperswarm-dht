@@ -95,9 +95,8 @@ impl Sink<(MsgData, SocketAddr)> for MessageDataStream {
 
 #[cfg(test)]
 mod test {
-    use crate::udx::{cenc::ReplyMsgData, Addr};
+    use crate::udx::{cenc::ReplyMsgData, smod::Peer};
     use futures::{SinkExt, StreamExt};
-    use std::net::Ipv4Addr;
 
     use super::*;
     #[tokio::test]
@@ -106,10 +105,10 @@ mod test {
         let mut two = MessageDataStream::defualt_bind()?;
         let expected = MsgData::Reply(ReplyMsgData {
             tid: 0,
-            to: Addr {
+            to: Peer {
                 id: None,
-                host: Ipv4Addr::new(0, 0, 0, 0),
-                port: 666,
+                addr: "0.0.0.0:666".parse()?,
+                referrer: None,
             },
             id: None,
             token: None,

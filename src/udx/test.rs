@@ -2,7 +2,7 @@ use crate::{
     kbucket::{KBucketsTable, KeyBytes},
     udx::{
         io::{Io, Reply, Request},
-        thirty_two_random_bytes, Addr, Command, InternalCommand, RpcDhtBuilder,
+        thirty_two_random_bytes, Command, InternalCommand, RpcDhtBuilder,
     },
     Result, DEFAULT_BOOTSTRAP,
 };
@@ -11,18 +11,19 @@ use compact_encoding::State;
 use std::{
     cell::RefCell,
     convert::TryInto,
-    net::{Ipv4Addr, SocketAddr, ToSocketAddrs},
+    net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs},
     sync::Arc,
     time::Duration,
 };
 
-use super::cenc::validate_id;
+use super::{cenc::validate_id, smod::Peer};
 const HOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 const BOOTSTRAP_PORT: u16 = 10001;
-const BOOTSTRAP_ADDR: Addr = Addr {
+const BOOTSTRAP_SOCKET: SocketAddr = SocketAddr::new(IpAddr::V4(HOST), BOOTSTRAP_PORT);
+const BOOTSTRAP_PEER: Peer = Peer {
     id: None,
-    host: HOST,
-    port: BOOTSTRAP_PORT,
+    addr: BOOTSTRAP_SOCKET,
+    referrer: None,
 };
 
 #[ignore]
@@ -91,16 +92,8 @@ async fn bootstrap_global() -> Result<()> {
 // node in dht-rpc 6.15.1
 fn mk_request() -> Request {
     Request {
-        to: Addr {
-            id: None,
-            host: HOST,
-            port: BOOTSTRAP_PORT,
-        },
-        from: Some(Addr {
-            id: None,
-            host: HOST,
-            port: 12345,
-        }),
+        to: BOOTSTRAP_PEER,
+        from: Some(format!("{HOST}:1234").parse().unwrap()),
         command: InternalCommand::FindNode.into(),
         target: Some([
             235, 159, 119, 93, 35, 250, 85, 76, 120, 152, 96, 17, 175, 157, 204, 216, 8, 191, 189,
@@ -119,7 +112,7 @@ fn mk_request() -> Request {
 async fn test_ping() -> Result<()> {
     let sock = UdxSocket::bind("127.0.0.1:0")?;
     let io = Io::new(Arc::new(RefCell::new(thirty_two_random_bytes())))?;
-    let ping_req = io.create_ping(&BOOTSTRAP_ADDR);
+    let ping_req = io.create_ping(&BOOTSTRAP_PEER);
     let buff = ping_req.encode(&io, false)?;
     println!("{buff:?}");
     //ping_req.en
@@ -155,11 +148,6 @@ fn test_decode_request() -> Result<()> {
         2, 186, 215, 155, 149, 209, 74, 57, 70, 15, 217, 115, 50, 6, 25, 133, 59, 149, 198, 162,
         26, 109, 183, 36, 71, 251, 134, 40, 25, 235, 205, 135, 36,
     ];
-    let _from_before = Addr {
-        id: None,
-        host: HOST,
-        port: 45475,
-    };
     let value = None;
     let target = [
         186, 215, 155, 149, 209, 74, 57, 70, 15, 217, 115, 50, 6, 25, 133, 59, 149, 198, 162, 26,
@@ -168,16 +156,8 @@ fn test_decode_request() -> Result<()> {
     let command = 2;
     let internal = true;
     let token = None;
-    let to = Addr {
-        id: None,
-        host: HOST,
-        port: BOOTSTRAP_PORT,
-    };
-    let mut from = Addr {
-        id: None,
-        host: HOST,
-        port: 45475,
-    };
+    let to = BOOTSTRAP_PEER;
+    let mut from: Peer = format!("{HOST}:45475").parse()?;
     let tid = 8486;
     let _id = [
         186, 215, 155, 149, 209, 74, 57, 70, 15, 217, 115, 50, 6, 25, 133, 59, 149, 198, 162, 26,
@@ -214,23 +194,19 @@ fn test_decode_reply() -> Result<()> {
         233, 110, 1, 70, 163, 62, 2, 41, 135, 254, 37, 108, 99, 67, 172, 93, 32, 219, 164, 126,
         161, 182, 52, 31, 147, 41, 3, 180, 132, 105, 69, 62,
     ];
-    let from = Addr {
+    let from = Peer {
         id: Some(id.clone().try_into().unwrap()),
-        host: HOST,
-        port: BOOTSTRAP_PORT,
+        addr: BOOTSTRAP_SOCKET,
+        referrer: None,
     };
     let _flags = 5;
     let tid = 8265;
-    let to = Addr {
-        id: None,
-        host: HOST,
-        port: 39361,
-    };
+    let to = format!("{HOST}:39361").parse()?;
     let token: Option<[u8; 32]> = None;
-    let closer_nodes: Vec<Addr> = vec![Addr {
+    let closer_nodes: Vec<Peer> = vec![Peer {
         id: None,
-        host: HOST,
-        port: 39361,
+        addr: format!("{HOST}:39361").parse()?,
+        referrer: None,
     }];
     let error = 0;
     let value: Option<Vec<u8>> = None;
@@ -258,10 +234,10 @@ fn test_validate_id() -> Result<()> {
         128, 153, 111, 213, 115, 62, 11, 125, 92, 62, 223, 183, 3, 135, 211, 39, 152, 41, 73, 55,
         160, 113, 55, 48, 114, 90, 50, 44, 201, 131, 192, 94,
     ];
-    let from = Addr {
+    let from = Peer {
         id: None,
-        host: Ipv4Addr::new(188, 166, 28, 20),
-        port: 60692,
+        referrer: None,
+        addr: "188.166.28.20:60692".parse()?,
     };
     assert!(validate_id(&id, &from).is_some());
     Ok(())
@@ -274,10 +250,10 @@ fn test_decode_reply2() -> Result<()> {
         81, 106, 47, 82, 219, 19, 156, 62, 133, 43, 118, 112, 239,
     ];
 
-    let from = Addr {
+    let from = Peer {
         id: None,
-        host: Ipv4Addr::new(194, 113, 75, 189),
-        port: 55922,
+        referrer: None,
+        addr: "194.113.75.189:55922".parse()?,
     };
     let buff: Vec<u8> = vec![
         19, 1, 255, 87, 23, 136, 216, 2, 190, 175, 150, 215, 52, 186, 21, 138, 59, 143, 151, 102,
@@ -288,15 +264,15 @@ fn test_decode_reply2() -> Result<()> {
     let reply = Reply {
         tid: 22527,
         rtt: 0,
-        from: Addr {
+        from: Peer {
             id: Some(id),
-            host: Ipv4Addr::new(194, 113, 75, 189),
-            port: 55922,
+            referrer: None,
+            addr: "194.113.75.189:55922".parse()?,
         },
-        to: Addr {
+        to: Peer {
             id: None,
-            host: Ipv4Addr::new(23, 136, 216, 2),
-            port: 44990,
+            referrer: None,
+            addr: "23.136.216.2:44990".parse()?,
         },
         token: None,
         closer_nodes: vec![],
@@ -319,10 +295,10 @@ fn test_decode_reply3() -> Result<()> {
 
     let host = Ipv4Addr::new(188, 166, 28, 20);
     let port = 33041;
-    let from = Addr {
+    let from = Peer {
+        referrer: None,
         id: None,
-        host,
-        port,
+        addr: format!("{host}:{port}").parse()?,
     };
     let buff: Vec<u8> = vec![
         19, 5, 255, 124, 74, 101, 11, 68, 57, 146, 225, 49, 134, 54, 15, 155, 254, 45, 250, 31, 96,
@@ -336,120 +312,120 @@ fn test_decode_reply3() -> Result<()> {
         176, 9, 42, 203, 214, 211,
     ];
     let closer_nodes = vec![
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 60110,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 60110),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(138, 68, 147, 8),
-            port: 57257,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(138, 68, 147, 8)), 57257),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 54571,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 54571),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(170, 187, 185, 104),
-            port: 33794,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(170, 187, 185, 104)), 33794),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 46915,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 46915),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 54707,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 54707),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 38248,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 38248),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 45725,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 45725),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 55630,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 55630),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 49999,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 49999),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 46780,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 46780),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(103, 55, 9, 56),
-            port: 49737,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(103, 55, 9, 56)), 49737),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 33429,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 33429),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 52775,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 52775),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 55517,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 55517),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(138, 68, 147, 8),
-            port: 57299,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(138, 68, 147, 8)), 57299),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 40166,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 40166),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 49801,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 49801),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(188, 166, 28, 20),
-            port: 49737,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(188, 166, 28, 20)), 49737),
         },
-        Addr {
+        Peer {
             id: None,
-            host: Ipv4Addr::new(176, 9, 42, 203),
-            port: 54230,
+            referrer: None,
+            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(176, 9, 42, 203)), 54230),
         },
     ];
 
     let reply = Reply {
         tid: 31999,
         rtt: 0,
-        from: Addr {
+        from: Peer {
+            referrer: None,
             id: Some(id),
-            host,
-            port,
+            addr: format!("{host}:{port}").parse()?,
         },
-        to: Addr {
+        to: Peer {
+            referrer: None,
             id: None,
-            host: Ipv4Addr::new(74, 101, 11, 68),
-            port: 37433,
+            addr: "74.101.11.68:37433".parse()?,
         },
         token: None,
         closer_nodes,
@@ -467,10 +443,10 @@ fn test_decode_reply3() -> Result<()> {
 
 #[test]
 fn test_just_reply_buff() -> Result<()> {
-    let from = Addr {
+    let from = Peer {
         id: None,
-        host: Ipv4Addr::new(2, 0, 194, 73),
-        port: 25432,
+        referrer: None,
+        addr: "2.0.194.73:25432".parse()?,
     };
     let buff = vec![
         19, 5, 101, 186, 74, 101, 11, 68, 118, 171, 84, 212, 185, 198, 68, 16, 72, 6, 31, 128, 207,

@@ -4,6 +4,7 @@ use std::{
     collections::{HashSet, VecDeque},
     net::{SocketAddr, ToSocketAddrs},
     pin::Pin,
+    str::FromStr,
     task::{Context, Poll},
     time::Duration,
 };
@@ -50,6 +51,19 @@ pub struct Peer {
     pub addr: SocketAddr,
     /// Referrer that told us about this node.
     pub referrer: Option<SocketAddr>,
+}
+
+impl FromStr for Peer {
+    type Err = crate::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let addr: SocketAddr = s.parse()?;
+        Ok(Peer {
+            addr,
+            id: None,
+            referrer: None,
+        })
+    }
 }
 
 // TODO DRY
