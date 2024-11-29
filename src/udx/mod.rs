@@ -30,6 +30,9 @@ mod stream;
 #[cfg(test)]
 mod test;
 
+#[cfg(test)]
+mod s_test;
+
 /// TODO in js this is de/encoded with c.uint which is for a variable sized unsigned integer.
 // but it is always one byte. We use a u8 instead of a usize here. So there is a limit on 256
 // commands.
