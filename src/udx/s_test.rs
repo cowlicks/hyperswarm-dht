@@ -9,14 +9,19 @@ use crate::{
 
 #[tokio::test]
 async fn t() -> crate::Result<()> {
-    let mut conf = DhtConfig::default();
-    let conf = conf.add_bootstrap_node(DEFAULT_BOOTSTRAP[0].to_socket_addrs()?.last().unwrap());
+    let conf = DhtConfig::default()
+        .add_bootstrap_node(DEFAULT_BOOTSTRAP[0].to_socket_addrs()?.last().unwrap());
 
     let mut rpc = RpcDht::with_config(conf).await?;
     rpc.bootstrap();
 
-    let x = rpc.next().await;
-    dbg!(x);
+    let mut i = 0;
+    loop {
+        let x = rpc.next().await;
+        dbg!(x);
+        dbg!(i);
+        i += 1;
+    }
 
     Ok(())
 }

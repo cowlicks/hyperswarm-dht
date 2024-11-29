@@ -5,6 +5,7 @@ use std::{
 };
 
 use compact_encoding::{CompactEncoding, EncodingError, EncodingErrorKind, State};
+use log::warn;
 
 use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
@@ -424,20 +425,19 @@ impl ReplyMsgData {
     }
     /// Decode the `to` field into `PeerId`
     pub(crate) fn decode_closer_nodes(&self) -> Vec<PeerId> {
-        todo!()
-        /*
         self.closer_nodes
-            .as_ref()
-            .map(decode_peer_ids)
-            .unwrap_or_default()
-            */
+            .iter()
+            .filter_map(|p| {
+                if let Some(id) = p.id {
+                    return Some(PeerId::new(p.addr, IdBytes::from(id)));
+                }
+                warn!("closer_nodes peer is missing ID");
+                None
+            })
+            .collect()
     }
     pub(crate) fn valid_id_bytes(&self) -> Option<IdBytes> {
         self.id.map(IdBytes::from)
-    }
-
-    pub(crate) fn decode_to_peer(&self) -> Option<SocketAddr> {
-        todo!()
     }
 
     fn encode(&self) -> Result<Vec<u8>> {

@@ -306,15 +306,14 @@ impl QueryStream {
         if let Some(token) = resp.token.take() {
             if let Some(remote) = remote {
                 self.inner
-                    .add_verified(remote, token.to_vec(), resp.decode_to_peer());
+                    .add_verified(remote, token.to_vec(), Some(resp.to.addr));
             }
         }
 
         Some(Response {
             query: self.id,
-            //cmd: self.cmd.clone(),
-            cmd: todo!(),
-            to: resp.decode_to_peer(),
+            cmd: self.cmd,
+            to: Some(resp.to.addr),
             peer: peer.addr,
             peer_id: resp.valid_id_bytes(),
             value: resp.value,
