@@ -41,7 +41,7 @@ use super::{
     },
     sio::{IoConfig, IoHandler, IoHandlerEvent},
     stream::MessageDataStream,
-    thirty_two_random_bytes, Addr, Command, InternalCommand,
+    thirty_two_random_bytes, Command, InternalCommand,
 };
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
@@ -52,26 +52,6 @@ pub struct Peer {
     pub referrer: Option<SocketAddr>,
 }
 
-impl From<Addr> for Peer {
-    fn from(value: Addr) -> Self {
-        Self {
-            id: value.id,
-            addr: SocketAddr::from(&value),
-            referrer: None,
-        }
-    }
-}
-
-impl From<&Addr> for Peer {
-    fn from(value: &Addr) -> Self {
-        Self {
-            id: value.id,
-            addr: SocketAddr::from(value),
-            referrer: None,
-        }
-    }
-}
-
 // TODO DRY
 impl From<&SocketAddr> for Peer {
     fn from(value: &SocketAddr) -> Self {
@@ -80,6 +60,11 @@ impl From<&SocketAddr> for Peer {
             addr: *value,
             referrer: None,
         }
+    }
+}
+impl From<&Peer> for SocketAddr {
+    fn from(value: &Peer) -> Self {
+        value.addr
     }
 }
 
@@ -305,7 +290,7 @@ impl RpcDht {
         &mut self,
         req: Box<RequestMsgData>,
         resp: ReplyMsgData,
-        peer: Addr,
+        peer: Peer,
         query_id: QueryId,
     ) {
         if matches!(req.command, Command::Internal(InternalCommand::Ping)) {
@@ -371,7 +356,7 @@ impl RpcDht {
                 match entry.insert(node, NodeStatus::Connected) {
                     Inserted => {
                         self.queued_events.push_back(RpcDhtEvent::RoutingUpdated {
-                            peer: Addr::from(&peer),
+                            peer,
                             old_peer: None,
                         });
                     }
@@ -393,21 +378,15 @@ impl RpcDht {
             if self.id.get().preimage() != val {
                 // ping wasn't meant for this node
                 self.queued_events.push_back(RpcDhtEvent::RequestResult(Err(
-                    RequestError::InvalidValue {
-                        peer: Addr::from(&peer),
-                        msg,
-                    },
+                    RequestError::InvalidValue { peer, msg },
                 )));
                 return;
             }
         }
         // TODO handle result
-        let _todo = self.io.response(
-            msg,
-            Some(PeersEncoding::encode(&peer.addr)),
-            None,
-            Addr::from(&peer),
-        );
+        let _todo = self
+            .io
+            .response(msg, Some(PeersEncoding::encode(&peer.addr)), None, peer);
     }
     /// Handle an incoming find peers request.
     ///
@@ -416,19 +395,17 @@ impl RpcDht {
         if let Some(key) = valid_id_bytes(msg.id) {
             let closer_nodes = self.closer_nodes(key, usize::from(K_VALUE));
             // TODO result
-            let _ = self
-                .io
-                .response(msg, None, Some(closer_nodes), Addr::from(&peer));
+            let _ = self.io.response(msg, None, Some(closer_nodes), peer);
         }
     }
 
     /// Get the `num` closest nodes in the bucket.
-    fn closer_nodes(&mut self, key: IdBytes, num: usize) -> Vec<Addr> {
+    fn closer_nodes(&mut self, key: IdBytes, num: usize) -> Vec<Peer> {
         let nodes = self
             .kbuckets
             .closest(&KeyBytes::new(key))
             .take(num)
-            .map(|p| Addr::from(&p.node.value.addr))
+            .map(|p| Peer::from(&p.node.value.addr))
             .collect::<Vec<_>>();
         nodes
         //PeersEncoding::encode(&nodes)
@@ -437,20 +414,20 @@ impl RpcDht {
         todo!()
     }
     /// Handle a response for our Ping command
-    fn on_pong(&mut self, msg: ReplyMsgData, peer: Addr) {
+    fn on_pong(&mut self, msg: ReplyMsgData, peer: Peer) {
         if let Some(id) = msg.valid_id_bytes() {
             match self.kbuckets.entry(&Key::new(id)) {
                 Entry::Present(mut entry, _) => {
                     entry.value().next_ping = Instant::now() + self.ping_job.interval;
                     self.queued_events.push_back(RpcDhtEvent::ResponseResult(Ok(
-                        ResponseOk::Pong(Addr::from(&entry.value().addr)),
+                        ResponseOk::Pong(Peer::from(&entry.value().addr)),
                     )));
                     return;
                 }
                 Entry::Pending(mut entry, _) => {
                     entry.value().next_ping = Instant::now() + self.ping_job.interval;
                     self.queued_events.push_back(RpcDhtEvent::ResponseResult(Ok(
-                        ResponseOk::Pong(Addr::from(&entry.value().addr)),
+                        ResponseOk::Pong(Peer::from(&entry.value().addr)),
                     )));
                     return;
                 }
@@ -473,8 +450,7 @@ impl RpcDht {
                 target,
                 value,
             } => {
-                self.io
-                    .query(command, Some(target.0), value, Addr::from(&peer), id);
+                self.io.query(command, Some(target.0), value, peer, id);
             }
             QueryEvent::RemoveNode { id } => {
                 self.remove_peer(&Key::new(id));
@@ -566,10 +542,10 @@ pub enum RpcDhtEvent {
     /// The routing table has been updated.
     RoutingUpdated {
         /// The ID of the peer that was added or updated.
-        peer: Addr,
+        peer: Peer,
         /// The ID of the peer that was evicted from the routing table to make
         /// room for the new peer, if any.
-        old_peer: Option<Addr>,
+        old_peer: Option<Peer>,
     },
     Bootstrapped {
         /// Execution statistics from the bootstrap query.
@@ -613,21 +589,21 @@ pub enum RequestError {
         /// The message we received from the peer.
         msg: RequestMsgData,
         /// The peer the message originated from.
-        peer: Addr,
+        peer: Peer,
     },
     /// The `target` field of message was required but was empty
-    MissingTarget { msg: RequestMsgData, peer: Addr },
+    MissingTarget { msg: RequestMsgData, peer: Peer },
     /// Received a message with a type other than [`Type::Query`],
     /// [`Type::Response`], [`Type::Update`]
     InvalidType {
         ty: i32,
         msg: RequestMsgData,
-        peer: Addr,
+        peer: Peer,
     },
     /// Received a request with no command attached.
-    MissingCommand { peer: Addr },
+    MissingCommand { peer: Peer },
     /// Ignored Request due to message's value being this peer's id.
-    InvalidValue { msg: RequestMsgData, peer: Addr },
+    InvalidValue { msg: RequestMsgData, peer: Peer },
 }
 
 pub type ResponseResult = Result<ResponseOk, ResponseError>;
@@ -635,7 +611,7 @@ pub type ResponseResult = Result<ResponseOk, ResponseError>;
 #[derive(Debug)]
 pub enum ResponseOk {
     /// Received a pong response to our ping request.
-    Pong(Addr),
+    Pong(Peer),
     /// A remote peer successfully responded to our query
     Response(Response),
 }
@@ -643,7 +619,7 @@ pub enum ResponseOk {
 #[derive(Debug)]
 pub enum ResponseError {
     /// We received a bad pong to our ping request
-    InvalidPong(Addr),
+    InvalidPong(Peer),
 }
 
 #[derive(Debug, Clone)]

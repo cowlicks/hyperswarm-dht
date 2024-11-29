@@ -24,9 +24,10 @@ use crate::{
 use compact_encoding::State;
 
 use super::{
-    cenc::{generic_hash, generic_hash_with_key, validate_id, ReplyMsgData, RequestMsgData},
+    cenc::{generic_hash, generic_hash_with_key, ipv4, validate_id, ReplyMsgData, RequestMsgData},
+    smod::Peer,
     stream::MessageDataStream,
-    thirty_two_random_bytes, Addr, Command, InternalCommand,
+    thirty_two_random_bytes, Command, InternalCommand,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -34,21 +35,21 @@ pub struct Reply {
     pub tid: u16,
     pub rtt: usize,
     // who sent reply
-    pub from: Addr,
+    pub from: Peer,
     // who recieved it
-    pub to: Addr,
+    pub to: Peer,
     pub token: Option<[u8; 32]>,
-    pub closer_nodes: Vec<Addr>,
+    pub closer_nodes: Vec<Peer>,
     pub error: usize,
     pub value: Option<Vec<u8>>,
 }
 
 impl Reply {
-    pub fn decode(from: &Addr, buff: &[u8], state: &mut State) -> Result<Self> {
+    pub fn decode(from: &Peer, buff: &[u8], state: &mut State) -> Result<Self> {
         let data = ReplyMsgData::decode(buff, state)?;
         Self::from_data(from, data)
     }
-    fn from_data(from: &Addr, data: ReplyMsgData) -> Result<Self> {
+    fn from_data(from: &Peer, data: ReplyMsgData) -> Result<Self> {
         let mut new_from = from.clone();
         if let Some(id) = data.id {
             new_from.id = validate_id(&id, from);
@@ -69,9 +70,9 @@ impl Reply {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Request {
     pub tid: u16,
-    pub from: Option<Addr>,
+    pub from: Option<Peer>,
     // TODO remove this field?
-    pub to: Addr,
+    pub to: Peer,
     pub token: Option<[u8; 32]>,
     pub internal: bool,
     pub command: Command,
@@ -80,7 +81,7 @@ pub struct Request {
 }
 
 impl Request {
-    pub fn decode(from: &Addr, buff: &[u8], state: &mut State) -> Result<Self> {
+    pub fn decode(from: &Peer, buff: &[u8], state: &mut State) -> Result<Self> {
         let data = RequestMsgData::decode(buff, state);
         Request::from_data(data?, from)
     }
@@ -96,7 +97,7 @@ impl Request {
             value: self.value.clone(),
         })
     }
-    fn from_data(data: RequestMsgData, from: &Addr) -> Result<Self> {
+    fn from_data(data: RequestMsgData, from: &Peer) -> Result<Self> {
         let mut new_from = from.clone();
         if let Some(id) = data.id {
             new_from.id = validate_id(&id, from);
@@ -116,8 +117,8 @@ impl Request {
     #[allow(clippy::too_many_arguments)]
     fn new(
         tid: u16,
-        from: Option<Addr>,
-        to: Addr,
+        from: Option<Peer>,
+        to: Peer,
         token: Option<[u8; 32]>,
         internal: bool,
         command: Command,
@@ -215,15 +216,15 @@ impl Io {
         })
     }
 
-    pub fn create_ping(&self, to: &Addr) -> Request {
+    pub fn create_ping(&self, to: &Peer) -> Request {
         self.create_request(to, None, true, InternalCommand::Ping, None, None)
     }
 
-    pub fn create_ping_nat(&self, to: &Addr, value: Vec<u8>) -> Request {
+    pub fn create_ping_nat(&self, to: &Peer, value: Vec<u8>) -> Request {
         self.create_request(to, None, true, InternalCommand::PingNat, None, Some(value))
     }
 
-    pub fn create_find_node(&self, to: &Addr, target: &[u8; 32]) -> Request {
+    pub fn create_find_node(&self, to: &Peer, target: &[u8; 32]) -> Request {
         self.create_request(
             to,
             None,
@@ -235,22 +236,22 @@ impl Io {
     }
     //this.dht._request(node, true,     DOWN_HINT, null,   state.buffer, this._session, noop,       noop)
     //_request (          to,   internal, command, target, value,        session,       onresponse, onerror) {
-    pub fn create_down_hint(&self, to: &Addr, value: Vec<u8>) -> Request {
+    pub fn create_down_hint(&self, to: &Peer, value: Vec<u8>) -> Request {
         self.create_request(to, None, true, InternalCommand::DownHint, None, Some(value))
     }
 
-    pub async fn send_find_node(&self, to: &Addr, target: &[u8; 32]) -> Result<Receiver<Reply>> {
+    pub async fn send_find_node(&self, to: &Peer, target: &[u8; 32]) -> Result<Receiver<Reply>> {
         let req = self.create_find_node(to, target);
         self.send(req).await
     }
-    pub async fn send_ping(&self, to: &Addr) -> Result<Receiver<Reply>> {
+    pub async fn send_ping(&self, to: &Peer) -> Result<Receiver<Reply>> {
         let req = self.create_ping(to);
         self.send(req).await
     }
 
     pub async fn create_request_s(
         &self,
-        to: &Addr,
+        to: &Peer,
         token: Option<[u8; 32]>,
         internal: bool,
         command: Command,
@@ -276,7 +277,7 @@ impl Io {
         }
     }
 
-    pub async fn ping_s(&mut self, to: &Addr) -> Result<()> {
+    pub async fn ping_s(&mut self, to: &Peer) -> Result<()> {
         let msg = self
             .create_request_s(to, None, true, InternalCommand::Ping.into(), None, None)
             .await;
@@ -300,7 +301,7 @@ impl Io {
 
     fn create_request(
         &self,
-        to: &Addr,
+        to: &Peer,
         token: Option<[u8; 32]>,
         internal: bool,
         command: InternalCommand,
@@ -343,7 +344,7 @@ fn on_message(inflight: &Inflight, buff: Vec<u8>, addr: SocketAddr) -> Result<()
 
 pub fn decode_message(buff: Vec<u8>, addr: SocketAddr) -> Result<Message> {
     let mut state = State::new_with_start_and_end(1, buff.len());
-    let from = Addr::from(&addr);
+    let from = Peer::from(&addr);
     Ok(match buff[0] {
         REQUEST_ID => Message::Request(Request::decode(&from, &buff, &mut state)?),
         RESPONSE_ID => Message::Reply(Reply::decode(&from, &buff, &mut state)?),
@@ -383,7 +384,7 @@ impl Secrets {
         Ok(())
     }
 
-    pub fn token(&self, addr: &Addr, secret_index: usize) -> Result<[u8; 32]> {
-        generic_hash_with_key(&addr.host.octets(), &self.secrets[secret_index])
+    pub fn token(&self, peer: &Peer, secret_index: usize) -> Result<[u8; 32]> {
+        generic_hash_with_key(&ipv4(&peer.addr)?.octets()[..], &self.secrets[secret_index])
     }
 }

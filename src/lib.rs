@@ -104,6 +104,8 @@ pub enum Error {
     AddrParseError(#[from] AddrParseError),
     #[error("Requests must have a 'to' field")]
     RequestRequiresToField,
+    #[error("Ipv6 not supported")]
+    Ipv6NotSupported,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -19,11 +19,11 @@ use std::{
 use wasm_timer::Instant;
 
 use super::mslave::Slave;
+use super::smod::Peer;
 use super::{
     cenc::{MsgData, ReplyMsgData, RequestMsgData},
     io::Secrets,
     stream::MessageDataStream,
-    Addr,
 };
 
 pub const VERSION: u64 = 1;
@@ -39,7 +39,7 @@ pub enum OutMessage {
 }
 
 impl OutMessage {
-    fn to(&self) -> Addr {
+    fn to(&self) -> Peer {
         match self {
             OutMessage::Request((_, x)) => x.to.clone(),
             OutMessage::Reply(x) => x.to.clone(),
@@ -58,7 +58,7 @@ struct InflightRequest {
     /// The message send
     message: RequestMsgData,
     /// The remote peer
-    peer: Addr,
+    peer: Peer,
     /// Timestamp when the request was sent
     #[allow(unused)] // FIXME not read. Why not?
     timestamp: Instant,
@@ -108,7 +108,7 @@ impl IoHandler {
         self.socket.local_addr()
     }
     /// TODO check this is correct.
-    fn token(&self, peer: &Addr, secret_index: usize) -> crate::Result<[u8; 32]> {
+    fn token(&self, peer: &Peer, secret_index: usize) -> crate::Result<[u8; 32]> {
         self.secrets.token(peer, secret_index)
     }
 
@@ -121,7 +121,7 @@ impl IoHandler {
         command: udx::Command,
         target: Option<[u8; 32]>,
         value: Option<Vec<u8>>,
-        peer: Addr,
+        peer: Peer,
         query_id: QueryId,
     ) {
         let id = if !self.ephemeral {
@@ -149,8 +149,8 @@ impl IoHandler {
         request: RequestMsgData,
         error: usize,
         value: Option<Vec<u8>>,
-        closer_nodes: Option<Vec<Addr>>,
-        peer: &Addr,
+        closer_nodes: Option<Vec<Peer>>,
+        peer: &Peer,
     ) -> crate::Result<()> {
         let id = if !self.ephemeral {
             Some(self.id.get().preimage().0)
@@ -171,7 +171,7 @@ impl IoHandler {
         }));
         Ok(())
     }
-    pub fn reply(&mut self, mut _msg: RequestMsgData, _peer: Addr) {
+    pub fn reply(&mut self, mut _msg: RequestMsgData, _peer: Peer) {
         todo!()
     }
 
@@ -179,8 +179,8 @@ impl IoHandler {
         &mut self,
         request: RequestMsgData,
         value: Option<Vec<u8>>,
-        closer_nodes: Option<Vec<Addr>>,
-        peer: Addr,
+        closer_nodes: Option<Vec<Peer>>,
+        peer: Peer,
     ) -> crate::Result<()> {
         let id = if !self.ephemeral {
             Some(self.id.get().preimage().0)
@@ -199,7 +199,7 @@ impl IoHandler {
         }));
         Ok(())
     }
-    fn on_response(&mut self, recv: ReplyMsgData, peer: Addr) -> IoHandlerEvent {
+    fn on_response(&mut self, recv: ReplyMsgData, peer: Peer) -> IoHandlerEvent {
         if let Some(req) = self.pending_recv.remove(&recv.tid) {
             return IoHandlerEvent::InResponse {
                 peer,
@@ -215,7 +215,7 @@ impl IoHandler {
     }
     /// A new `Message` was read from the socket.
     fn on_message(&mut self, msg: MsgData, rinfo: SocketAddr) -> IoHandlerEvent {
-        let peer = Addr::from(&rinfo);
+        let peer = Peer::from(&rinfo);
         match msg {
             MsgData::Request(req) => IoHandlerEvent::InRequest { message: req, peer },
             MsgData::Reply(rep) => self.on_response(rep, peer),
@@ -305,35 +305,35 @@ impl Stream for IoHandler {
 #[derive(Debug)]
 pub enum IoHandlerEvent {
     ///  A response was sent
-    OutResponse { message: ReplyMsgData, peer: Addr },
+    OutResponse { message: ReplyMsgData, peer: Peer },
     /// A request was sent
     OutRequest { tid: Tid },
     /// A Response to a Message was recieved
     InResponse {
         req: Box<RequestMsgData>,
         resp: ReplyMsgData,
-        peer: Addr,
+        peer: Peer,
         query_id: QueryId,
     },
     /// A Request was receieved
-    InRequest { message: RequestMsgData, peer: Addr },
+    InRequest { message: RequestMsgData, peer: Peer },
     /// Error while sending a message
     OutSocketErr { err: crate::Error },
     /// A request did not recieve a response within the given timeout
     RequestTimeout {
         message: MsgData,
-        peer: Addr,
+        peer: Peer,
         sent: Instant,
         query_id: QueryId,
     },
     /// Error while decoding a message from socket
     /// TODO unused
-    InMessageErr { err: io::Error, peer: Addr },
+    InMessageErr { err: io::Error, peer: Peer },
     /// Error while reading from socket
     InSocketErr { err: crate::Error },
     /// Received a response with a request id that was doesn't match any pending
     /// responses.
-    InResponseBadRequestId { message: ReplyMsgData, peer: Addr },
+    InResponseBadRequestId { message: ReplyMsgData, peer: Peer },
 }
 
 #[cfg(test)]
@@ -353,7 +353,7 @@ mod test {
         let mut a = new_io();
         let mut b = new_io();
 
-        let to = Addr::from(&b.local_addr()?);
+        let to = Peer::from(&b.local_addr()?);
         let id = Some(thirty_two_random_bytes());
         let msg = RequestMsgData {
             tid: 42,

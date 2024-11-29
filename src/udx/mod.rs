@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::Display;
 use std::future::IntoFuture;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crate::kbucket::{Entry, KBucketsTable, KeyBytes};
@@ -98,37 +98,6 @@ impl TryFrom<u8> for InternalCommand {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
-// TODO rename to Peer
-pub struct Addr {
-    pub id: Option<[u8; 32]>,
-    pub host: Ipv4Addr,
-    pub port: u16,
-}
-
-impl From<&Peer> for Addr {
-    fn from(value: &Peer) -> Self {
-        Self::from(&value.addr)
-    }
-}
-
-impl From<&Addr> for SocketAddr {
-    fn from(value: &Addr) -> Self {
-        SocketAddr::V4(SocketAddrV4::new(value.host, value.port))
-    }
-}
-
-impl From<&SocketAddr> for Addr {
-    fn from(value: &SocketAddr) -> Self {
-        let SocketAddr::V4(s) = value else { panic!() };
-        Addr {
-            id: None,
-            host: *s.ip(),
-            port: s.port(),
-        }
-    }
-}
-
 #[derive(Debug, derive_builder::Builder)]
 #[builder(pattern = "owned")]
 pub struct RpcDht {
@@ -138,7 +107,7 @@ pub struct RpcDht {
     bootstrap_nodes: Vec<SocketAddr>,
     io: Io,
     // TODO make this automatically set using the id
-    kbuckets: KBucketsTable<KeyBytes, Addr>,
+    kbuckets: KBucketsTable<KeyBytes, Peer>,
 }
 
 impl RpcDhtBuilder {
@@ -174,14 +143,14 @@ impl RpcDht {
         let Some(node_addr) = self.bootstrap_nodes.last() else {
             panic!()
         };
-        let to = Addr::from(node_addr);
+        let to = Peer::from(node_addr);
         let receiver = self.io.send_find_node(&to, &self.id.borrow()).await?;
         let reply = receiver.into_future().await?;
         self.add_node(&reply.from)?;
         Ok(reply)
     }
 
-    fn add_node(&mut self, peer: &Addr) -> Result<()> {
+    fn add_node(&mut self, peer: &Peer) -> Result<()> {
         use crate::kbucket::InsertResult::*;
         let Some(id) = peer.id.clone() else {
             todo!("No peer.id: {peer:?}")
@@ -201,7 +170,7 @@ impl RpcDht {
     }
 
     async fn ping(&self, addr: &SocketAddr) -> Result<Reply> {
-        let to = Addr::from(addr);
+        let to = Peer::from(addr);
         let receiver = self.io.send_find_node(&to, &self.id.borrow()).await?;
         Ok(receiver.into_future().await?)
     }

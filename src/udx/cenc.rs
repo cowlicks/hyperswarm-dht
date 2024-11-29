@@ -10,7 +10,7 @@ use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
     kbucket::{self, EntryView},
     peers::PeersEncoding,
-    udx::{Addr, InternalCommand},
+    udx::InternalCommand,
     Error, IdBytes, PeerId, Result,
 };
 
@@ -68,37 +68,6 @@ fn encode_ip(
     Ok(())
 }
 
-impl CompactEncoding<Addr> for State {
-    fn preencode(&mut self, _value: &Addr) -> std::result::Result<usize, EncodingError> {
-        self.add_end(6)
-    }
-
-    fn encode(
-        &mut self,
-        value: &Addr,
-        buff: &mut [u8],
-    ) -> std::result::Result<usize, EncodingError> {
-        encode_ip(&value.host, buff, self)?;
-        self.encode_u16(value.port, buff)?;
-        Ok(self.start())
-    }
-
-    fn decode(&mut self, buff: &[u8]) -> std::result::Result<Addr, EncodingError> {
-        let ip_start = self.start();
-        let [ip1, ip2, ip3, ip4, port_1, port_2] = buff[ip_start..(ip_start + 4 + 2)] else {
-            todo!()
-        };
-        self.add_start(4 + 2)?;
-        let host = Ipv4Addr::from([ip1, ip2, ip3, ip4]);
-        let port = u16::from_le_bytes([port_1, port_2]);
-        Ok(Addr {
-            id: None,
-            host,
-            port,
-        })
-    }
-}
-
 impl CompactEncoding<Peer> for State {
     fn preencode(&mut self, _value: &Peer) -> std::result::Result<usize, EncodingError> {
         self.add_end(6)
@@ -136,11 +105,18 @@ impl CompactEncoding<Peer> for State {
     }
 }
 
-pub(crate) fn calculate_id(from: &Addr) -> Result<[u8; ID_SIZE]> {
+pub fn ipv4(addr: &SocketAddr) -> Result<Ipv4Addr> {
+    if let IpAddr::V4(ip) = addr.ip() {
+        return Ok(ip);
+    }
+    Err(crate::Error::Ipv6NotSupported)
+}
+
+pub(crate) fn calculate_id(from: &Peer) -> Result<[u8; ID_SIZE]> {
     let mut from_buff = vec![0; 6];
     let mut state = State::new_with_start_and_end(0, 6);
-    encode_ip(&from.host, &mut from_buff, &mut state)?;
-    state.encode_u16(from.port, &mut from_buff)?;
+    encode_ip(&ipv4(&from.addr)?, &mut from_buff, &mut state)?;
+    state.encode_u16(from.addr.port(), &mut from_buff)?;
     generic_hash(&from_buff)
 }
 
@@ -180,7 +156,7 @@ pub(crate) fn generic_hash_with_key(input: &[u8], key: &[u8]) -> Result<[u8; HAS
     Ok(out)
 }
 
-pub fn decode_request(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Request> {
+pub fn decode_request(buff: &[u8], mut from: Peer, state: &mut State) -> Result<Request> {
     let flags = buff[state.start()];
     state.add_start(1)?;
 
@@ -224,7 +200,7 @@ pub fn decode_request(buff: &[u8], mut from: Addr, state: &mut State) -> Result<
     })
 }
 
-pub(crate) fn validate_id(id: &[u8; ID_SIZE], from: &Addr) -> Option<[u8; ID_SIZE]> {
+pub(crate) fn validate_id(id: &[u8; ID_SIZE], from: &Peer) -> Option<[u8; ID_SIZE]> {
     if let Ok(result) = calculate_id(from) {
         if *id == result {
             return Some(*id);
@@ -247,27 +223,27 @@ pub(crate) fn decode_fixed_32_flag(
     return Ok(None);
 }
 /// Decode an u32 array
-pub fn decode_addr_array(state: &mut State, buffer: &[u8]) -> Result<Vec<Addr>> {
+pub fn decode_addr_array(state: &mut State, buffer: &[u8]) -> Result<Vec<Peer>> {
     let len = state.decode_usize_var(buffer)?;
-    let mut value: Vec<Addr> = Vec::with_capacity(len);
+    let mut value: Vec<Peer> = Vec::with_capacity(len);
     for _ in 0..len {
-        let add: Addr = state.decode(buffer)?;
+        let add: Peer = state.decode(buffer)?;
         value.push(add);
     }
     Ok(value)
 }
 
-pub fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Reply> {
+pub fn decode_reply(buff: &[u8], mut from: Peer, state: &mut State) -> Result<Reply> {
     let flags = buff[state.start()];
     state.add_start(1)?;
 
     let tid = state.decode_u16(buff)?;
-    let to: Addr = state.decode(buff)?;
+    let to: Peer = state.decode(buff)?;
 
     let id = decode_fixed_32_flag(flags, 1, state, buff)?;
     let token = decode_fixed_32_flag(flags, 2, state, buff)?;
 
-    let closer_nodes: Vec<Addr> = if flags & 4 > 0 {
+    let closer_nodes: Vec<Peer> = if flags & 4 > 0 {
         decode_addr_array(state, buff)?
     } else {
         vec![]
@@ -302,7 +278,7 @@ pub fn decode_reply(buff: &[u8], mut from: Addr, state: &mut State) -> Result<Re
 #[derive(Debug, Clone, PartialEq)]
 pub struct RequestMsgData {
     pub tid: u16,
-    pub to: Addr,
+    pub to: Peer,
     pub id: Option<[u8; 32]>,
     pub internal: bool,
     pub token: Option<[u8; 32]>,
@@ -313,10 +289,10 @@ pub struct RequestMsgData {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReplyMsgData {
     pub tid: u16,
-    pub to: Addr,
+    pub to: Peer,
     pub id: Option<[u8; 32]>,
     pub token: Option<[u8; 32]>,
-    pub closer_nodes: Vec<Addr>,
+    pub closer_nodes: Vec<Peer>,
     pub error: usize,
     pub value: Option<Vec<u8>>,
 }
@@ -540,12 +516,12 @@ impl ReplyMsgData {
         state.add_start(1)?;
 
         let tid = state.decode_u16(buff)?;
-        let to: Addr = state.decode(buff)?;
+        let to: Peer = state.decode(buff)?;
 
         let id = decode_fixed_32_flag(flags, 1, state, buff)?;
         let token = decode_fixed_32_flag(flags, 2, state, buff)?;
 
-        let closer_nodes: Vec<Addr> = if flags & 4 > 0 {
+        let closer_nodes: Vec<Peer> = if flags & 4 > 0 {
             decode_addr_array(state, buff)?
         } else {
             vec![]

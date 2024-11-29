@@ -2,7 +2,7 @@ use crate::IdBytes;
 
 use super::{
     cenc::{MsgData, ReplyMsgData, RequestMsgData},
-    Addr,
+    smod::Peer,
 };
 
 impl From<RequestMsgData> for MsgData {
@@ -21,7 +21,7 @@ pub fn valid_id_bytes(id: Option<[u8; 32]>) -> Option<IdBytes> {
 }
 
 impl MsgData {
-    pub fn to(&self) -> Addr {
+    pub fn to(&self) -> Peer {
         match self {
             MsgData::Request(x) => x.to.clone(),
             MsgData::Reply(x) => x.to.clone(),
