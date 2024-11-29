@@ -22,6 +22,7 @@ use futures::{
 use prost::Message as ProtoMessage;
 use std::{collections::VecDeque, fmt, io, net::SocketAddr, ops::Deref, pin::Pin, time::Duration};
 use tokio::net::UdpSocket;
+use tracing::trace;
 use wasm_timer::Instant;
 
 pub const VERSION: u64 = 1;
@@ -380,7 +381,7 @@ where
         mut msg: Message,
         rinfo: SocketAddr,
     ) -> Option<IoHandlerEvent<TUserData>> {
-        log::trace!("recv from {}: {}", rinfo, msg);
+        trace!("recv from {}: {}", rinfo, msg);
         if let Some(ref id) = msg.id {
             if id.len() != 32 {
                 // TODO Receive Error? clear waiting?
@@ -456,7 +457,7 @@ where
         if self.pending_flush.is_none() {
             if let Some(event) = self.pending_send.pop_front() {
                 let (msg, peer) = event.inner();
-                log::trace!("send to {}: {}", peer.addr, msg);
+                trace!("send to {}: {}", peer.addr, msg);
                 let mut buf = Vec::with_capacity(msg.encoded_len());
                 msg.encode(&mut buf)?;
                 Sink::start_send(Pin::new(&mut self.socket), (buf, peer.addr))?;

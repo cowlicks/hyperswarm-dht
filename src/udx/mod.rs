@@ -11,12 +11,12 @@ use std::sync::Arc;
 use crate::kbucket::{Entry, KBucketsTable, KeyBytes};
 use crate::{udx::io::Io, Result};
 use io::Reply;
-use log::debug;
 use rand::{
     rngs::{OsRng, StdRng},
     RngCore, SeedableRng,
 };
 use smod::Peer;
+use tracing::debug;
 
 mod cenc;
 mod io;

@@ -1,6 +1,5 @@
 use async_udx::UdxSocket;
 use futures::SinkExt;
-use log::warn;
 use rand::Rng;
 #[allow(unreachable_code, dead_code)]
 use std::sync::{Arc, RwLock};
@@ -10,6 +9,7 @@ use std::{
     net::SocketAddr,
     sync::atomic::{AtomicU16, Ordering},
 };
+use tracing::warn;
 
 use tokio::sync::{
     oneshot::{channel, Receiver, Sender},

@@ -18,6 +18,7 @@ use futures::{
 };
 use sha2::digest::generic_array::{typenum::U32, GenericArray};
 use tokio::net::UdpSocket;
+use tracing::debug;
 use wasm_timer::Instant;
 
 pub use crate::rpc::message::{Command, Holepunch, Message, Type};
@@ -467,7 +468,7 @@ impl RpcDht {
                         });
                     }
                     kbucket::InsertResult::Full => {
-                        log::debug!("Bucket full. Peer not added to routing table: {:?}", peer)
+                        debug!("Bucket full. Peer not added to routing table: {:?}", peer)
                     }
                     kbucket::InsertResult::Pending { disconnected: _ } => {
 

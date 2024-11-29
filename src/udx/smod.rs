@@ -8,6 +8,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
+use tracing::debug;
 use wasm_timer::Instant;
 
 use futures::Stream;
@@ -375,7 +376,7 @@ impl RpcDht {
                         });
                     }
                     Full => {
-                        log::debug!("Bucket full. Peer not added to routing table: {:?}", peer)
+                        debug!("Bucket full. Peer not added to routing table: {:?}", peer)
                     }
                     Pending { disconnected: _ } => {
 
