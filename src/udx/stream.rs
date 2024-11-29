@@ -7,6 +7,7 @@ use std::{
 
 use async_udx::UdxSocket;
 use futures::{Future, Sink, Stream};
+use tracing::trace;
 
 use crate::{udx::cenc::MsgData, Result};
 
@@ -47,8 +48,13 @@ impl Stream for MessageDataStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         // First check if we have any buffered messages
-        if let Some(msg) = self.recv_queue.pop_front() {
-            return Poll::Ready(Some(Ok(msg)));
+        if let Some((msg, addr)) = self.recv_queue.pop_front() {
+            trace!(
+                "RX addr:
+ addr:\t {addr}
+ msg: \t {msg:#?}"
+            );
+            return Poll::Ready(Some(Ok((msg, addr))));
         }
 
         // Try to receive data from the socket
@@ -57,7 +63,14 @@ impl Stream for MessageDataStream {
             Poll::Ready(Ok((addr, buff))) => {
                 // Try to decode the received message
                 match MsgData::decode(&buff) {
-                    Ok(message) => Poll::Ready(Some(Ok((message, addr)))),
+                    Ok(msg) => {
+                        trace!(
+                            "RX addr:
+ addr:\t {addr}
+ msg: \t {msg:#?}"
+                        );
+                        return Poll::Ready(Some(Ok((msg, addr))));
+                    }
                     Err(e) => Poll::Ready(Some(Err(e))),
                 }
             }
@@ -75,10 +88,15 @@ impl Sink<(MsgData, SocketAddr)> for MessageDataStream {
     }
 
     fn start_send(self: Pin<&mut Self>, item: (MsgData, SocketAddr)) -> Result<()> {
-        let (message, _addr) = item;
+        let (message, addr) = item;
 
+        trace!(
+            "TX addr:
+ addr:\t {addr}
+ msg: \t {message:#?}"
+        );
         let buff = MsgData::encode(&message)?;
-        self.socket.send(_addr, &buff);
+        self.socket.send(addr, &buff);
         Ok(())
     }
 
