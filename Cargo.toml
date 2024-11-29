@@ -56,6 +56,7 @@ cli = ["structopt"]
 
 [dev-dependencies]
 pretty_env_logger = "0.4.0"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [dev-dependencies.rusty_nodejs_repl]
 #rusty_nodejs_repl = "0.2.1"
