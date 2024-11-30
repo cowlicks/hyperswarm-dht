@@ -26,6 +26,7 @@ use crate::{
     },
     peers::PeersEncoding,
     rpc::{jobs::PeriodicJob, query::QueryId},
+    util::pretty_bytes,
     IdBytes, PeerId,
 };
 
@@ -41,12 +42,26 @@ use super::{
     thirty_two_random_bytes, Command, InternalCommand,
 };
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Peer {
     pub id: Option<[u8; 32]>,
     pub addr: SocketAddr,
     /// Referrer that told us about this node.
     pub referrer: Option<SocketAddr>,
+}
+
+impl std::fmt::Debug for Peer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug_struct = f.debug_struct("RequestMsgData");
+        match &self.id {
+            Some(bytes) => debug_struct.field("id", &format_args!("Some({})", pretty_bytes(bytes))),
+            None => debug_struct.field("id", &None::<String>),
+        };
+        debug_struct
+            .field("addr", &self.addr)
+            .field("referrer", &self.referrer)
+            .finish()
+    }
 }
 
 impl FromStr for Peer {

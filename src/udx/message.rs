@@ -1,8 +1,8 @@
-use crate::IdBytes;
+use crate::{util::pretty_bytes, IdBytes};
 
 use super::{smod::Peer, Command};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct ReplyMsgData {
     pub tid: u16,
     pub to: Peer,
@@ -12,7 +12,7 @@ pub struct ReplyMsgData {
     pub error: usize,
     pub value: Option<Vec<u8>>,
 }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct RequestMsgData {
     pub tid: u16,
     pub to: Peer,
@@ -23,6 +23,44 @@ pub struct RequestMsgData {
     pub target: Option<[u8; 32]>,
     pub value: Option<Vec<u8>>,
 }
+
+macro_rules! opt_map_inner {
+    ($debug_struct:tt, $name:expr, $name_s:tt, $func:tt) => {
+        match &$name {
+            Some(bytes) => $debug_struct.field($name_s, &format_args!("Some({})", $func(bytes))),
+            None => $debug_struct.field("id", &None::<String>),
+        };
+    };
+}
+
+impl std::fmt::Debug for RequestMsgData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug_struct = f.debug_struct("RequestMsgData");
+        debug_struct.field("tid", &self.tid).field("to", &self.to);
+        opt_map_inner!(debug_struct, self.id, "id", pretty_bytes);
+        debug_struct.field("internal", &self.internal);
+        opt_map_inner!(debug_struct, self.token, "token", pretty_bytes);
+        debug_struct.field("command", &self.command);
+        opt_map_inner!(debug_struct, self.target, "target", pretty_bytes);
+        opt_map_inner!(debug_struct, self.value, "value", pretty_bytes);
+        debug_struct.finish()
+    }
+}
+
+impl std::fmt::Debug for ReplyMsgData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug_struct = f.debug_struct("RequestMsgData");
+        debug_struct.field("tid", &self.tid).field("to", &self.to);
+        opt_map_inner!(debug_struct, self.id, "id", pretty_bytes);
+        opt_map_inner!(debug_struct, self.token, "token", pretty_bytes);
+        debug_struct
+            .field("closer_nodes", &self.closer_nodes)
+            .field("error", &self.error);
+        opt_map_inner!(debug_struct, self.value, "value", pretty_bytes);
+        debug_struct.finish()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum MsgData {
     Request(RequestMsgData),
