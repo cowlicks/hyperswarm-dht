@@ -9,7 +9,9 @@ use async_udx::UdxSocket;
 use futures::{Future, Sink, Stream};
 use tracing::trace;
 
-use crate::{udx::cenc::MsgData, Result};
+use crate::Result;
+
+use super::message::MsgData;
 
 // Wrapper struct around UdxSocket that handles Messages
 #[derive(Debug)]
@@ -113,7 +115,7 @@ impl Sink<(MsgData, SocketAddr)> for MessageDataStream {
 
 #[cfg(test)]
 mod test {
-    use crate::udx::{cenc::ReplyMsgData, smod::Peer};
+    use crate::udx::{message::ReplyMsgData, smod::Peer};
     use futures::{SinkExt, StreamExt};
 
     use super::*;

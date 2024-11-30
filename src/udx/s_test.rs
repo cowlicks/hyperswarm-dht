@@ -62,9 +62,6 @@ async fn t() -> crate::Result<()> {
             break;
         }
     }
-    for k in rpc.kbuckets.iter() {
-        dbg!(k);
-    }
 
     Ok(())
 }

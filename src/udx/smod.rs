@@ -30,12 +30,7 @@ use crate::{
 };
 
 use super::{
-    cenc::{
-        // MsgData,
-        ReplyMsgData,
-        RequestMsgData,
-    },
-    message::valid_id_bytes,
+    message::{valid_id_bytes, ReplyMsgData, RequestMsgData},
     mslave::Master,
     query::{
         table::PeerState, CommandQuery, QueryConfig, QueryEvent, QueryPool, QueryPoolState,

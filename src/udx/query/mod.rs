@@ -23,7 +23,7 @@ use self::{
     table::{PeerState, QueryTable},
 };
 use super::{
-    cenc::ReplyMsgData,
+    message::ReplyMsgData,
     smod::{Peer, Response},
     Command,
 };

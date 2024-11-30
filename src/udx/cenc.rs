@@ -16,6 +16,7 @@ use crate::{
 
 use super::{
     io::{Reply, Request},
+    message::{MsgData, ReplyMsgData, RequestMsgData},
     smod::{Node, Peer},
     Command, ExternalCommand,
 };
@@ -36,17 +37,17 @@ impl CompactEncoding<InternalCommand> for State {
     }
 
     fn decode(&mut self, buff: &[u8]) -> std::result::Result<InternalCommand, EncodingError> {
-        let cmd = InternalCommand::try_from(buff[self.start()]).map_err(|e| e.into())?;
+        let cmd = InternalCommand::try_from(buff[self.start()]).map_err(EncodingError::from)?;
         self.add_start(1)?;
         Ok(cmd)
     }
 }
 
-impl Into<EncodingError> for Error {
-    fn into(self) -> EncodingError {
+impl From<Error> for EncodingError {
+    fn from(value: Error) -> Self {
         EncodingError {
             kind: compact_encoding::EncodingErrorKind::InvalidData,
-            message: self.to_string(),
+            message: value.to_string(),
         }
     }
 }
@@ -275,34 +276,6 @@ pub fn decode_reply(buff: &[u8], mut from: Peer, state: &mut State) -> Result<Re
         value,
     })
 }
-#[derive(Debug, Clone, PartialEq)]
-pub struct RequestMsgData {
-    pub tid: u16,
-    pub to: Peer,
-    pub id: Option<[u8; 32]>,
-    pub internal: bool,
-    pub token: Option<[u8; 32]>,
-    pub command: Command,
-    pub target: Option<[u8; 32]>,
-    pub value: Option<Vec<u8>>,
-}
-#[derive(Debug, Clone, PartialEq)]
-pub struct ReplyMsgData {
-    pub tid: u16,
-    pub to: Peer,
-    pub id: Option<[u8; 32]>,
-    pub token: Option<[u8; 32]>,
-    pub closer_nodes: Vec<Peer>,
-    pub error: usize,
-    pub value: Option<Vec<u8>>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum MsgData {
-    Request(RequestMsgData),
-    Reply(ReplyMsgData),
-}
-
 impl RequestMsgData {
     pub fn encode(&self) -> Result<Vec<u8>> {
         let mut state = State::new();

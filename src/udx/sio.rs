@@ -18,13 +18,10 @@ use std::{
 };
 use wasm_timer::Instant;
 
+use super::message::{MsgData, ReplyMsgData, RequestMsgData};
 use super::mslave::Slave;
 use super::smod::Peer;
-use super::{
-    cenc::{MsgData, ReplyMsgData, RequestMsgData},
-    io::Secrets,
-    stream::MessageDataStream,
-};
+use super::{io::Secrets, stream::MessageDataStream};
 
 pub const VERSION: u64 = 1;
 

@@ -18,13 +18,13 @@ use tokio::sync::{
 
 use crate::{
     constants::{REQUEST_ID, RESPONSE_ID},
-    udx::cenc::MsgData,
     Result,
 };
 use compact_encoding::State;
 
 use super::{
-    cenc::{generic_hash, generic_hash_with_key, ipv4, validate_id, ReplyMsgData, RequestMsgData},
+    cenc::{generic_hash, generic_hash_with_key, ipv4, validate_id},
+    message::{MsgData, ReplyMsgData, RequestMsgData},
     smod::Peer,
     stream::MessageDataStream,
     thirty_two_random_bytes, Command, InternalCommand,
