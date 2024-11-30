@@ -1,4 +1,15 @@
 use std::fmt::Write;
+
+macro_rules! opt_map_inner {
+    ($debug_struct:tt, $name:expr, $name_s:tt, $func:tt) => {
+        match &$name {
+            Some(bytes) => $debug_struct.field($name_s, &format_args!("Some({})", $func(bytes))),
+            None => $debug_struct.field("id", &None::<String>),
+        };
+    };
+}
+pub(crate) use opt_map_inner;
+
 /// Prettify a byte slice.
 pub fn pretty_bytes(bytes: &[u8]) -> String {
     if bytes.len() > 4 {
@@ -19,4 +30,37 @@ pub fn pretty_bytes(bytes: &[u8]) -> String {
             output
         })
     }
+}
+
+use std::fmt;
+
+pub(crate) fn debug_vec<T: fmt::Debug>(vec: &[T]) -> impl fmt::Debug + '_ {
+    struct VecFormatter<'a, T>(&'a [T]);
+
+    impl<'a, T: fmt::Debug> fmt::Debug for VecFormatter<'a, T> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            if self.0.len() <= 4 {
+                return f.debug_list().entries(self.0).finish();
+            }
+
+            if f.alternate() {
+                writeln!(f, "[")?;
+                for item in self.0.iter().take(3) {
+                    writeln!(f, "    {:#?},", item)?;
+                }
+                writeln!(f, "    ...")?;
+                writeln!(f, "    {:#?}", self.0.last().unwrap())?;
+                write!(f, "]")
+            } else {
+                write!(f, "[")?;
+                for item in self.0.iter().take(3) {
+                    write!(f, "{:?}, ", item)?;
+                }
+                write!(f, "..., ")?;
+                write!(f, "{:?}]", self.0.last().unwrap())
+            }
+        }
+    }
+
+    VecFormatter(vec)
 }

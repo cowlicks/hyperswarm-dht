@@ -52,15 +52,14 @@ pub struct Peer {
 
 impl std::fmt::Debug for Peer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut debug_struct = f.debug_struct("RequestMsgData");
-        match &self.id {
-            Some(bytes) => debug_struct.field("id", &format_args!("Some({})", pretty_bytes(bytes))),
-            None => debug_struct.field("id", &None::<String>),
-        };
-        debug_struct
-            .field("addr", &self.addr)
-            .field("referrer", &self.referrer)
-            .finish()
+        let mut debug_struct = f.debug_struct("Peer");
+        if let Some(bytes) = &self.id {
+            debug_struct.field("id", &format_args!("Some({})", pretty_bytes(bytes)));
+        }
+        if self.referrer.is_some() {
+            debug_struct.field("referrer", &self.referrer);
+        }
+        debug_struct.field("addr", &self.addr).finish()
     }
 }
 

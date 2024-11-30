@@ -37,7 +37,6 @@ async fn t() -> crate::Result<()> {
     loop {
         let x = rpc.next().await;
         //dbg!(x);
-        dbg!(i);
         if i == 3 {
             i += 1;
             break;
@@ -55,10 +54,10 @@ async fn t() -> crate::Result<()> {
     );
     loop {
         let x = rpc.next().await;
-        //dbg!(x);
+        dbg!(x);
         dbg!(i);
         i += 1;
-        if i == 6 {
+        if i == 7 {
             break;
         }
     }

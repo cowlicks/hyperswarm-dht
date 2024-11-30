@@ -33,6 +33,7 @@ use crate::{
             QueryPool, QueryPoolState, QueryStats, QueryStream, QueryType,
         },
     },
+    util::pretty_bytes,
 };
 
 pub mod io;
@@ -902,8 +903,14 @@ impl Borrow<[u8]> for PeerId {
 }
 
 /// A 32 byte identifier for a node participating in the DHT.
-#[derive(Debug, Clone, Hash, PartialOrd, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialOrd, PartialEq, Eq)]
 pub struct IdBytes(pub [u8; PUBLIC_KEY_LENGTH]);
+
+impl std::fmt::Debug for IdBytes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "IdBytes({})", pretty_bytes(&self.0))
+    }
+}
 
 impl IdBytes {
     /// Create new 32 byte array with random bytes.

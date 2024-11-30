@@ -1,4 +1,7 @@
-use crate::{util::pretty_bytes, IdBytes};
+use crate::{
+    util::{debug_vec, pretty_bytes},
+    IdBytes,
+};
 
 use super::{smod::Peer, Command};
 
@@ -46,15 +49,14 @@ impl std::fmt::Debug for RequestMsgData {
         debug_struct.finish()
     }
 }
-
 impl std::fmt::Debug for ReplyMsgData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut debug_struct = f.debug_struct("RequestMsgData");
+        let mut debug_struct = f.debug_struct("ReplyMsgData");
         debug_struct.field("tid", &self.tid).field("to", &self.to);
         opt_map_inner!(debug_struct, self.id, "id", pretty_bytes);
         opt_map_inner!(debug_struct, self.token, "token", pretty_bytes);
         debug_struct
-            .field("closer_nodes", &self.closer_nodes)
+            .field("closer_nodes", &debug_vec(&self.closer_nodes))
             .field("error", &self.error);
         opt_map_inner!(debug_struct, self.value, "value", pretty_bytes);
         debug_struct.finish()
