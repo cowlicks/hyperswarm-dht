@@ -108,7 +108,7 @@ impl fmt::Display for Message {
 
 fn fmt_buf(buf: &Option<Vec<u8>>) -> String {
     buf.as_ref()
-        .map(|buf| pretty_hash::fmt(buf).unwrap())
+        .map(|buf| crate::util::pretty_bytes(buf))
         .unwrap_or("".into())
 }
 

@@ -64,6 +64,7 @@ pub mod peers;
 pub mod rpc;
 pub mod store;
 pub mod udx;
+mod util;
 
 #[allow(dead_code)]
 const EPH_AFTER: u64 = 1000 * 60 * 20;
