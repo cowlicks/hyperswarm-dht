@@ -207,6 +207,9 @@ impl RpcDht {
             self.bootstrapped = true;
         }
     }
+    pub fn is_bootstrapped(&self) -> bool {
+        self.bootstrapped
+    }
 
     pub fn query(&mut self, cmd: Command, target: Key<IdBytes>, value: Option<Vec<u8>>) -> QueryId {
         self.run_command(cmd, target, value)

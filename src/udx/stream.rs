@@ -69,7 +69,7 @@ impl Stream for MessageDataStream {
  addr:\t {addr}
  msg: \t {msg:#?}"
                         );
-                        return Poll::Ready(Some(Ok((msg, addr))));
+                        Poll::Ready(Some(Ok((msg, addr))))
                     }
                     Err(e) => Poll::Ready(Some(Err(e))),
                 }

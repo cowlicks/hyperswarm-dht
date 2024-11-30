@@ -5,7 +5,6 @@ use std::{
 };
 
 use compact_encoding::{CompactEncoding, EncodingError, EncodingErrorKind, State};
-use tracing::warn;
 
 use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
