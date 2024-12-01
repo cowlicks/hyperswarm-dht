@@ -185,6 +185,7 @@ impl QueryPool {
 }
 
 /// The observable states emitted by [`QueryPool::poll`].
+#[derive(Debug)]
 pub enum QueryPoolState<'a> {
     /// The pool is idle, i.e. there are no queries to process.
     Idle,
