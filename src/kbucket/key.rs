@@ -35,7 +35,7 @@ use sha2::{
 };
 use uint::construct_uint;
 
-use crate::rpc::IdBytes;
+use crate::{rpc::IdBytes, util::debug_vec};
 
 construct_uint! {
     /// 256-bit unsigned integer.
@@ -130,8 +130,15 @@ impl<T> Hash for Key<T> {
 }
 
 /// The raw bytes of a key in the DHT keyspace.
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone)]
 pub struct KeyBytes(GenericArray<u8, U32>);
+impl std::fmt::Debug for KeyBytes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("KeyBytes")
+            .field(&debug_vec(&self.0))
+            .finish()
+    }
+}
 
 impl KeyBytes {
     /// Creates a new key in the DHT keyspace by running the given
