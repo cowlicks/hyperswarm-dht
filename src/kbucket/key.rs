@@ -147,6 +147,12 @@ impl std::fmt::Debug for KeyBytes {
     }
 }
 
+pub fn distance(a: &[u8], b: &[u8]) -> Distance {
+    let a = U256::from(a);
+    let b = U256::from(b);
+    Distance(a ^ b)
+}
+
 impl KeyBytes {
     /// Creates a new key in the DHT keyspace by running the given
     /// value through a random oracle.
@@ -162,9 +168,7 @@ impl KeyBytes {
     where
         U: AsRef<KeyBytes>,
     {
-        let a = U256::from(self.0.as_slice());
-        let b = U256::from(other.as_ref().0.as_slice());
-        Distance(a ^ b)
+        distance(&self.0, other.as_ref().0.as_slice())
     }
 
     /// Returns the uniquely determined key with the given distance to `self`.
