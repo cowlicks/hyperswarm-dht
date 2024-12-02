@@ -18,9 +18,12 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::kbucket::{Distance, Key, KeyBytes, ALPHA_VALUE, K_VALUE};
-use crate::PeerId;
+use crate::kbucket::{distance, Distance, Key, KeyBytes, ALPHA_VALUE, K_VALUE};
+use crate::udx::cenc::calculate_peer_id;
+use crate::udx::smod::Peer;
+use crate::{IdBytes, PeerId};
 use std::collections::btree_map::{BTreeMap, Entry};
+use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::net::SocketAddr;
 use std::{num::NonZeroUsize, time::Duration};
@@ -43,7 +46,7 @@ pub struct ClosestPeersIter {
     state: State,
 
     /// The closest peers to the target, ordered by increasing distance.
-    closest_peers: BTreeMap<Distance, Peer>,
+    closest_peers: BTreeMap<Distance, IterPeer>,
 
     /// The number of peers for which the iterator is currently waiting for results.
     num_waiting: usize,
@@ -88,7 +91,7 @@ impl ClosestPeersIter {
     /// Creates a new iterator with a default configuration.
     pub fn new<I>(target: KeyBytes, known_closest_peers: I) -> Self
     where
-        I: IntoIterator<Item = Key<PeerId>>,
+        I: IntoIterator<Item = Peer>,
     {
         Self::with_config(
             ClosestPeersIterConfig::default(),
@@ -104,7 +107,7 @@ impl ClosestPeersIter {
         known_closest_peers: I,
     ) -> Self
     where
-        I: IntoIterator<Item = Key<PeerId>>,
+        I: IntoIterator<Item = Peer>,
         T: Into<KeyBytes>,
     {
         let target = target.into();
@@ -113,10 +116,17 @@ impl ClosestPeersIter {
         let closest_peers = BTreeMap::from_iter(
             known_closest_peers
                 .into_iter()
-                .map(|key| {
-                    let distance = key.distance(&target);
-                    let state = PeerState::NotContacted;
-                    (distance, Peer { key, state })
+                .map(|p| {
+                    let id = calculate_peer_id(&p);
+                    let distance = distance(id.as_slice(), target.0.as_slice());
+                    (
+                        distance,
+                        IterPeer {
+                            id: id.into(),
+                            state: PeerState::NotContacted,
+                            addr: p.addr,
+                        },
+                    )
                 })
                 .take(K_VALUE.into()),
         );
@@ -149,16 +159,13 @@ impl ClosestPeersIter {
     /// If the iterator is finished, it is not currently waiting for a
     /// result from `peer`, or a result for `peer` has already been reported,
     /// calling this function has no effect and `false` is returned.
-    pub fn on_success<I>(&mut self, peer: &PeerId, closer_peers: I) -> bool
-    where
-        I: IntoIterator<Item = PeerId>,
-    {
+    pub fn on_success(&mut self, peer: &Peer, closer_peers: &[Peer]) -> bool {
         if let State::Finished = self.state {
             return false;
         }
 
-        let key = Key::from(peer.clone());
-        let distance = key.distance(&self.target);
+        let id = calculate_peer_id(&peer);
+        let distance = distance(&id, &self.target.0);
 
         // Mark the peer as succeeded.
         match self.closest_peers.entry(distance) {
@@ -199,12 +206,8 @@ impl ClosestPeersIter {
         //        (i.e. is the first entry after being incorporated)
         let mut progress = self.closest_peers.len() < self.config.num_results.get();
         for peer in closer_peers {
-            let key = peer.into();
-            let distance = self.target.distance(&key);
-            let peer = Peer {
-                key,
-                state: PeerState::NotContacted,
-            };
+            let peer = IterPeer::from(peer.clone());
+            let distance = peer.distance(self.target.0.as_slice());
 
             let is_first_insert = match self.closest_peers.entry(distance) {
                 Entry::Occupied(_) => false,
@@ -250,13 +253,13 @@ impl ClosestPeersIter {
     /// If the iterator is finished, it is not currently waiting for a
     /// result from `peer`, or a result for `peer` has already been reported,
     /// calling this function has no effect and `false` is returned.
-    pub fn on_failure(&mut self, peer: &PeerId) -> bool {
+    pub fn on_failure(&mut self, peer: &Peer) -> bool {
         if let State::Finished = self.state {
             return false;
         }
 
-        let key = Key::from(peer.clone());
-        let distance = key.distance(&self.target);
+        let id = calculate_peer_id(peer);
+        let distance = distance(&id, &self.target.0);
 
         match self.closest_peers.entry(distance) {
             Entry::Vacant(_) => return false,
@@ -276,11 +279,11 @@ impl ClosestPeersIter {
 
     /// Returns the list of peers for which the iterator is currently waiting
     /// for results.
-    pub fn waiting(&self) -> impl Iterator<Item = &PeerId> {
+    pub fn waiting(&self) -> impl Iterator<Item = &IterPeer> {
         self.closest_peers
             .values()
             .filter_map(|peer| match peer.state {
-                PeerState::Waiting(..) => Some(peer.key.preimage()),
+                PeerState::Waiting(..) => Some(peer),
                 _ => None,
             })
     }
@@ -292,8 +295,8 @@ impl ClosestPeersIter {
     }
 
     /// Returns true if the iterator is waiting for a response from the given peer.
-    pub fn is_waiting(&self, peer: &PeerId) -> bool {
-        self.waiting().any(|p| peer == p)
+    pub fn is_waiting(&self, peer: &IdBytes) -> bool {
+        self.waiting().any(|p| *peer == p.id)
     }
 
     /// Advances the state of the iterator, potentially getting a new peer to contact.
@@ -353,7 +356,7 @@ impl ClosestPeersIter {
                         peer.state = PeerState::Waiting(timeout);
                         self.num_waiting += 1;
                         //return PeersIterState::Waiting(Some(peer.key.preimage()));
-                        return PeersIterState::Waiting(Some(todo!()));
+                        return PeersIterState::Waiting(Some(Peer::from(peer.clone())));
                     } else {
                         return PeersIterState::WaitingAtCapacity;
                     }
@@ -389,12 +392,16 @@ impl ClosestPeersIter {
     }
 
     /// Consumes the iterator, returning the closest peers.
-    pub fn into_result(self) -> impl Iterator<Item = PeerId> {
+    pub fn into_result(self) -> impl Iterator<Item = Peer> {
         self.closest_peers
             .into_iter()
             .filter_map(|(_, peer)| {
                 if let PeerState::Succeeded = peer.state {
-                    Some(peer.key.into_preimage())
+                    Some(Peer {
+                        id: Some(peer.id.0),
+                        addr: peer.addr,
+                        referrer: None,
+                    })
                 } else {
                     None
                 }
@@ -462,10 +469,36 @@ enum State {
 
 /// Representation of a peer in the context of a iterator.
 #[derive(Debug, Clone)]
-struct Peer {
-    key: Key<PeerId>,
+pub(crate) struct IterPeer {
+    id: IdBytes,
     state: PeerState,
-    //addr: SocketAddr,
+    addr: SocketAddr,
+}
+
+impl From<Peer> for IterPeer {
+    fn from(value: Peer) -> Self {
+        Self {
+            id: IdBytes::from(calculate_peer_id(&value)),
+            state: PeerState::NotContacted,
+            addr: value.addr,
+        }
+    }
+}
+
+impl From<IterPeer> for Peer {
+    fn from(value: IterPeer) -> Self {
+        Self {
+            id: Some(value.id.0),
+            addr: value.addr,
+            referrer: None,
+        }
+    }
+}
+
+impl IterPeer {
+    fn distance(&self, other: &[u8]) -> Distance {
+        distance(self.id.0.as_slice(), &other)
+    }
 }
 
 /// The state of a single `Peer`.
