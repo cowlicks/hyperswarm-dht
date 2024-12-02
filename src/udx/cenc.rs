@@ -113,12 +113,22 @@ pub fn ipv4(addr: &SocketAddr) -> Result<Ipv4Addr> {
     Err(crate::Error::Ipv6NotSupported)
 }
 
-pub(crate) fn calculate_id(from: &Peer) -> Result<[u8; ID_SIZE]> {
-    let mut from_buff = vec![0; 6];
-    let mut state = State::new_with_start_and_end(0, 6);
-    encode_ip(&ipv4(&from.addr)?, &mut from_buff, &mut state)?;
-    state.encode_u16(from.addr.port(), &mut from_buff)?;
-    generic_hash(&from_buff)
+const IP_AND_PORT_NUM_BYTES: usize = 6;
+
+/// TODO this will panic for ipv6
+fn id_from_socket(addr: &SocketAddr) -> [u8; ID_SIZE] {
+    let mut from_buff = vec![0; IP_AND_PORT_NUM_BYTES];
+    let mut state = State::new_with_start_and_end(0, IP_AND_PORT_NUM_BYTES);
+    let ip = ipv4(addr).expect("TODO what to do about ipv6");
+    encode_ip(&ip, &mut from_buff, &mut state).expect("IP_AND_PORT_NUM_BYTES is correct");
+    state
+        .encode_u16(addr.port(), &mut from_buff)
+        .expect("IP_AND_PORT_NUM_BYTES is correct");
+    generic_hash(&from_buff).expect("checked correct")
+}
+
+pub(crate) fn calculate_peer_id(from: &Peer) -> [u8; ID_SIZE] {
+    id_from_socket(&from.addr)
 }
 
 pub(crate) fn generic_hash(input: &[u8]) -> Result<[u8; HASH_SIZE]> {
@@ -202,10 +212,8 @@ pub fn decode_request(buff: &[u8], mut from: Peer, state: &mut State) -> Result<
 }
 
 pub(crate) fn validate_id(id: &[u8; ID_SIZE], from: &Peer) -> Option<[u8; ID_SIZE]> {
-    if let Ok(result) = calculate_id(from) {
-        if *id == result {
-            return Some(*id);
-        }
+    if id == &calculate_peer_id(from) {
+        return Some(*id);
     }
     None
 }
@@ -221,7 +229,7 @@ pub(crate) fn decode_fixed_32_flag(
             state.decode_fixed_32(buff)?.as_ref().try_into().unwrap(),
         ));
     }
-    return Ok(None);
+    Ok(None)
 }
 /// Decode an u32 array
 pub fn decode_addr_array(state: &mut State, buffer: &[u8]) -> Result<Vec<Peer>> {
