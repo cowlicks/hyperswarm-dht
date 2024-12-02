@@ -16,6 +16,7 @@ use std::{
     sync::atomic::{AtomicU16, Ordering},
     time::Duration,
 };
+use tracing::trace;
 use wasm_timer::Instant;
 
 use super::message::{MsgData, ReplyMsgData, RequestMsgData};
@@ -248,7 +249,9 @@ impl Stream for IoHandler {
         // moves msg pending_flush = pending_send[0]
         // and sends it
         if let Err(err) = pin.start_send_next() {
-            return Poll::Ready(Some(IoHandlerEvent::OutSocketErr { err }));
+            let out = IoHandlerEvent::OutSocketErr { err };
+            trace!("{out:#?}");
+            return Poll::Ready(Some(out));
         }
 
         // flush the message
@@ -267,11 +270,15 @@ impl Stream for IoHandler {
                                 query_id,
                             },
                         );
-                        return Poll::Ready(Some(IoHandlerEvent::OutRequest { tid }));
+                        let out = IoHandlerEvent::OutRequest { tid };
+                        trace!("{out:#?}");
+                        return Poll::Ready(Some(out));
                     }
                     OutMessage::Reply(message) => {
                         let peer = message.to.clone();
-                        Poll::Ready(Some(IoHandlerEvent::OutResponse { message, peer }))
+                        let out = IoHandlerEvent::OutResponse { message, peer };
+                        trace!("{out:#?}");
+                        return Poll::Ready(Some(out));
                     }
                 };
             } else {
@@ -282,10 +289,14 @@ impl Stream for IoHandler {
         // read from socket
         match Stream::poll_next(Pin::new(&mut pin.socket), cx) {
             Poll::Ready(Some(Ok((msg, rinfo)))) => {
-                return Poll::Ready(Some(pin.on_message(msg, rinfo)));
+                let out = pin.on_message(msg, rinfo);
+                trace!("{out:#?}");
+                return Poll::Ready(Some(out));
             }
             Poll::Ready(Some(Err(err))) => {
-                return Poll::Ready(Some(IoHandlerEvent::InSocketErr { err }));
+                let out = IoHandlerEvent::InSocketErr { err };
+                trace!("{out:#?}");
+                return Poll::Ready(Some(out));
             }
             _ => {}
         }

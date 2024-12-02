@@ -8,7 +8,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use tracing::debug;
+use tracing::{debug, trace};
 use wasm_timer::Instant;
 
 use futures::Stream;
@@ -283,7 +283,7 @@ impl RpcDht {
             IoHandlerEvent::OutResponse { .. } => {}
             IoHandlerEvent::OutSocketErr { .. } => {}
             IoHandlerEvent::InRequest { message, peer } => {
-                self.on_request(message, peer.into());
+                self.on_request(message, peer);
             }
             IoHandlerEvent::InMessageErr { .. } => {}
             IoHandlerEvent::InSocketErr { .. } => {}
@@ -683,6 +683,7 @@ impl Stream for RpcDht {
         loop {
             // Drain queued events first.
             if let Some(event) = pin.queued_events.pop_front() {
+                trace!("{event:#?}");
                 return Poll::Ready(Some(event));
             }
 
@@ -691,6 +692,7 @@ impl Stream for RpcDht {
                 if let Poll::Ready(Some(event)) = Stream::poll_next(Pin::new(&mut pin.io), cx) {
                     pin.inject_event(event);
                     if let Some(event) = pin.queued_events.pop_front() {
+                        trace!("{event:#?}");
                         return Poll::Ready(Some(event));
                     }
                 } else {
@@ -701,10 +703,12 @@ impl Stream for RpcDht {
                         }
                         QueryPoolState::Finished(q) => {
                             let event = pin.query_finished(q);
+                            trace!("{event:#?}");
                             return Poll::Ready(Some(event));
                         }
                         QueryPoolState::Timeout(q) => {
                             let event = pin.query_timeout(q);
+                            trace!("{event:#?}");
                             return Poll::Ready(Some(event));
                         }
                         QueryPoolState::Waiting(None) | QueryPoolState::Idle => {

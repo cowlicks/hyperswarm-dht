@@ -35,7 +35,7 @@ use sha2::{
 };
 use uint::construct_uint;
 
-use crate::{rpc::IdBytes, util::debug_vec};
+use crate::{rpc::IdBytes, util::debug_vec, PeerId};
 
 construct_uint! {
     /// 256-bit unsigned integer.
@@ -106,6 +106,13 @@ impl<T> Into<KeyBytes> for Key<T> {
 impl From<IdBytes> for Key<IdBytes> {
     fn from(n: IdBytes) -> Self {
         Key::new(n)
+    }
+}
+
+impl From<PeerId> for Key<PeerId> {
+    fn from(p: PeerId) -> Self {
+        let bytes = KeyBytes(Sha256::digest(&p.id.0));
+        Key { preimage: p, bytes }
     }
 }
 

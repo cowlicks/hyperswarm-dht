@@ -13,6 +13,7 @@ use crate::{
     },
 };
 
+mod closest;
 mod fixed;
 mod peers;
 pub mod table;
