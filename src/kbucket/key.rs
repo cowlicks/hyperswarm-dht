@@ -138,7 +138,7 @@ impl<T> Hash for Key<T> {
 
 /// The raw bytes of a key in the DHT keyspace.
 #[derive(PartialEq, Eq, Clone)]
-pub struct KeyBytes(GenericArray<u8, U32>);
+pub struct KeyBytes(pub GenericArray<u8, U32>);
 impl std::fmt::Debug for KeyBytes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("KeyBytes")
