@@ -262,19 +262,35 @@ impl RpcDht {
             .take(cnt)
             .collect::<Vec<_>>()
         {
-            self.ping(&peer)
+            self.ping(todo!())
         }
     }
 
     /// Ping a remote
-    pub fn ping(&mut self, peer: &PeerId) {
+    /*
+    ping ({ host, port }, opts) {
+      let value = null
+
+      if (opts && opts.size && opts.size > 0) value = b4a.alloc(opts.size)
+
+      // createRequest (to, token, internal, command, target, value, session, ttl) {
+      const req = this.io.createRequest(
+          { id: null, host, port },
+          null, true, PING, null, value, (opts && opts.session) || null, (opts && opts.ttl)
+        )
+        return this._requestToPromise(req, opts)
+        const req = new Request(this, socket, tid, null, to, token, internal, command, target, value, session, ttl || 0)
+
+    }
+      */
+    pub fn ping(&mut self, peer: &Peer) {
         self.io.query(
             Command::Internal(InternalCommand::Ping),
             None,
-            Some(peer.id.clone().to_vec()),
-            (&peer.addr).into(),
-            self.queries.next_query_id(),
-        )
+            None,
+            peer.clone(),
+            None,
+        );
     }
 
     /// Handle the event generated from the underlying IO
@@ -318,17 +334,33 @@ impl RpcDht {
         req: Box<RequestMsgData>,
         resp: ReplyMsgData,
         peer: Peer,
-        query_id: QueryId,
+        query_id: Option<QueryId>,
     ) {
-        if matches!(req.command, Command::Internal(InternalCommand::Ping)) {
-            self.on_pong(resp, peer);
-            return;
+        if let Some(id) = valid_id_bytes(resp.id) {
+            self.add_node(id, peer.clone(), None, Some(SocketAddr::from(&resp.to)));
         }
-
-        if let Some(query) = self.queries.get_mut(&query_id) {
-            if let Some(resp) = query.inject_response(resp, peer.into()) {
-                self.queued_events
-                    .push_back(RpcDhtEvent::ResponseResult(Ok(ResponseOk::Response(resp))))
+        match query_id {
+            Some(query_id) => {
+                if let Some(query) = self.queries.get_mut(&query_id) {
+                    if let Some(resp) = query.inject_response(resp, peer) {
+                        self.queued_events
+                            .push_back(RpcDhtEvent::ResponseResult(Ok(ResponseOk::Response(resp))))
+                    }
+                } else {
+                    debug!("Recieved response for missing query with id: {query_id:?}. It could have been removed already");
+                }
+            }
+            None => {
+                if matches!(req.command, Command::Internal(InternalCommand::Ping)) {
+                    dbg!(&req);
+                    dbg!(&resp);
+                    if query_id.is_some() {
+                        panic!("Pings should not have a QueryId");
+                    }
+                    self.on_pong(resp, peer);
+                    return;
+                }
+                panic!("TODO");
             }
         }
     }
@@ -441,31 +473,9 @@ impl RpcDht {
         todo!()
     }
     /// Handle a response for our Ping command
-    fn on_pong(&mut self, msg: ReplyMsgData, peer: Peer) {
-        if let Some(id) = msg.valid_id_bytes() {
-            match self.kbuckets.entry(&Key::new(id)) {
-                Entry::Present(mut entry, _) => {
-                    entry.value().next_ping = Instant::now() + self.ping_job.interval;
-                    self.queued_events.push_back(RpcDhtEvent::ResponseResult(Ok(
-                        ResponseOk::Pong(Peer::from(&entry.value().addr)),
-                    )));
-                    return;
-                }
-                Entry::Pending(mut entry, _) => {
-                    entry.value().next_ping = Instant::now() + self.ping_job.interval;
-                    self.queued_events.push_back(RpcDhtEvent::ResponseResult(Ok(
-                        ResponseOk::Pong(Peer::from(&entry.value().addr)),
-                    )));
-                    return;
-                }
-                _ => {}
-            }
-        }
-
+    fn on_pong(&mut self, _msg: ReplyMsgData, peer: Peer) {
         self.queued_events
-            .push_back(RpcDhtEvent::ResponseResult(Err(
-                ResponseError::InvalidPong(peer),
-            )))
+            .push_back(RpcDhtEvent::ResponseResult(Ok(ResponseOk::Pong(peer))));
     }
 
     /// Delegate new query event to the io handler
@@ -477,7 +487,8 @@ impl RpcDht {
                 target,
                 value,
             } => {
-                self.io.query(command, Some(target.0), value, peer, id);
+                self.io
+                    .query(command, Some(target.0), value, peer, Some(id));
             }
             QueryEvent::RemoveNode { id } => {
                 self.remove_peer(&Key::new(id));

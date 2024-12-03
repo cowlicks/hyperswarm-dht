@@ -32,7 +32,7 @@ type Tid = u16;
 
 #[derive(Debug, Clone)]
 pub enum OutMessage {
-    Request((QueryId, RequestMsgData)),
+    Request((Option<QueryId>, RequestMsgData)),
     Reply(ReplyMsgData),
 }
 
@@ -61,7 +61,7 @@ struct InflightRequest {
     #[allow(unused)] // FIXME not read. Why not?
     timestamp: Instant,
     ///// Identifier for the query this request is used with
-    query_id: QueryId,
+    query_id: Option<QueryId>,
 }
 
 #[derive(Debug)]
@@ -120,7 +120,7 @@ impl IoHandler {
         target: Option<[u8; 32]>,
         value: Option<Vec<u8>>,
         peer: Peer,
-        query_id: QueryId,
+        query_id: Option<QueryId>,
     ) {
         let id = if !self.ephemeral {
             Some(self.id.get().preimage().0)
@@ -316,12 +316,12 @@ pub enum IoHandlerEvent {
     OutResponse { message: ReplyMsgData, peer: Peer },
     /// A request was sent
     OutRequest { tid: Tid },
-    /// A Response to a Message was recieved
+    /// A Response to a Query Message was recieved
     InResponse {
         req: Box<RequestMsgData>,
         resp: ReplyMsgData,
         peer: Peer,
-        query_id: QueryId,
+        query_id: Option<QueryId>,
     },
     /// A Request was receieved
     InRequest { message: RequestMsgData, peer: Peer },
@@ -373,7 +373,7 @@ mod test {
             target: None,
             value: None,
         };
-        let query_id = QueryId(42);
+        let query_id = Some(QueryId(42));
         a.request(OutMessage::Request((query_id, msg.clone())));
         a.next().await;
         let IoHandlerEvent::InRequest { message: res, .. } = b.next().await.unwrap() else {
