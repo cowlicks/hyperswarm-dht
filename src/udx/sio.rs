@@ -169,8 +169,9 @@ impl IoHandler {
         }));
         Ok(())
     }
-    pub fn reply(&mut self, mut _msg: RequestMsgData, _peer: Peer) {
-        todo!()
+
+    pub fn reply(&mut self, msg: ReplyMsgData) {
+        self.pending_send.push_back(OutMessage::Reply(msg))
     }
 
     pub fn response(

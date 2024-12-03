@@ -24,7 +24,6 @@ use crate::{
         NodeStatus,
         K_VALUE, //KeyBytes,
     },
-    peers::PeersEncoding,
     rpc::{jobs::PeriodicJob, query::QueryId},
     util::pretty_bytes,
     IdBytes, PeerId,
@@ -41,73 +40,13 @@ use super::{
     stream::MessageDataStream,
     thirty_two_random_bytes, Command, InternalCommand,
 };
-
-#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Peer {
-    pub id: Option<[u8; 32]>,
-    pub addr: SocketAddr,
-    /// Referrer that told us about this node.
-    pub referrer: Option<SocketAddr>,
-}
-
-impl std::fmt::Debug for Peer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut debug_struct = f.debug_struct("Peer");
-        if let Some(bytes) = &self.id {
-            debug_struct.field("id", &format_args!("Some({})", pretty_bytes(bytes)));
-        }
-        if self.referrer.is_some() {
-            debug_struct.field("referrer", &self.referrer);
-        }
-        debug_struct.field("addr", &self.addr).finish()
-    }
-}
-
-impl FromStr for Peer {
-    type Err = crate::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let addr: SocketAddr = s.parse()?;
-        Ok(Peer {
-            addr,
-            id: None,
-            referrer: None,
-        })
-    }
-}
-
-// TODO DRY
-impl From<&SocketAddr> for Peer {
-    fn from(value: &SocketAddr) -> Self {
-        Peer {
-            id: None,
-            addr: *value,
-            referrer: None,
-        }
-    }
-}
-impl From<&Peer> for SocketAddr {
-    fn from(value: &Peer) -> Self {
-        value.addr
-    }
-}
-
-impl From<SocketAddr> for Peer {
-    fn from(value: SocketAddr) -> Self {
-        Peer {
-            id: None,
-            addr: value,
-            referrer: None,
-        }
-    }
-}
-
 #[derive(Debug, derive_builder::Builder)]
 #[builder(pattern = "owned")]
 pub struct RpcDht {
     // TODO use message passing to update id's in IoHandler
     #[builder(default = "Master::new(Key::new(IdBytes::from(thirty_two_random_bytes())))")]
     pub id: Master<Key<IdBytes>>,
+    ephemeral: bool,
     kbuckets: KBucketsTable<Key<IdBytes>, Node>,
     io: IoHandler,
     bootstrap_job: PeriodicJob,
@@ -187,6 +126,7 @@ impl RpcDht {
 
         let mut dht = Self {
             id,
+            ephemeral: config.ephemeral,
             kbuckets: KBucketsTable::new(local_id.clone(), config.kbucket_pending_timeout),
             io,
             bootstrap_job: PeriodicJob::new(config.bootstrap_interval),
@@ -216,6 +156,7 @@ impl RpcDht {
             self.bootstrapped = true;
         }
     }
+
     pub fn is_bootstrapped(&self) -> bool {
         self.bootstrapped
     }
@@ -251,10 +192,7 @@ impl RpcDht {
             .iter()
             .filter_map(|entry| {
                 if now > entry.node.value.next_ping {
-                    Some(PeerId::new(
-                        entry.node.value.addr,
-                        entry.node.key.preimage().clone(),
-                    ))
+                    Some(Peer::from(entry.node.value.addr))
                 } else {
                     None
                 }
@@ -262,7 +200,7 @@ impl RpcDht {
             .take(cnt)
             .collect::<Vec<_>>()
         {
-            self.ping(todo!())
+            self.ping(&peer)
         }
     }
 
@@ -375,7 +313,7 @@ impl RpcDht {
 
         match msg.command {
             Command::Internal(cmd) => match cmd {
-                InternalCommand::Ping => self.on_ping(msg, peer),
+                InternalCommand::Ping => self.on_ping(msg, &peer),
                 InternalCommand::FindNode => self.on_findnode(msg, peer),
                 InternalCommand::PingNat => self.on_ping_nat(msg, peer),
                 //Unknown(s) => self.on_command_req(ty, s, msg, peer),
@@ -431,22 +369,49 @@ impl RpcDht {
             Entry::SelfEntry => {}
         }
     }
-    /// Handle a ping request
-    fn on_ping(&mut self, msg: RequestMsgData, peer: Peer) {
-        if let Some(ref val) = msg.value {
-            if self.id.get().preimage() != val {
-                // ping wasn't meant for this node
-                self.queued_events.push_back(RpcDhtEvent::RequestResult(Err(
-                    RequestError::InvalidValue { peer, msg },
-                )));
-                return;
-            }
-        }
-        // TODO handle result
-        let _todo = self
-            .io
-            .response(msg, Some(PeersEncoding::encode(&peer.addr)), None, peer);
+    fn reply(
+        &mut self,
+        error: usize,
+        value: Option<Vec<u8>>,
+        token: Option<[u8; 32]>,
+        has_closer_nodes: bool,
+        request: RequestMsgData,
+        peer: &Peer,
+    ) {
+        let t: Vec<Peer> = match (has_closer_nodes, request.target) {
+            (true, Some(t)) => self
+                .kbuckets
+                .closest(&KeyBytes::from(t))
+                .map(|entry| Peer::from(entry.node.value.addr))
+                .collect(),
+            _ => vec![],
+        };
+        let msg = ReplyMsgData {
+            tid: request.tid,
+            to: peer.clone(),
+            id: None,
+            token,
+            closer_nodes: t,
+            error,
+            value,
+        };
+        self.io.reply(msg)
     }
+
+    /// Handle a ping request
+    fn on_ping(&mut self, msg: RequestMsgData, peer: &Peer) {
+        let msg = ReplyMsgData {
+            tid: msg.tid,
+            to: peer.clone(),
+            id: (!self.ephemeral).then(|| self.id.get().preimage().0),
+            token: None,
+            closer_nodes: vec![],
+            error: 0,
+            value: None,
+        };
+        self.io.reply(msg)
+    }
+
     /// Handle an incoming find peers request.
     ///
     /// Reply only if the remote provided a target to get the closest nodes for.
@@ -754,4 +719,64 @@ pub struct Response {
     pub peer_id: Option<IdBytes>,
     /// response payload
     pub value: Option<Vec<u8>>,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Peer {
+    pub id: Option<[u8; 32]>,
+    pub addr: SocketAddr,
+    /// Referrer that told us about this node.
+    pub referrer: Option<SocketAddr>,
+}
+
+impl std::fmt::Debug for Peer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug_struct = f.debug_struct("Peer");
+        if let Some(bytes) = &self.id {
+            debug_struct.field("id", &format_args!("Some({})", pretty_bytes(bytes)));
+        }
+        if self.referrer.is_some() {
+            debug_struct.field("referrer", &self.referrer);
+        }
+        debug_struct.field("addr", &self.addr).finish()
+    }
+}
+
+impl FromStr for Peer {
+    type Err = crate::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let addr: SocketAddr = s.parse()?;
+        Ok(Peer {
+            addr,
+            id: None,
+            referrer: None,
+        })
+    }
+}
+
+// TODO DRY
+impl From<&SocketAddr> for Peer {
+    fn from(value: &SocketAddr) -> Self {
+        Peer {
+            id: None,
+            addr: *value,
+            referrer: None,
+        }
+    }
+}
+impl From<&Peer> for SocketAddr {
+    fn from(value: &Peer) -> Self {
+        value.addr
+    }
+}
+
+impl From<SocketAddr> for Peer {
+    fn from(value: SocketAddr) -> Self {
+        Peer {
+            id: None,
+            addr: value,
+            referrer: None,
+        }
+    }
 }
