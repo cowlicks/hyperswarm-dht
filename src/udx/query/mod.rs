@@ -425,10 +425,6 @@ impl QueryStream {
                 let state = iter.next();
                 self.next_move_closer(state)
             }
-            QueryPeerIter::Updating(iter) => {
-                let state = iter.next();
-                self.next_update(state)
-            }
         }
     }
 
@@ -454,7 +450,6 @@ enum QueryPeerIter {
     //ClosestDisjoint(ClosestDisjointPeersIter),
     Bootstrap(FixedPeersIter),
     MovingCloser(FixedPeersIter),
-    Updating(FixedPeersIter),
 }
 
 impl QueryPeerIter {
@@ -463,7 +458,6 @@ impl QueryPeerIter {
             QueryPeerIter::Closest(iter) => iter.on_success(peer, &resp.closer_nodes),
             QueryPeerIter::Bootstrap(iter) => iter.on_success(peer),
             QueryPeerIter::MovingCloser(iter) => iter.on_success(peer),
-            QueryPeerIter::Updating(iter) => iter.on_success(peer),
         }
     }
 
@@ -472,7 +466,6 @@ impl QueryPeerIter {
             QueryPeerIter::Closest(iter) => iter.on_failure(peer),
             QueryPeerIter::Bootstrap(iter) => iter.on_failure(peer),
             QueryPeerIter::MovingCloser(iter) => iter.on_failure(peer),
-            QueryPeerIter::Updating(iter) => iter.on_failure(peer),
         }
     }
 }
