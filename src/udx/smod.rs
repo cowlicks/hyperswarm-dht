@@ -40,6 +40,9 @@ use super::{
     stream::MessageDataStream,
     thirty_two_random_bytes, Command, InternalCommand,
 };
+
+pub(crate) type QueryAndTid = (Option<QueryId>, u16);
+
 #[derive(Debug, derive_builder::Builder)]
 #[builder(pattern = "owned")]
 pub struct RpcDht {
@@ -184,7 +187,7 @@ impl RpcDht {
             .add_stream(cmd, peers, target, value, bootstrap_nodes)
     }
 
-    fn ping_some(&mut self) {
+    fn ping_some(&mut self) -> Vec<QueryAndTid> {
         let cnt = if self.queries.len() > 2 { 3 } else { 5 };
         let now = Instant::now();
         for peer in self
@@ -200,35 +203,19 @@ impl RpcDht {
             .take(cnt)
             .collect::<Vec<_>>()
         {
-            self.ping(&peer)
+            out.push(self.ping(&peer));
         }
+        out
     }
 
-    /// Ping a remote
-    /*
-    ping ({ host, port }, opts) {
-      let value = null
-
-      if (opts && opts.size && opts.size > 0) value = b4a.alloc(opts.size)
-
-      // createRequest (to, token, internal, command, target, value, session, ttl) {
-      const req = this.io.createRequest(
-          { id: null, host, port },
-          null, true, PING, null, value, (opts && opts.session) || null, (opts && opts.ttl)
-        )
-        return this._requestToPromise(req, opts)
-        const req = new Request(this, socket, tid, null, to, token, internal, command, target, value, session, ttl || 0)
-
-    }
-      */
-    pub fn ping(&mut self, peer: &Peer) {
+    pub fn ping(&mut self, peer: &Peer) -> QueryAndTid {
         self.io.query(
             Command::Internal(InternalCommand::Ping),
             None,
             None,
             peer.clone(),
             None,
-        );
+        )
     }
 
     /// Handle the event generated from the underlying IO
@@ -290,8 +277,6 @@ impl RpcDht {
             }
             None => {
                 if matches!(req.command, Command::Internal(InternalCommand::Ping)) {
-                    dbg!(&req);
-                    dbg!(&resp);
                     if query_id.is_some() {
                         panic!("Pings should not have a QueryId");
                     }

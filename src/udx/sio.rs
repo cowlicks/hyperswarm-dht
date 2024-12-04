@@ -21,7 +21,7 @@ use wasm_timer::Instant;
 
 use super::message::{MsgData, ReplyMsgData, RequestMsgData};
 use super::mslave::Slave;
-use super::smod::Peer;
+use super::smod::{Peer, QueryAndTid};
 use super::{io::Secrets, stream::MessageDataStream};
 
 pub const VERSION: u64 = 1;
@@ -121,17 +121,18 @@ impl IoHandler {
         value: Option<Vec<u8>>,
         peer: Peer,
         query_id: Option<QueryId>,
-    ) {
+    ) -> QueryAndTid {
         let id = if !self.ephemeral {
             Some(self.id.get().preimage().0)
         } else {
             None
         };
 
+        let tid = self.tid.fetch_add(1, Ordering::Relaxed);
         self.request(OutMessage::Request((
             query_id,
             RequestMsgData {
-                tid: self.tid.fetch_add(1, Ordering::Relaxed),
+                tid,
                 to: peer,
                 id,
                 internal: true,
@@ -141,6 +142,7 @@ impl IoHandler {
                 value,
             },
         )));
+        (query_id, tid)
     }
     pub fn error(
         &mut self,
