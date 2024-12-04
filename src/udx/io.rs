@@ -371,7 +371,7 @@ impl Secrets {
     fn rotate_secrets(&mut self) -> Result<()> {
         let tmp = self.secrets[0];
         self.secrets[0] = self.secrets[1];
-        self.secrets[1] = generic_hash(&tmp)?;
+        self.secrets[1] = generic_hash(&tmp);
         Ok(())
     }
 

@@ -124,14 +124,14 @@ fn id_from_socket(addr: &SocketAddr) -> [u8; ID_SIZE] {
     state
         .encode_u16(addr.port(), &mut from_buff)
         .expect("IP_AND_PORT_NUM_BYTES is correct");
-    generic_hash(&from_buff).expect("checked correct")
+    generic_hash(&from_buff)
 }
 
 pub(crate) fn calculate_peer_id(from: &Peer) -> [u8; ID_SIZE] {
     id_from_socket(&from.addr)
 }
 
-pub(crate) fn generic_hash(input: &[u8]) -> Result<[u8; HASH_SIZE]> {
+pub(crate) fn generic_hash(input: &[u8]) -> [u8; HASH_SIZE] {
     let mut out = [0; HASH_SIZE];
     let ret = unsafe {
         libsodium_sys::crypto_generichash(
@@ -144,9 +144,9 @@ pub(crate) fn generic_hash(input: &[u8]) -> Result<[u8; HASH_SIZE]> {
         )
     };
     if ret != 0 {
-        return Err(Error::LibSodiumGenericHashError(ret));
+        panic!("Only errors when the input is invalid. Inputs here or checked");
     }
-    Ok(out)
+    out
 }
 
 pub(crate) fn generic_hash_with_key(input: &[u8], key: &[u8]) -> Result<[u8; HASH_SIZE]> {
