@@ -8,7 +8,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 use wasm_timer::Instant;
 
 use futures::Stream;
@@ -25,6 +25,7 @@ use crate::{
         K_VALUE, //KeyBytes,
     },
     rpc::{jobs::PeriodicJob, query::QueryId},
+    udx::cenc::generic_hash,
     util::pretty_bytes,
     IdBytes, PeerId,
 };
@@ -63,6 +64,7 @@ pub struct RpcDht {
     #[builder(field(ty = "Vec<SocketAddr>"))]
     bootstrap_nodes: Vec<SocketAddr>,
     bootstrapped: bool,
+    down_hints_in_progress: Vec<(u16, Key<IdBytes>, Instant)>,
 }
 
 #[derive(Debug)]
@@ -139,6 +141,7 @@ impl RpcDht {
             queued_events: Default::default(),
             bootstrap_nodes: config.bootstrap_nodes,
             bootstrapped: false,
+            down_hints_in_progress: Vec::new(),
         };
 
         dht.bootstrap();
@@ -190,11 +193,13 @@ impl RpcDht {
     fn ping_some(&mut self) -> Vec<QueryAndTid> {
         let cnt = if self.queries.len() > 2 { 3 } else { 5 };
         let now = Instant::now();
+        let mut out = vec![];
+        let ping_interval = self.ping_job.interval;
         for peer in self
             .kbuckets
             .iter()
             .filter_map(|entry| {
-                if now > entry.node.value.next_ping {
+                if now > entry.node.value.last_seen + ping_interval {
                     Some(Peer::from(entry.node.value.addr))
                 } else {
                     None
@@ -246,9 +251,6 @@ impl RpcDht {
             }
             IoHandlerEvent::RequestTimeout { .. } => {
                 todo!()
-                //if let Some(query) = self.queries.get_mut(&user_data) {
-                //    query.on_timeout(peer);
-                //}
             }
         }
     }
@@ -301,8 +303,7 @@ impl RpcDht {
                 InternalCommand::Ping => self.on_ping(msg, &peer),
                 InternalCommand::FindNode => self.on_findnode(msg, peer),
                 InternalCommand::PingNat => self.on_ping_nat(msg, peer),
-                //Unknown(s) => self.on_command_req(ty, s, msg, peer),
-                _ => todo!(),
+                InternalCommand::DownHint => self.on_down_hint(msg, peer),
             },
             Command::External(_cmd) => todo!(),
         }
@@ -318,20 +319,22 @@ impl RpcDht {
         let key = Key::new(id);
         match self.kbuckets.entry(&key) {
             Entry::Present(mut entry, _) => {
-                entry.value().next_ping = Instant::now() + self.ping_job.interval;
+                entry.value().last_seen = Instant::now();
             }
             Entry::Pending(mut entry, _) => {
                 let n = entry.value();
                 n.addr = peer.addr;
-                n.next_ping = Instant::now() + self.ping_job.interval;
+                n.last_seen = Instant::now();
             }
             Entry::Absent(entry) => {
                 let node = Node {
                     addr: peer.addr,
                     roundtrip_token,
                     to,
-                    next_ping: Instant::now() + self.ping_job.interval,
+                    last_seen: Instant::now(),
                     referrers: vec![],
+                    down_hint: false,
+                    last_pinged: None,
                 };
 
                 use InsertResult::*;
@@ -367,6 +370,7 @@ impl RpcDht {
             (true, Some(t)) => self
                 .kbuckets
                 .closest(&KeyBytes::from(t))
+                .take(usize::from(K_VALUE))
                 .map(|entry| Peer::from(entry.node.value.addr))
                 .collect(),
             _ => vec![],
@@ -400,12 +404,29 @@ impl RpcDht {
     /// Handle an incoming find peers request.
     ///
     /// Reply only if the remote provided a target to get the closest nodes for.
-    fn on_findnode(&mut self, msg: RequestMsgData, peer: Peer) {
-        if let Some(key) = valid_id_bytes(msg.id) {
-            let closer_nodes = self.closer_nodes(key, usize::from(K_VALUE));
-            // TODO result
-            let _ = self.io.response(msg, None, Some(closer_nodes), peer);
-        }
+    fn on_findnode(&mut self, request: RequestMsgData, peer: Peer) {
+        let closer_nodes: Vec<Peer> = match request.target {
+            Some(t) => self
+                .kbuckets
+                .closest(&KeyBytes::from(t))
+                .take(usize::from(K_VALUE))
+                .map(|entry| Peer::from(entry.node.value.addr))
+                .collect(),
+            None => {
+                // TODO emit an event about this
+                warn!("Got FIND_NODE without a target. Msg: {request:?}");
+                return;
+            }
+        };
+        self.io.reply(ReplyMsgData {
+            tid: request.tid,
+            to: peer.clone(),
+            id: (!self.ephemeral).then(|| self.id.get().preimage().0),
+            token: None,
+            closer_nodes,
+            error: 0,
+            value: None,
+        });
     }
 
     /// Get the `num` closest nodes in the bucket.
@@ -419,11 +440,134 @@ impl RpcDht {
         nodes
         //PeersEncoding::encode(&nodes)
     }
-    fn on_ping_nat(&self, _msg: RequestMsgData, _peer: Peer) {
-        todo!()
+    fn on_down_hint(&mut self, request: RequestMsgData, peer: Peer) {
+        match &request.value {
+            None => {
+                // TODO emit an event about this
+                warn!("Got DOWN_HINT with no value. Msg: {request:?}");
+            }
+            Some(value) => {
+                if value.len() < 6 {
+                    // TODO emit an event about this
+                    warn!("Got DOWN_HINT with value too small. Msg: {request:?}");
+                    return;
+                }
+                if self.down_hints_in_progress.len() < 10 {
+                    let key = Key::new(IdBytes::from(generic_hash(&value[..6])));
+                    // NB: akwardness follows.
+                    // We have to mutate some state to track the DownHint progress. but doing this
+                    // is split up between outside and inside the match statement
+                    //
+                    // this happenes bc we take a mutable borrow of `self` entering the
+                    // match statement. but in Pending/Present we want to mutate self in order
+                    // track state related to DownHint. In these cases we return node.addr from the
+                    // match, and use then do our self mutation.
+                    //
+                    // we can't return the node from the match because it's a reference.
+
+                    // why a macro? we can't use a function because we can't take an immutable
+                    // borrow of self to pass to the func
+                    macro_rules! update_node_for_down_hint {
+                        ($entry:tt) => {{
+                            let node = $entry.value();
+                            if node.pinged_within_last(Duration::from_millis(
+                                crate::constants::TICK_INTERVAL_MS,
+                            )) || !node.down_hint
+                            {
+                                node.down_hint = true;
+                                node.ping_sent();
+                                (node.addr, node.last_seen)
+                            } else {
+                                warn!(
+                                    "Got DOWN_HINT for node already DOWN_HINT'd. Msg: {request:?}"
+                                );
+                                return;
+                            }
+                        }};
+                    }
+
+                    let (node_addr, last_seen) = match self.kbuckets.entry(&key) {
+                        Entry::Pending(mut entry, _) => {
+                            update_node_for_down_hint!(entry)
+                        }
+                        Entry::Present(mut entry, _) => {
+                            update_node_for_down_hint!(entry)
+                        }
+                        _ => {
+                            warn!("Got DOWN_HINT for node we don't have. Msg: {request:?}");
+                            return;
+                        }
+                    };
+                    // update self for down hint
+                    let (_, tid) = self.ping(&Peer::from(node_addr));
+                    self.down_hints_in_progress.push((tid, key, last_seen));
+                }
+                self.io.reply(ReplyMsgData {
+                    tid: request.tid,
+                    to: peer,
+                    id: (!self.ephemeral).then(|| self.id.get().preimage().0),
+                    token: None,
+                    closer_nodes: vec![],
+                    error: 0,
+                    value: None,
+                })
+            }
+        };
+    }
+
+    fn on_ping_nat(&mut self, request: RequestMsgData, mut peer: Peer) {
+        let port = match &request.value {
+            Some(port_buf) => {
+                if port_buf.len() < 2 {
+                    // TODO emit an event about this
+                    warn!("Got PING_NAT with value too small. Msg: {request:?}");
+                    return;
+                }
+                let port = u16::from_le_bytes([port_buf[0], port_buf[1]]);
+                if port == 0 {
+                    warn!("Got PING_NAT with port == 0. Msg: {request:?}");
+                    return;
+                }
+                port
+            }
+            None => {
+                // TODO emit an event about this
+                warn!("Got PING_NAT without a value. Msg: {request:?}");
+                return;
+            }
+        };
+        peer.addr.set_port(port);
+        self.io.reply(ReplyMsgData {
+            tid: request.tid,
+            to: peer,
+            id: (!self.ephemeral).then(|| self.id.get().preimage().0),
+            token: None,
+            closer_nodes: vec![],
+            error: 0,
+            value: None,
+        });
     }
     /// Handle a response for our Ping command
-    fn on_pong(&mut self, _msg: ReplyMsgData, peer: Peer) {
+    fn on_pong(&mut self, msg: ReplyMsgData, peer: Peer) {
+        // check if pong was for a downhint ping
+        if let Some(pos) = self
+            .down_hints_in_progress
+            .iter()
+            .position(|&(tid, _, _)| tid == msg.tid)
+        {
+            let (_, key, last_seen) = self.down_hints_in_progress.remove(pos);
+            if msg.error != 0 {
+                self.remove_peer(&key);
+            } else {
+                // we received a good response from an address than was downhinted.
+                // the node either isn't down, or it is a new node (with a new id)
+                // if it isn't down, node.last_seen is already updated because we have
+                // already called add_node on this message. otherwise last_seen
+                // is the same as it was we we pinged the node
+                self.remove_stale_peer(&key, last_seen);
+            }
+        }
+
         self.queued_events
             .push_back(RpcDhtEvent::ResponseResult(Ok(ResponseOk::Pong(peer))));
     }
@@ -471,6 +615,27 @@ impl RpcDht {
         match self.kbuckets.entry(key) {
             Entry::Present(entry, _) => Some(entry.remove()),
             Entry::Pending(entry, _) => Some(entry.remove()),
+            Entry::Absent(..) | Entry::SelfEntry => None,
+        }
+    }
+    pub fn remove_stale_peer(
+        &mut self,
+        key: &Key<IdBytes>,
+        last_seen: Instant,
+    ) -> Option<EntryView<Key<IdBytes>, Node>> {
+        match self.kbuckets.entry(key) {
+            Entry::Present(mut entry, _) => {
+                if entry.value().last_seen <= last_seen {
+                    return Some(entry.remove());
+                }
+                None
+            }
+            Entry::Pending(mut entry, _) => {
+                if entry.value().last_seen <= last_seen {
+                    return Some(entry.remove());
+                };
+                None
+            }
             Entry::Absent(..) | Entry::SelfEntry => None,
         }
     }
@@ -610,20 +775,6 @@ pub enum ResponseError {
     InvalidPong(Peer),
 }
 
-#[derive(Debug, Clone)]
-pub struct Node {
-    /// Address of the peer.
-    pub addr: SocketAddr,
-    /// last roundtrip token in a req/resp exchanged with the peer
-    pub roundtrip_token: Option<Vec<u8>>,
-    /// Decoded address of the `to` message field
-    pub to: Option<SocketAddr>,
-    /// When a new ping is due
-    pub next_ping: Instant,
-    /// Known referrers available for holepunching
-    pub referrers: Vec<SocketAddr>,
-}
-
 impl Stream for RpcDht {
     type Item = RpcDhtEvent;
 
@@ -639,7 +790,7 @@ impl Stream for RpcDht {
         }
 
         if let Poll::Ready(()) = pin.ping_job.poll(cx, now) {
-            pin.ping_some()
+            pin.ping_some();
         }
         loop {
             // Drain queued events first.
@@ -763,5 +914,36 @@ impl From<SocketAddr> for Peer {
             addr: value,
             referrer: None,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Node {
+    /// Address of the peer.
+    pub addr: SocketAddr,
+    /// last roundtrip token in a req/resp exchanged with the peer
+    pub roundtrip_token: Option<Vec<u8>>,
+    /// Decoded address of the `to` message field
+    pub to: Option<SocketAddr>,
+    /// When a new ping is due
+    pub last_seen: Instant,
+    /// Known referrers available for holepunching
+    pub referrers: Vec<SocketAddr>,
+    /// If this node recieved a down hint
+    pub down_hint: bool,
+    /// Last time a ping was sent to this node
+    pub last_pinged: Option<Instant>,
+}
+
+impl Node {
+    fn pinged_within_last(&self, delta: Duration) -> bool {
+        if let Some(x) = self.last_pinged {
+            return Instant::now().duration_since(x) > delta;
+        }
+        true
+    }
+
+    fn ping_sent(&mut self) {
+        self.last_pinged = Some(Instant::now())
     }
 }
