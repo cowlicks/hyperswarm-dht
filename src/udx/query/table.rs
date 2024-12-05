@@ -4,8 +4,7 @@ use fnv::FnvHashMap;
 
 use crate::{
     kbucket::{Key, K_VALUE},
-    rpc::{IdBytes, PeerId},
-    udx,
+    udx::{self, IdBytes, PeerId},
 };
 
 use super::fixed::FixedPeersIter;

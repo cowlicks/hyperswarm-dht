@@ -1,8 +1,11 @@
 //! udx/dht-rpc internnals
 //!
 #![allow(unreachable_code, dead_code)]
+use ed25519_dalek::PUBLIC_KEY_LENGTH;
 use futures::Stream;
+use std::borrow::Borrow;
 use std::collections::VecDeque;
+use std::convert::TryInto;
 use std::fmt::Display;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::pin::Pin;
@@ -20,10 +23,8 @@ use rand::{
 
 use crate::{
     kbucket::{Entry, EntryView, InsertResult, KBucketsTable, Key, KeyBytes, NodeStatus, K_VALUE},
-    rpc::{jobs::PeriodicJob, query::QueryId},
-    udx::cenc::generic_hash,
+    udx::{cenc::generic_hash, jobs::PeriodicJob, query::QueryId},
     util::pretty_bytes,
-    IdBytes, PeerId,
 };
 
 use self::{
@@ -39,6 +40,7 @@ use self::{
 
 mod cenc;
 mod io;
+mod jobs;
 mod message;
 mod mslave;
 mod query;
@@ -234,6 +236,19 @@ impl RpcDht {
         Ok(dht)
     }
 
+    pub fn is_ephemeral(&self) -> bool {
+        self.ephemeral
+    }
+
+    /// Returns the local address that this listener is bound to.
+    pub fn local_addr(&self) -> crate::Result<SocketAddr> {
+        self.io.local_addr()
+    }
+    /// Returns the id used to identify this node.
+    pub fn local_id(&self) -> &IdBytes {
+        self.id.get_ref().preimage()
+    }
+
     pub fn bootstrap(&mut self) {
         if !self.bootstrap_nodes.is_empty() {
             self.query(
@@ -276,6 +291,16 @@ impl RpcDht {
             .add_stream(cmd, peers, target, value, bootstrap_nodes)
     }
 
+    pub fn ping(&mut self, peer: &Peer) -> QueryAndTid {
+        self.io.query(
+            Command::Internal(InternalCommand::Ping),
+            None,
+            None,
+            peer.clone(),
+            None,
+        )
+    }
+
     fn ping_some(&mut self) -> Vec<QueryAndTid> {
         let cnt = if self.queries.len() > 2 { 3 } else { 5 };
         let now = Instant::now();
@@ -297,16 +322,6 @@ impl RpcDht {
             out.push(self.ping(&peer));
         }
         out
-    }
-
-    pub fn ping(&mut self, peer: &Peer) -> QueryAndTid {
-        self.io.query(
-            Command::Internal(InternalCommand::Ping),
-            None,
-            None,
-            peer.clone(),
-            None,
-        )
     }
 
     /// Handle the event generated from the underlying IO
@@ -1031,5 +1046,52 @@ impl Node {
 
     fn ping_sent(&mut self) {
         self.last_pinged = Some(Instant::now())
+    }
+}
+
+/// A 32 byte identifier for a node participating in the DHT.
+#[derive(Clone, Hash, PartialOrd, PartialEq, Eq)]
+pub struct IdBytes(pub [u8; PUBLIC_KEY_LENGTH]);
+
+impl std::fmt::Debug for IdBytes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "IdBytes({})", pretty_bytes(&self.0))
+    }
+}
+impl Borrow<[u8]> for IdBytes {
+    fn borrow(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl From<[u8; 32]> for IdBytes {
+    fn from(digest: [u8; 32]) -> Self {
+        Self(digest)
+    }
+}
+
+impl TryFrom<&[u8]> for IdBytes {
+    type Error = std::array::TryFromSliceError;
+
+    fn try_from(buf: &[u8]) -> Result<Self, Self::Error> {
+        Ok(Self(buf.try_into()?))
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq)]
+pub struct PeerId {
+    pub addr: SocketAddr,
+    pub id: IdBytes,
+}
+
+impl PeerId {
+    pub fn new(addr: SocketAddr, id: IdBytes) -> Self {
+        Self { addr, id }
+    }
+}
+
+impl Borrow<[u8]> for PeerId {
+    fn borrow(&self) -> &[u8] {
+        self.id.borrow()
     }
 }

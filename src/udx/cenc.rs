@@ -10,8 +10,8 @@ use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
     kbucket::{self, EntryView},
     peers::PeersEncoding,
-    udx::InternalCommand,
-    Error, IdBytes, PeerId, Result,
+    udx::{IdBytes, InternalCommand, PeerId},
+    Error, Result,
 };
 
 use super::{

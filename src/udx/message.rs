@@ -1,6 +1,6 @@
 use crate::{
+    udx::IdBytes,
     util::{debug_vec, pretty_bytes},
-    IdBytes,
 };
 
 use super::{Command, Peer};

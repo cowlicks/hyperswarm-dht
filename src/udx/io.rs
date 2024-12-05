@@ -1,4 +1,3 @@
-#[allow(unreachable_code, dead_code)]
 use std::sync::{Arc, RwLock};
 use std::{collections::BTreeMap, net::SocketAddr};
 use tracing::warn;
@@ -11,14 +10,14 @@ use crate::{
 };
 use compact_encoding::State;
 
+use super::query::QueryId;
 use super::{
     cenc::{generic_hash, generic_hash_with_key, ipv4, validate_id},
     thirty_two_random_bytes, Command, Peer,
 };
 
 use crate::kbucket::Key;
-use crate::rpc::query::QueryId;
-use crate::{udx, IdBytes};
+use crate::udx::{self, IdBytes};
 use fnv::FnvHashMap;
 use futures::Stream;
 use futures::{

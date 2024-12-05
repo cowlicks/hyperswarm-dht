@@ -32,6 +32,9 @@ impl<T: Clone> Master<T> {
     pub fn get(&self) -> T {
         self.value.clone()
     }
+    pub fn get_ref(&self) -> &T {
+        &self.value
+    }
 
     pub fn view(&self) -> Slave<T> {
         Slave {

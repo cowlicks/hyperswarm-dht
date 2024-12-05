@@ -7,11 +7,7 @@ use wasm_timer::Instant;
 
 use crate::{
     kbucket::{Key, ALPHA_VALUE, K_VALUE},
-    rpc::{
-        message::{Message, Type},
-        query::QueryId,
-        IdBytes, PeerId, RequestId,
-    },
+    udx::{IdBytes, PeerId},
 };
 
 mod closest;
@@ -514,9 +510,7 @@ pub enum QueryEvent {
 #[derive(Debug, Clone)]
 pub struct CommandQuery {
     /// The Id of the query
-    pub rid: RequestId,
-    /// Whether this a query/update request
-    pub ty: Type,
+    pub rid: u16,
     /// Command def
     pub command: String,
     /// the node who sent the query/update
@@ -530,7 +524,7 @@ pub struct CommandQuery {
 /// Outgoing response to a `CommandQuery`
 #[derive(Debug, Clone)]
 pub struct CommandQueryResponse {
-    pub msg: Message,
+    pub msg: ReplyMsgData,
     pub peer: Peer,
     pub target: IdBytes,
 }
@@ -629,3 +623,6 @@ impl QueryStats {
         }
     }
 }
+/// Unique identifier for an active query.
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub struct QueryId(pub usize);
