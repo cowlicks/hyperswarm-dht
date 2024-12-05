@@ -79,9 +79,9 @@ impl Display for InternalCommand {
     }
 }
 
-impl Into<Command> for InternalCommand {
-    fn into(self) -> Command {
-        Command::Internal(self)
+impl From<InternalCommand> for Command {
+    fn from(value: InternalCommand) -> Self {
+        Command::Internal(value)
     }
 }
 
@@ -98,8 +98,8 @@ pub enum Command {
 impl Command {
     fn encode(&self) -> u8 {
         match &self {
-            Command::Internal(cmd) => cmd.clone() as u8,
-            Command::External(ExternalCommand(cmd)) => cmd.clone() as u8,
+            Command::Internal(cmd) => *cmd as u8,
+            Command::External(ExternalCommand(cmd)) => *cmd as u8,
         }
     }
 }
@@ -878,7 +878,7 @@ pub enum RequestOk {
     CustomCommandRequest {
         /// The query we received and need to respond to
         query: CommandQuery,
-        request: RequestMsgData,
+        request: Box<RequestMsgData>,
         peer: Peer, // maybe peerid? or SocketAddr
     },
 }
@@ -990,6 +990,7 @@ impl Stream for RpcDht {
     }
 }
 
+// TODO just use ReplyMsgData?
 /// Response received from `peer` to a request submitted by this DHT.
 #[derive(Debug, Clone)]
 pub struct Response {
@@ -1187,6 +1188,6 @@ pub(crate) fn fill_random_bytes(dest: &mut [u8]) {
         rngs::{OsRng, StdRng},
         RngCore, SeedableRng,
     };
-    let mut rng = StdRng::from_rng(OsRng::default()).unwrap();
+    let mut rng = StdRng::from_rng(OsRng).unwrap();
     rng.fill_bytes(dest)
 }

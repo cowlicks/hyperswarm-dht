@@ -585,7 +585,7 @@ impl Stream for HyperDht {
                         query,
                         request,
                         peer,
-                    })) => pin.on_command(query, request, peer),
+                    })) => pin.on_command(query, *request, peer),
                     RpcDhtEvent::ResponseResult(Ok(ResponseOk::Response(resp))) => {
                         pin.inject_response(resp)
                     }
@@ -933,7 +933,7 @@ impl<T: fmt::Debug> GetResult<T> {
     }
 
     /// Returns an iterator over all received values
-    pub fn values<'a>(&'a self) -> impl Iterator<Item = &'a T> + '_ {
+    pub fn values(&self) -> impl Iterator<Item = &T> {
         self.responses.iter().map(|r| &r.value)
     }
 
@@ -972,27 +972,25 @@ pub struct Lookup {
 
 impl Lookup {
     /// Returns an iterator over all the nodes that sent data for this look
-    pub fn origins<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = (&'a SocketAddr, Option<&'a IdBytes>)> + '_ {
+    pub fn origins(&self) -> impl Iterator<Item = (&SocketAddr, Option<&IdBytes>)> {
         self.peers
             .iter()
             .map(|peer| (&peer.node, peer.peer_id.as_ref()))
     }
 
     /// Returns an iterator over all remote peers that announced the topic hash
-    pub fn remotes<'a>(&'a self) -> impl Iterator<Item = &'a SocketAddr> + '_ {
+    pub fn remotes(&self) -> impl Iterator<Item = &SocketAddr> {
         self.peers.iter().flat_map(|peer| peer.peers.iter())
     }
 
     /// Returns an iterator over all LAN peers that announced the topic hash
-    pub fn locals<'a>(&'a self) -> impl Iterator<Item = &'a SocketAddr> + '_ {
+    pub fn locals(&self) -> impl Iterator<Item = &SocketAddr> {
         self.peers.iter().flat_map(|peer| peer.local_peers.iter())
     }
 
     /// Returns an iterator over all peers (remote and LAN) that announced the
     /// topic hash.
-    pub fn all_peers<'a>(&'a self) -> impl Iterator<Item = &'a SocketAddr> + '_ {
+    pub fn all_peers(&self) -> impl Iterator<Item = &SocketAddr> {
         self.peers
             .iter()
             .flat_map(|peer| peer.peers.iter().chain(peer.local_peers.iter()))

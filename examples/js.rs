@@ -9,7 +9,6 @@
 //! afterwards unannouce a topic and a port.
 use std::{net::Ipv4Addr, time::Duration};
 
-use futures::StreamExt;
 use hyperswarm_dht::{udx::RpcDht, DhtConfig};
 
 #[tokio::main]
@@ -21,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //dbg!(&conf);
 
     dbg!();
-    let mut node = RpcDht::with_config(conf).await?;
+    let node = RpcDht::with_config(conf).await?;
     dbg!();
     /*
     while let Some(x) = node.next().await {
