@@ -1,15 +1,5 @@
 use std::fmt::Write;
 
-macro_rules! opt_map_inner {
-    ($debug_struct:tt, $name:expr, $name_s:tt, $func:tt) => {
-        match &$name {
-            Some(bytes) => $debug_struct.field($name_s, &format_args!("Some({})", $func(bytes))),
-            None => $debug_struct.field("id", &None::<String>),
-        };
-    };
-}
-pub(crate) use opt_map_inner;
-
 /// Prettify a byte slice.
 pub fn pretty_bytes(bytes: &[u8]) -> String {
     if bytes.len() > 4 {
