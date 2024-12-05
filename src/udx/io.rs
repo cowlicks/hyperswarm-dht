@@ -4,25 +4,18 @@ use tracing::warn;
 
 use tokio::sync::oneshot::Sender;
 
-use crate::{
-    constants::{REQUEST_ID, RESPONSE_ID},
-    Result,
-};
 use compact_encoding::State;
 
-use super::query::QueryId;
-use super::{
-    cenc::{generic_hash, generic_hash_with_key, ipv4, validate_id},
-    thirty_two_random_bytes, Command, Peer,
+use crate::{
+    constants::{REQUEST_ID, RESPONSE_ID},
+    kbucket::Key,
+    udx::{self, IdBytes},
+    Result,
 };
-
-use crate::kbucket::Key;
-use crate::udx::{self, IdBytes};
 use fnv::FnvHashMap;
-use futures::Stream;
 use futures::{
     task::{Context, Poll},
-    Sink,
+    Sink, Stream,
 };
 use rand::Rng;
 use std::{
@@ -35,10 +28,14 @@ use std::{
 use tracing::trace;
 use wasm_timer::Instant;
 
-use super::message::{MsgData, ReplyMsgData, RequestMsgData};
-use super::mslave::Slave;
-use super::stream::MessageDataStream;
-use super::QueryAndTid;
+use super::{
+    cenc::{generic_hash, generic_hash_with_key, ipv4, validate_id},
+    message::{MsgData, ReplyMsgData, RequestMsgData},
+    mslave::Slave,
+    query::QueryId,
+    stream::MessageDataStream,
+    thirty_two_random_bytes, Command, Peer, QueryAndTid,
+};
 
 pub const VERSION: u64 = 1;
 
