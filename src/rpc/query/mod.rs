@@ -1,3 +1,4 @@
+#![allow(unused)]
 use std::{num::NonZeroUsize, time::Duration};
 
 use fnv::FnvHashMap;
