@@ -1,5 +1,5 @@
 use futures::StreamExt;
-use hyperswarm_dht::rpc::{DhtConfig, RpcDht, RpcDhtEvent};
+use hyperswarm_dht::udx::{DhtConfig, RpcDht, RpcDhtEvent};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -11,9 +11,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut b = RpcDht::with_config(
             DhtConfig::default()
                 .set_bootstrap_nodes(&[bootstrap])
-                .register_commands(["values"])
+                .register_commands(&[22])
                 .bind("127.0.0.1:3402")
-                .await
                 .expect("Failed to create dht with socket"),
         )
         .await
@@ -31,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         println!("b routing updated {:?}", peer)
                     }
                     RpcDhtEvent::QueryResult { id: _, cmd, stats } => {
-                        println!("b query result {} {:?}", cmd, stats)
+                        println!("b query result {:?} {:?}", cmd, stats)
                     }
                     RpcDhtEvent::Bootstrapped { .. } => {}
                 }
@@ -41,7 +40,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut a = RpcDht::with_config(
             DhtConfig::default()
                 .bind("127.0.0.1:3401")
-                .await
                 .expect("Failed to create dht with socket"),
         )
         .await

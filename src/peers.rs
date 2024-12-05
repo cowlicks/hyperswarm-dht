@@ -7,7 +7,7 @@ use smallvec::alloc::borrow::Borrow;
 
 use crate::{
     kbucket::{self, EntryView},
-    rpc::{IdBytes, Node, Peer, PeerId},
+    udx::{IdBytes, Node, Peer, PeerId},
 };
 
 #[derive(Debug, Clone, Default)]

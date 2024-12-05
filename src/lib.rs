@@ -60,7 +60,6 @@ pub mod crypto;
 pub mod kbucket;
 pub mod lru;
 pub mod peers;
-pub mod rpc;
 pub mod store;
 pub mod udx;
 mod util;

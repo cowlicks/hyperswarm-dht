@@ -554,20 +554,3 @@ impl PeersEncoding for &SocketAddr {
         buf
     }
 }
-
-impl PeersEncoding for Vec<EntryView<kbucket::Key<IdBytes>, Node>> {
-    fn encode(&self) -> Vec<u8> {
-        // TODO refactor
-        let mut buf = Vec::with_capacity(self.len() * (32 + 6));
-
-        for peer in self.iter() {
-            let addr = &peer.node.value.addr;
-            if let IpAddr::V4(ip) = addr.ip() {
-                buf.extend_from_slice(peer.node.key.preimage().borrow());
-                buf.extend_from_slice(&ip.octets()[..]);
-                buf.extend_from_slice(&addr.port().to_be_bytes()[..]);
-            }
-        }
-        buf
-    }
-}
