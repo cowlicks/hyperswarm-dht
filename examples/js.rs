@@ -10,7 +10,7 @@
 use std::{net::Ipv4Addr, time::Duration};
 
 use futures::StreamExt;
-use hyperswarm_dht::{rpc::RpcDht, DhtConfig};
+use hyperswarm_dht::{udx::RpcDht, DhtConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -31,14 +31,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //dbg!(&node);
     loop {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        dbg!();
-        for kv in node.kbuckets.iter() {
-            dbg!(kv.node);
-            dbg!(kv.status);
-        }
-        dbg!();
-        if let Some(x) = node.next().await {
-            dbg!(&x);
-        }
     }
 }

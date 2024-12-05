@@ -39,12 +39,8 @@ use crate::{
 pub mod io;
 pub(crate) mod jobs;
 pub mod message;
-#[cfg(test)]
-mod old_test;
 pub mod protocol;
 pub mod query;
-#[cfg(test)]
-mod test;
 pub mod udp;
 
 #[derive(Debug)]

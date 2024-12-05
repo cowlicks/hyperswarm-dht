@@ -141,7 +141,7 @@ pub struct RpcDht {
     #[builder(default = "Master::new(Key::new(IdBytes::from(thirty_two_random_bytes())))")]
     pub id: Master<Key<IdBytes>>,
     ephemeral: bool,
-    kbuckets: KBucketsTable<Key<IdBytes>, Node>,
+    pub(crate) kbuckets: KBucketsTable<Key<IdBytes>, Node>,
     io: IoHandler,
     bootstrap_job: PeriodicJob,
     ping_job: PeriodicJob,
@@ -203,11 +203,45 @@ impl DhtConfig {
         self.bootstrap_nodes.push(addr.into());
         self
     }
+    pub fn empty_bootstrap_nodes(mut self) -> Self {
+        self.bootstrap_nodes = vec![];
+        self
+    }
+    /// Set the nodes to bootstrap from
+    pub fn set_bootstrap_nodes<T: ToSocketAddrs>(mut self, addresses: &[T]) -> Self {
+        let mut bootstrap_nodes = vec![];
+
+        for addrs in addresses {
+            if let Ok(addrs) = addrs.to_socket_addrs() {
+                for addr in addrs {
+                    bootstrap_nodes.push(addr)
+                }
+            }
+        }
+        self.bootstrap_nodes = bootstrap_nodes;
+        self
+    }
+
     /// Register all commands to listen to.
     pub fn register_commands(mut self, cmds: &[usize]) -> Self {
         for cmd in cmds {
             self.commands.insert(*cmd);
         }
+        self
+    }
+
+    /// Set ephemeral: true so other peers do not add us to the peer list,
+    /// simply bootstrap.
+    ///
+    /// An ephemeral dht node won't expose its id to remote peers, hence being
+    /// ignored.
+    pub fn ephemeral(mut self) -> Self {
+        self.ephemeral = true;
+        self
+    }
+
+    pub fn set_ephemeral(mut self, ephemeral: bool) -> Self {
+        self.ephemeral = ephemeral;
         self
     }
 }
