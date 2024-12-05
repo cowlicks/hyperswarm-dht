@@ -399,6 +399,8 @@ impl PeerCache {
 
         let expiration = now + self.age;
         let list = &mut self.list;
+        // see: https://github.com/rust-lang/rust-clippy/issues/13185
+        #[allow(clippy::manual_inspect)]
         self.map.get_mut(key).map(|addrs| {
             Self::update_key(list, key);
             addrs.set_expiration(expiration);
