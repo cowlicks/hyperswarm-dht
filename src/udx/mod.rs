@@ -1,8 +1,8 @@
 //! udx/dht-rpc internnals
-//!
 #![allow(unreachable_code, dead_code)]
-use ed25519_dalek::PUBLIC_KEY_LENGTH;
+use ed25519_dalek::{PublicKey, PUBLIC_KEY_LENGTH};
 use futures::Stream;
+use query::CommandQueryResponse;
 use std::{
     borrow::Borrow,
     collections::{HashSet, VecDeque},
@@ -28,9 +28,10 @@ use crate::{
     util::pretty_bytes,
 };
 
+pub use self::message::{ReplyMsgData, RequestMsgData};
 use self::{
     io::{IoConfig, IoHandler, IoHandlerEvent},
-    message::{valid_id_bytes, ReplyMsgData, RequestMsgData},
+    message::valid_id_bytes,
     mslave::Master,
     query::{
         table::PeerState, CommandQuery, QueryConfig, QueryEvent, QueryPool, QueryPoolState,
@@ -44,7 +45,7 @@ mod io;
 mod jobs;
 mod message;
 mod mslave;
-mod query;
+pub mod query;
 mod stream;
 
 #[cfg(test)]
@@ -169,7 +170,7 @@ pub struct DhtConfig {
     connection_idle_timeout: Duration,
     ephemeral: bool,
     pub(crate) adaptive: bool,
-    bootstrap_nodes: Vec<SocketAddr>,
+    pub bootstrap_nodes: Vec<SocketAddr>,
     socket: Option<MessageDataStream>,
 }
 
@@ -200,6 +201,13 @@ impl DhtConfig {
     }
     pub fn add_bootstrap_node<A: Into<SocketAddr>>(mut self, addr: A) -> Self {
         self.bootstrap_nodes.push(addr.into());
+        self
+    }
+    /// Register all commands to listen to.
+    pub fn register_commands(mut self, cmds: &[usize]) -> Self {
+        for cmd in cmds {
+            self.commands.insert(*cmd);
+        }
         self
     }
 }
@@ -459,6 +467,10 @@ impl RpcDht {
             Entry::SelfEntry => {}
         }
     }
+    pub fn reply_command(&mut self, resp: CommandQueryResponse) {
+        self.io.reply(resp.msg)
+    }
+
     fn reply(
         &mut self,
         error: usize,
@@ -832,6 +844,8 @@ pub enum RequestOk {
     CustomCommandRequest {
         /// The query we received and need to respond to
         query: CommandQuery,
+        request: RequestMsgData,
+        peer: Peer, // maybe peerid? or SocketAddr
     },
 }
 
@@ -959,6 +973,15 @@ pub struct Response {
     pub value: Option<Vec<u8>>,
 }
 
+impl Response {
+    /// Decodes an instance of the message from the response's value.
+    pub fn decode_value<T: prost::Message + Default>(&self) -> Option<T> {
+        self.value
+            .as_ref()
+            .and_then(|val| T::decode(val.as_slice()).ok())
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Peer {
     pub id: Option<[u8; 32]>,
@@ -1054,11 +1077,25 @@ impl Node {
 #[derive(Clone, Hash, PartialOrd, PartialEq, Eq)]
 pub struct IdBytes(pub [u8; PUBLIC_KEY_LENGTH]);
 
+impl IdBytes {
+    /// Create new 32 byte array with random bytes.
+    pub fn random() -> Self {
+        let mut key = [0u8; 32];
+        fill_random_bytes(&mut key);
+        Self(key)
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.0.to_vec()
+    }
+}
+
 impl std::fmt::Debug for IdBytes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "IdBytes({})", pretty_bytes(&self.0))
     }
 }
+
 impl Borrow<[u8]> for IdBytes {
     fn borrow(&self) -> &[u8] {
         &self.0
@@ -1068,6 +1105,18 @@ impl Borrow<[u8]> for IdBytes {
 impl From<[u8; 32]> for IdBytes {
     fn from(digest: [u8; 32]) -> Self {
         Self(digest)
+    }
+}
+
+impl AsRef<[u8]> for IdBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl From<&PublicKey> for IdBytes {
+    fn from(key: &PublicKey) -> Self {
+        Self(key.to_bytes())
     }
 }
 
@@ -1095,4 +1144,15 @@ impl Borrow<[u8]> for PeerId {
     fn borrow(&self) -> &[u8] {
         self.id.borrow()
     }
+}
+
+/// Fill the slice with random bytes
+#[inline]
+pub(crate) fn fill_random_bytes(dest: &mut [u8]) {
+    use rand::{
+        rngs::{OsRng, StdRng},
+        RngCore, SeedableRng,
+    };
+    let mut rng = StdRng::from_rng(OsRng::default()).unwrap();
+    rng.fill_bytes(dest)
 }

@@ -5,15 +5,14 @@ use lru::LruCache;
 use prost::Message;
 
 use crate::{
-    crypto,
-    crypto::VALUE_MAX_SIZE,
+    crypto::{self, VALUE_MAX_SIZE},
     dht_proto::Mutable,
-    rpc::{
-        message::Type,
+    udx::{
         query::{CommandQuery, CommandQueryResponse},
         IdBytes,
     },
-    ERR_INVALID_INPUT, IMMUTABLE_STORE_CMD, MUTABLE_STORE_CMD,
+    ERR_INVALID_INPUT, ERR_INVALID_SEQ, ERR_SEQ_MUST_EXCEED_CURRENT, IMMUTABLE_STORE_CMD,
+    MUTABLE_STORE_CMD,
 };
 
 /// PUT_VALUE_MAX_SIZE (1000B) + packet overhead (i.e. the key etc.) should be
@@ -82,27 +81,19 @@ impl Store {
 
     /// Callback for immutable command.
     pub fn on_command(&mut self, query: CommandQuery) -> CommandQueryResponse {
-        assert_eq!(query.command.as_str(), IMMUTABLE_STORE_CMD);
-        if query.ty == Type::Update {
-            self.update(query)
-        } else {
-            self.query(query)
-        }
+        assert_eq!(query.command, IMMUTABLE_STORE_CMD);
+        self.query(query)
     }
 
     /// Callback for mutable command
     pub fn on_command_mut(&mut self, mut query: CommandQuery) -> CommandQueryResponse {
-        assert_eq!(query.command.as_str(), MUTABLE_STORE_CMD);
+        assert_eq!(query.command, MUTABLE_STORE_CMD);
         if let Some(mutable) = query
             .value
             .take()
             .and_then(|buf| Mutable::decode(buf.as_slice()).ok())
         {
-            return if query.ty == Type::Update {
-                self.update_mut(query, mutable)
-            } else {
-                self.query_mut(query, mutable)
-            };
+            return self.query_mut(query, mutable);
         }
         query.into_response_with_error(ERR_INVALID_INPUT)
     }
@@ -193,23 +184,22 @@ impl Store {
 }
 
 #[inline]
-pub fn verify(pk: &IdBytes, mutable: &Mutable) -> Result<(), String> {
-    let public_key =
-        PublicKey::from_bytes(pk.as_ref()).map_err(|_| ERR_INVALID_INPUT.to_string())?;
-    let sig = crypto::signature(&mutable).ok_or_else(|| ERR_INVALID_INPUT.to_string())?;
-    let msg = crypto::signable_mutable(&mutable).map_err(|_| ERR_INVALID_INPUT.to_string())?;
-    crypto::verify(&public_key, &msg, &sig).map_err(|_| ERR_INVALID_INPUT.to_string())
+pub fn verify(pk: &IdBytes, mutable: &Mutable) -> Result<(), usize> {
+    let public_key = PublicKey::from_bytes(pk.as_ref()).map_err(|_| ERR_INVALID_INPUT)?;
+    let sig = crypto::signature(&mutable).ok_or_else(|| ERR_INVALID_INPUT)?;
+    let msg = crypto::signable_mutable(&mutable).map_err(|_| ERR_INVALID_INPUT)?;
+    crypto::verify(&public_key, &msg, &sig).map_err(|_| ERR_INVALID_INPUT)
 }
 
 #[inline]
-pub fn maybe_seq_error(a: &Mutable, b: &Mutable) -> Result<(), String> {
+pub fn maybe_seq_error(a: &Mutable, b: &Mutable) -> Result<(), usize> {
     let seq_a = a.seq.unwrap_or_default();
     let seq_b = b.seq.unwrap_or_default();
     if a.value.is_some() && seq_a == seq_b && a.value != b.value {
-        return Err("ERR_INVALID_SEQ".to_string());
+        return Err(ERR_INVALID_SEQ);
     }
     if seq_a <= seq_b {
-        Err("ERR_SEQ_MUST_EXCEED_CURRENT".to_string())
+        Err(ERR_SEQ_MUST_EXCEED_CURRENT)
     } else {
         Ok(())
     }

@@ -25,19 +25,19 @@ use sha2::digest::generic_array::{typenum::U32, GenericArray};
 use smallvec::alloc::collections::VecDeque;
 use tokio::sync::oneshot::error::RecvError;
 use tracing::trace;
-use udx::RpcDhtBuilderError;
+use udx::{Command, ExternalCommand, RequestMsgData, RpcDhtBuilderError};
 
-pub use crate::rpc::{DhtConfig, IdBytes, Peer, PeerId};
+pub use crate::udx::{DhtConfig, IdBytes, Peer, PeerId};
 use crate::{
     dht_proto::{encode_input, Mutable, PeersInput, PeersOutput},
     lru::{CacheKey, PeerCache},
     peers::{decode_local_peers, decode_peers, PeersEncoding},
-    rpc::{
-        message::{Message, Type},
+    rpc::message::{Message, Type},
+    store::{StorageEntry, StorageKey, Store, PUT_VALUE_MAX_SIZE},
+    udx::{
         query::{CommandQuery, CommandQueryResponse, QueryId, QueryStats},
         RequestOk, Response, ResponseOk, RpcDht, RpcDhtEvent,
     },
-    store::{StorageEntry, StorageKey, Store, PUT_VALUE_MAX_SIZE},
 };
 
 mod dht_proto {
@@ -76,14 +76,16 @@ pub const DEFAULT_BOOTSTRAP: [&str; 3] = [
     "node3.hyperdht.org:49737",
 ];
 
-pub(crate) const ERR_INVALID_INPUT: &str = "ERR_INVALID_INPUT";
+pub(crate) const ERR_INVALID_INPUT: usize = 7;
+pub(crate) const ERR_INVALID_SEQ: usize = 11;
+pub(crate) const ERR_SEQ_MUST_EXCEED_CURRENT: usize = 13;
 
 /// The command identifier for `Mutable` storage
-pub const MUTABLE_STORE_CMD: &str = "mutable-store";
+pub const MUTABLE_STORE_CMD: usize = 1;
 /// The command identifier for immutable storage
-pub const IMMUTABLE_STORE_CMD: &str = "immutable-store";
+pub const IMMUTABLE_STORE_CMD: usize = 2;
 /// The command identifier to (un)announce/lookup peers
-pub const PEERS_CMD: &str = "peers";
+pub const PEERS_CMD: usize = 3;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -139,11 +141,15 @@ pub struct HyperDht {
 
 impl HyperDht {
     /// Create a new DHT based on the configuration
-    pub async fn with_config(mut config: DhtConfig) -> io::Result<Self> {
+    pub async fn with_config(mut config: DhtConfig) -> Result<Self> {
         config = config.register_commands(&[MUTABLE_STORE_CMD, IMMUTABLE_STORE_CMD, PEERS_CMD]);
 
-        if config.bootstrap_nodes().is_none() {
-            config = config.set_bootstrap_nodes(&DEFAULT_BOOTSTRAP[..]);
+        if config.bootstrap_nodes.is_empty() {
+            for addr_str in DEFAULT_BOOTSTRAP.iter() {
+                if let Some(addr) = addr_str.to_socket_addrs()?.last() {
+                    config.bootstrap_nodes.push(addr)
+                }
+            }
         }
 
         Ok(Self {
@@ -159,7 +165,7 @@ impl HyperDht {
 
     /// The local address of the underlying `UdpSocket`
     #[inline]
-    pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
+    pub fn local_addr(&self) -> Result<SocketAddr> {
         self.inner.local_addr()
     }
 
@@ -169,8 +175,8 @@ impl HyperDht {
     }
 
     /// Handle an incoming requests for the registered commands and reply.
-    fn on_command(&mut self, q: CommandQuery) {
-        match q.command.as_str() {
+    fn on_command(&mut self, q: CommandQuery, request: RequestMsgData, peer: Peer) {
+        match q.command {
             MUTABLE_STORE_CMD => {
                 let resp = self.store.on_command_mut(q);
                 self.inner.reply_command(resp)
@@ -180,16 +186,13 @@ impl HyperDht {
                 self.inner.reply_command(resp)
             }
             PEERS_CMD => self.on_peers(q),
-            c => {
-                let command = c.to_string();
-                let resp = CommandQueryResponse::from(q);
-                self.queued_events
-                    .push_back(HyperDhtEvent::CustomCommandQuery {
-                        command,
-                        msg: Box::new(resp.msg),
-                        peer: resp.peer,
-                    })
-            }
+            command => self
+                .queued_events
+                .push_back(HyperDhtEvent::CustomCommandQuery {
+                    command,
+                    msg: Box::new(request),
+                    peer,
+                }),
         }
     }
 
@@ -219,9 +222,12 @@ impl HyperDht {
         }
 
         // query the DHT
-        let query_id = self
-            .inner
-            .query(IMMUTABLE_STORE_CMD, kbucket::Key::new(key.clone()), None);
+
+        let query_id = self.inner.query(
+            Command::External(ExternalCommand(IMMUTABLE_STORE_CMD)),
+            kbucket::Key::new(key.clone()),
+            None,
+        );
 
         self.queries.insert(
             query_id,
@@ -258,7 +264,7 @@ impl HyperDht {
 
         // query the DHT
         let query_id = self.inner.query(
-            MUTABLE_STORE_CMD,
+            Command::External(ExternalCommand(MUTABLE_STORE_CMD)),
             kbucket::Key::new(get.key.clone()),
             Some(buf),
         );
@@ -292,6 +298,7 @@ impl HyperDht {
         // set locally for easy cached retrieval
         self.store.put_immutable(key.clone(), value.clone());
 
+        /*
         let query_id = self.inner.update(
             IMMUTABLE_STORE_CMD,
             kbucket::Key::new(key.clone()),
@@ -301,6 +308,8 @@ impl HyperDht {
         self.queries
             .insert(query_id, QueryStreamType::PutImmutable { query_id, key });
         query_id
+        */
+        todo!()
     }
 
     /// Initiates an iterative query to the closest peers to put the value as
@@ -326,6 +335,7 @@ impl HyperDht {
         let key = opts.id();
         self.store
             .put_mutable(Store::get_mut_key(&value, &key), value);
+        /*
         let query_id = self
             .inner
             .update(MUTABLE_STORE_CMD, kbucket::Key::new(key), Some(buf));
@@ -339,6 +349,8 @@ impl HyperDht {
         );
 
         query_id
+        */
+        todo!()
     }
 
     /// Callback for an incoming `peers` command query
@@ -373,70 +385,54 @@ impl HyperDht {
                         }
                     });
 
-                    if query.ty == Type::Query {
-                        let local_peers = if let Some((local_cache, suffix)) = local_cache {
-                            self.peers.get(&local_cache).and_then(|addrs| {
-                                addrs.iter_locals().map(|locals| {
-                                    locals
-                                        .filter(|s| **s != suffix)
-                                        .flat_map(|s| s.iter())
-                                        .cloned()
-                                        .take(32)
-                                        .collect::<Vec<_>>()
-                                })
+                    let local_peers = if let Some((local_cache, suffix)) = local_cache {
+                        self.peers.get(&local_cache).and_then(|addrs| {
+                            addrs.iter_locals().map(|locals| {
+                                locals
+                                    .filter(|s| **s != suffix)
+                                    .flat_map(|s| s.iter())
+                                    .cloned()
+                                    .take(32)
+                                    .collect::<Vec<_>>()
                             })
-                        } else {
-                            None
-                        };
-
-                        let peers = if let Some(remotes) = self
-                            .peers
-                            .get(&remote_cache)
-                            .and_then(|addrs| addrs.remotes())
-                        {
-                            let num = cmp::min(
-                                remotes.len(),
-                                128 - local_peers.as_ref().map(|l| l.len()).unwrap_or_default(),
-                            );
-                            let mut buf = Vec::with_capacity(num * 6);
-
-                            for addr in remotes.iter().filter(|addr| **addr != from).take(num) {
-                                if let IpAddr::V4(ip) = addr.ip() {
-                                    buf.extend_from_slice(&ip.octets()[..]);
-                                    buf.extend_from_slice(&addr.port().to_be_bytes()[..]);
-                                }
-                            }
-                            Some(buf)
-                        } else {
-                            None
-                        };
-
-                        let output = PeersOutput { peers, local_peers };
-                        let mut buf = Vec::with_capacity(output.encoded_len());
-
-                        // fits safe in vec
-                        output.encode(&mut buf).unwrap();
-                        query.value = Some(buf);
-                        self.inner.reply_command(query);
-                        return;
-                    }
-
-                    if peer.unannounce.unwrap_or_default() {
-                        // remove from cache
-                        self.peers.remove_addr(&remote_cache, from);
-                        if let Some(local) = local_cache {
-                            self.peers.remove_addr(&local.0, local.1);
-                        }
+                        })
                     } else {
-                        // add the new record
-                        self.peers.insert(remote_cache, from);
-                        if let Some(local) = local_cache {
-                            self.peers.insert(local.0, local.1);
+                        None
+                    };
+
+                    let peers = if let Some(remotes) = self
+                        .peers
+                        .get(&remote_cache)
+                        .and_then(|addrs| addrs.remotes())
+                    {
+                        let num = cmp::min(
+                            remotes.len(),
+                            128 - local_peers.as_ref().map(|l| l.len()).unwrap_or_default(),
+                        );
+                        let mut buf = Vec::with_capacity(num * 6);
+
+                        for addr in remotes.iter().filter(|addr| **addr != from).take(num) {
+                            if let IpAddr::V4(ip) = addr.ip() {
+                                buf.extend_from_slice(&ip.octets()[..]);
+                                buf.extend_from_slice(&addr.port().to_be_bytes()[..]);
+                            }
                         }
-                    }
+                        Some(buf)
+                    } else {
+                        None
+                    };
+
+                    let output = PeersOutput { peers, local_peers };
+                    let mut buf = Vec::with_capacity(output.encoded_len());
+
+                    // fits safe in vec
+                    output.encode(&mut buf).unwrap();
+                    query.value = Some(buf);
+                    self.inner.reply_command(query.into());
+                    return;
                 }
                 let _ = query.value.take();
-                self.inner.reply_command(query);
+                self.inner.reply_command(query.into());
             }
         }
     }
@@ -455,9 +451,11 @@ impl HyperDht {
         };
         let buf = encode_input(&peers);
 
-        let id = self
-            .inner
-            .query(PEERS_CMD, kbucket::Key::new(opts.topic.clone()), Some(buf));
+        let id = self.inner.query(
+            Command::External(ExternalCommand(PEERS_CMD)),
+            kbucket::Key::new(opts.topic.clone()),
+            Some(buf),
+        );
         self.queries.insert(
             id,
             QueryStreamType::LookUp(QueryStreamInner::new(opts.topic, opts.local_addr)),
@@ -477,18 +475,20 @@ impl HyperDht {
             local_address: opts.local_addr_encoded(),
             unannounce: None,
         };
-        let buf = encode_input(&peers);
+        let _buf = encode_input(&peers);
 
+        /*
         let id = self.inner.query_and_update(
             PEERS_CMD,
             kbucket::Key::new(opts.topic.clone()),
             Some(buf),
         );
         self.queries.insert(
-            id,
+            todo!()
             QueryStreamType::Announce(QueryStreamInner::new(opts.topic, opts.local_addr)),
         );
-        id
+        */
+        todo!()
     }
 
     /// Initiates an iterative query to unannounce the topic to the closest
@@ -504,8 +504,9 @@ impl HyperDht {
             local_address: opts.local_addr_encoded(),
             unannounce: Some(true),
         };
-        let buf = encode_input(&peers);
+        let _buf = encode_input(&peers);
 
+        /*
         let id = self
             .inner
             .update(PEERS_CMD, kbucket::Key::new(opts.topic.clone()), Some(buf));
@@ -514,6 +515,8 @@ impl HyperDht {
             QueryStreamType::UnAnnounce(QueryStreamInner::new(opts.topic, opts.local_addr)),
         );
         id
+            */
+        todo!()
     }
 
     fn inject_response(&mut self, resp: Response) {
@@ -579,9 +582,11 @@ impl Stream for HyperDht {
             while let Poll::Ready(Some(ev)) = Stream::poll_next(Pin::new(&mut pin.inner), cx) {
                 trace!("DHT event {:?}", ev);
                 match ev {
-                    RpcDhtEvent::RequestResult(Ok(RequestOk::CustomCommandRequest { query })) => {
-                        pin.on_command(query)
-                    }
+                    RpcDhtEvent::RequestResult(Ok(RequestOk::CustomCommandRequest {
+                        query,
+                        request,
+                        peer,
+                    })) => pin.on_command(query, request, peer),
                     RpcDhtEvent::ResponseResult(Ok(ResponseOk::Response(resp))) => {
                         pin.inject_response(resp)
                     }
@@ -899,9 +904,9 @@ pub enum HyperDhtEvent {
     /// by the DHT
     CustomCommandQuery {
         /// The unknown command
-        command: String,
+        command: usize,
         /// The message we received from the peer.
-        msg: Box<Message>,
+        msg: Box<RequestMsgData>,
         /// The peer the message originated from.
         peer: Peer,
     },

@@ -20,7 +20,7 @@ use self::{
     peers::PeersIterState,
     table::{PeerState, QueryTable},
 };
-use super::{message::ReplyMsgData, Command, Peer, Response};
+use super::{message::ReplyMsgData, Command, Peer, RequestMsgData, Response};
 
 /// A `QueryPool` provides an aggregate state machine for driving `Query`s to
 /// completion.
@@ -510,15 +510,23 @@ pub enum QueryEvent {
 #[derive(Debug, Clone)]
 pub struct CommandQuery {
     /// The Id of the query
-    pub rid: u16,
+    pub tid: u16,
     /// Command def
-    pub command: String,
+    pub command: usize,
     /// the node who sent the query/update
     pub peer: Peer,
     /// the query/update target (32 byte target)
     pub target: IdBytes,
     /// the query/update payload decoded with the inputEncoding
     pub value: Option<Vec<u8>>,
+}
+
+impl CommandQuery {
+    pub fn into_response_with_error(self, err: impl Into<usize>) -> CommandQueryResponse {
+        let mut resp = CommandQueryResponse::from(self);
+        resp.msg.error = err.into();
+        resp
+    }
 }
 
 /// Outgoing response to a `CommandQuery`
@@ -529,6 +537,25 @@ pub struct CommandQueryResponse {
     pub target: IdBytes,
 }
 
+impl From<CommandQuery> for CommandQueryResponse {
+    fn from(q: CommandQuery) -> Self {
+        let msg = ReplyMsgData {
+            tid: q.tid,
+            to: q.peer.clone(),
+            id: None,
+            token: None,
+            closer_nodes: vec![],
+            value: q.value,
+            error: 0,
+        };
+
+        Self {
+            msg,
+            peer: q.peer,
+            target: q.target,
+        }
+    }
+}
 /// The result of a `Query`.
 pub struct QueryResult<TInner, TPeers> {
     /// The opaque inner query state.

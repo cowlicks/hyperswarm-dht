@@ -20,6 +20,7 @@ pub struct RequestMsgData {
     pub tid: u16,
     pub to: Peer,
     pub id: Option<[u8; 32]>,
+    // TODO rm this, it is encoded in command
     pub internal: bool,
     pub token: Option<[u8; 32]>,
     pub command: Command,
