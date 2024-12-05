@@ -867,15 +867,15 @@ pub struct Peer {
     pub referrer: Option<SocketAddr>,
 }
 
-impl Into<Holepunch> for &Peer {
-    fn into(self) -> Holepunch {
-        Holepunch::with_from(self.encode())
+impl From<&Peer> for Holepunch {
+    fn from(val: &Peer) -> Self {
+        Holepunch::with_from(val.encode())
     }
 }
 
-impl Into<Holepunch> for SocketAddr {
-    fn into(self) -> Holepunch {
-        let peer = Peer::from(self);
+impl From<SocketAddr> for Holepunch {
+    fn from(val: SocketAddr) -> Self {
+        let peer = Peer::from(val);
         (&peer).into()
     }
 }
@@ -1119,6 +1119,6 @@ pub(crate) fn fill_random_bytes(dest: &mut [u8]) {
         rngs::{OsRng, StdRng},
         RngCore, SeedableRng,
     };
-    let mut rng = StdRng::from_rng(OsRng::default()).unwrap();
+    let mut rng = StdRng::from_rng(OsRng).unwrap();
     rng.fill_bytes(dest)
 }

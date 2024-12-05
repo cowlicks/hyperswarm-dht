@@ -188,7 +188,7 @@ impl<C> UdpFramed<C> {
     /// coming in as it may corrupt the stream of frames otherwise being worked
     /// with.
     pub fn get_ref(&self) -> &UdpSocket {
-        &*self.socket
+        &self.socket
     }
 
     /// Consumes the `Framed`, returning its underlying I/O stream.

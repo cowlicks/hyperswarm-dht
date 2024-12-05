@@ -167,7 +167,7 @@ impl ClosestPeersIter {
             return false;
         }
 
-        let id = calculate_peer_id(&peer);
+        let id = calculate_peer_id(peer);
         let distance = distance(&id, &self.target.0);
 
         // Mark the peer as succeeded.
@@ -500,7 +500,7 @@ impl From<IterPeer> for Peer {
 
 impl IterPeer {
     fn distance(&self, other: &[u8]) -> Distance {
-        distance(self.id.0.as_slice(), &other)
+        distance(self.id.0.as_slice(), other)
     }
 }
 

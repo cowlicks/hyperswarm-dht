@@ -133,7 +133,7 @@ where
         socket: UdpSocket,
         config: IoConfig,
     ) -> IoHandler<TUserData> {
-        let socket = UdpFramed::new(socket, DhtRpcCodec::default());
+        let socket = UdpFramed::new(socket, DhtRpcCodec);
 
         let secrets = config.secrets.unwrap_or_else(|| {
             let mut k1 = [0; 32];

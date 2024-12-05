@@ -186,8 +186,8 @@ impl Store {
 #[inline]
 pub fn verify(pk: &IdBytes, mutable: &Mutable) -> Result<(), usize> {
     let public_key = PublicKey::from_bytes(pk.as_ref()).map_err(|_| ERR_INVALID_INPUT)?;
-    let sig = crypto::signature(&mutable).ok_or_else(|| ERR_INVALID_INPUT)?;
-    let msg = crypto::signable_mutable(&mutable).map_err(|_| ERR_INVALID_INPUT)?;
+    let sig = crypto::signature(mutable).ok_or(ERR_INVALID_INPUT)?;
+    let msg = crypto::signable_mutable(mutable).map_err(|_| ERR_INVALID_INPUT)?;
     crypto::verify(&public_key, &msg, &sig).map_err(|_| ERR_INVALID_INPUT)
 }
 

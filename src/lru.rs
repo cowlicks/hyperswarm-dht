@@ -58,7 +58,7 @@ impl Ord for CacheKey {
                 prefix: r2,
             } = other
             {
-                return id1.0.cmp(&id2.0).then(r1.cmp(&r2));
+                return id1.0.cmp(&id2.0).then(r1.cmp(r2));
             }
         }
         self.id().0.cmp(&other.id().0)
@@ -97,12 +97,12 @@ impl AddressCache {
         match key {
             Address::Remote(addr) => {
                 if let AddressCache::Remote(cache) = self {
-                    return cache.remove(&addr).map(Address::from);
+                    return cache.remove(addr).map(Address::from);
                 }
             }
             Address::Local(addr) => {
                 if let AddressCache::Local(cache) = self {
-                    return cache.remove(&addr).map(Address::from);
+                    return cache.remove(addr).map(Address::from);
                 }
             }
         }

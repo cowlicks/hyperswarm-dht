@@ -92,7 +92,7 @@ pub fn keypair() -> Keypair {
         rngs::{OsRng, StdRng},
         SeedableRng,
     };
-    Keypair::generate(&mut StdRng::from_rng(OsRng::default()).unwrap())
+    Keypair::generate(&mut StdRng::from_rng(OsRng).unwrap())
 }
 
 #[inline]

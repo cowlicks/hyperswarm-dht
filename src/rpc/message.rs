@@ -151,11 +151,7 @@ impl Message {
     }
 
     pub fn get_command(&self) -> Option<Command> {
-        if let Some(ref s) = self.command {
-            Some(Command::from(s))
-        } else {
-            None
-        }
+        self.command.as_ref().map(Command::from)
     }
 
     fn cmd_eq(&self, name: &str) -> bool {
