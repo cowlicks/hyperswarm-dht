@@ -1,16 +1,14 @@
 use crate::{
     udx::{
-        io::{Io, Reply, Request},
-        thirty_two_random_bytes, Command, InternalCommand,
+        io::{Reply, Request},
+        Command, InternalCommand,
     },
     Result,
 };
 use compact_encoding::State;
 use std::{
-    cell::RefCell,
     convert::TryInto,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
 };
 
 use super::{cenc::validate_id, Peer};
@@ -46,16 +44,18 @@ fn mk_request() -> Request {
 
 #[tokio::test]
 async fn test_encode_buffer() -> Result<()> {
-    let expected_buffer = vec![
+    let _expected_buffer = vec![
         3, 12, 200, 197, 127, 0, 0, 1, 17, 39, 2, 235, 159, 119, 93, 35, 250, 85, 76, 120, 152, 96,
         17, 175, 157, 204, 216, 8, 191, 189, 16, 140, 146, 202, 172, 84, 232, 73, 218, 113, 136,
         161, 173,
     ];
-    let req = mk_request();
-    let io = Io::new(Arc::new(RefCell::new(thirty_two_random_bytes())))?;
+    let _req = mk_request();
+    //let io = Io::new(Arc::new(RefCell::new(thirty_two_random_bytes())))?;
 
-    let res = req.encode(&io, false)?;
-    assert_eq!(res, expected_buffer);
+    let _res = todo!();
+    //let res =req.encode(&io, false)?;
+    //assert_eq!(res, expected_buffer);
+    todo!();
     Ok(())
 }
 

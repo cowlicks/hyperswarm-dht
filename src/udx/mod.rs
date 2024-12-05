@@ -27,13 +27,13 @@ use crate::{
 };
 
 use self::{
+    io::{IoConfig, IoHandler, IoHandlerEvent},
     message::{valid_id_bytes, ReplyMsgData, RequestMsgData},
     mslave::Master,
     query::{
         table::PeerState, CommandQuery, QueryConfig, QueryEvent, QueryPool, QueryPoolState,
         QueryStats, QueryStream,
     },
-    sio::{IoConfig, IoHandler, IoHandlerEvent},
     stream::MessageDataStream,
 };
 
@@ -42,7 +42,6 @@ mod io;
 mod message;
 mod mslave;
 mod query;
-mod sio;
 mod stream;
 
 #[cfg(test)]

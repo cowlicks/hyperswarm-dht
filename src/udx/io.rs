@@ -1,20 +1,9 @@
-use async_udx::UdxSocket;
-use futures::SinkExt;
-use rand::Rng;
 #[allow(unreachable_code, dead_code)]
 use std::sync::{Arc, RwLock};
-use std::{
-    cell::RefCell,
-    collections::BTreeMap,
-    net::SocketAddr,
-    sync::atomic::{AtomicU16, Ordering},
-};
+use std::{collections::BTreeMap, net::SocketAddr};
 use tracing::warn;
 
-use tokio::sync::{
-    oneshot::{channel, Receiver, Sender},
-    RwLock as TRwLock,
-};
+use tokio::sync::oneshot::Sender;
 
 use crate::{
     constants::{REQUEST_ID, RESPONSE_ID},
@@ -24,10 +13,39 @@ use compact_encoding::State;
 
 use super::{
     cenc::{generic_hash, generic_hash_with_key, ipv4, validate_id},
-    message::{MsgData, ReplyMsgData, RequestMsgData},
-    stream::MessageDataStream,
-    thirty_two_random_bytes, Command, InternalCommand, Peer,
+    thirty_two_random_bytes, Command, Peer,
 };
+
+use crate::kbucket::Key;
+use crate::rpc::query::QueryId;
+use crate::{udx, IdBytes};
+use fnv::FnvHashMap;
+use futures::Stream;
+use futures::{
+    task::{Context, Poll},
+    Sink,
+};
+use rand::Rng;
+use std::{
+    collections::VecDeque,
+    io,
+    pin::Pin,
+    sync::atomic::{AtomicU16, Ordering},
+    time::Duration,
+};
+use tracing::trace;
+use wasm_timer::Instant;
+
+use super::message::{MsgData, ReplyMsgData, RequestMsgData};
+use super::mslave::Slave;
+use super::stream::MessageDataStream;
+use super::QueryAndTid;
+
+pub const VERSION: u64 = 1;
+
+const ROTATE_INTERVAL: u64 = 300_000;
+
+type Tid = u16;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Reply {
@@ -138,25 +156,6 @@ impl Request {
     fn get_table_id(&self) -> [u8; 32] {
         todo!()
     }
-    pub fn encode(&self, io: &Io, is_server_socket: bool) -> Result<Vec<u8>> {
-        let id = if !io.ephemeral && is_server_socket {
-            Some(self.get_table_id())
-        } else {
-            None
-        };
-
-        RequestMsgData {
-            tid: self.tid,
-            to: self.to.clone(),
-            id,
-            internal: self.internal,
-            token: self.token,
-            command: self.command,
-            target: self.target,
-            value: self.value.clone(),
-        }
-        .encode()
-    }
 }
 
 type Inflight = Arc<RwLock<BTreeMap<u16, (Sender<Reply>, Request)>>>;
@@ -167,164 +166,6 @@ pub enum Message {
     Reply(Reply),
 }
 
-#[derive(Debug)]
-pub struct Io {
-    id: Arc<RefCell<[u8; 32]>>,
-    tid: AtomicU16,
-    ephemeral: bool,
-    socket: Arc<TRwLock<UdxSocket>>,
-    socket_stream: MessageDataStream,
-    inflight: Inflight,
-}
-
-impl Io {
-    pub fn new(id: Arc<RefCell<[u8; 32]>>) -> Result<Self> {
-        let socket = Arc::new(TRwLock::new(UdxSocket::bind("0.0.0.0:0")?));
-        let recv_socket = socket.clone();
-        let inflight: Inflight = Default::default();
-        let recv_inflight = inflight.clone();
-        tokio::spawn(async move {
-            loop {
-                // TODO add timeout so rw is not locked forever
-                let x = recv_socket.read().await.recv().await;
-                if let Ok((addr, buff)) = x {
-                    if let Ok(message) = decode_message(buff, addr) {
-                        match message {
-                            Message::Reply(reply) => {
-                                // Handle reply with existing inflight logic
-                                if let Some((sender, _)) =
-                                    recv_inflight.write().unwrap().remove(&reply.tid)
-                                {
-                                    let _ = sender.send(reply);
-                                }
-                            }
-                            Message::Request(_) => {} // Requests handled via the Stream
-                        }
-                    }
-                }
-            }
-            Ok::<(), crate::Error>(())
-        });
-        Ok(Self {
-            id,
-            tid: AtomicU16::new(rand::thread_rng().gen()),
-            ephemeral: true,
-            socket,
-            socket_stream: MessageDataStream::new(UdxSocket::bind("0.0.0.0:0")?),
-            inflight,
-        })
-    }
-
-    pub fn create_ping(&self, to: &Peer) -> Request {
-        self.create_request(to, None, true, InternalCommand::Ping, None, None)
-    }
-
-    pub fn create_ping_nat(&self, to: &Peer, value: Vec<u8>) -> Request {
-        self.create_request(to, None, true, InternalCommand::PingNat, None, Some(value))
-    }
-
-    pub fn create_find_node(&self, to: &Peer, target: &[u8; 32]) -> Request {
-        self.create_request(
-            to,
-            None,
-            true,
-            InternalCommand::FindNode,
-            Some(*target),
-            None,
-        )
-    }
-    //this.dht._request(node, true,     DOWN_HINT, null,   state.buffer, this._session, noop,       noop)
-    //_request (          to,   internal, command, target, value,        session,       onresponse, onerror) {
-    pub fn create_down_hint(&self, to: &Peer, value: Vec<u8>) -> Request {
-        self.create_request(to, None, true, InternalCommand::DownHint, None, Some(value))
-    }
-
-    pub async fn send_find_node(&self, to: &Peer, target: &[u8; 32]) -> Result<Receiver<Reply>> {
-        let req = self.create_find_node(to, target);
-        self.send(req).await
-    }
-    pub async fn send_ping(&self, to: &Peer) -> Result<Receiver<Reply>> {
-        let req = self.create_ping(to);
-        self.send(req).await
-    }
-
-    pub async fn create_request_s(
-        &self,
-        to: &Peer,
-        token: Option<[u8; 32]>,
-        internal: bool,
-        command: Command,
-        target: Option<[u8; 32]>,
-        value: Option<Vec<u8>>,
-    ) -> RequestMsgData {
-        let tid = self.tid.fetch_add(1, Ordering::Relaxed);
-        let id = if !self.ephemeral {
-            Some(*self.id.borrow())
-        } else {
-            None
-        };
-
-        RequestMsgData {
-            tid,
-            to: to.clone(),
-            id,
-            internal,
-            token,
-            command,
-            target,
-            value,
-        }
-    }
-
-    pub async fn ping_s(&mut self, to: &Peer) -> Result<()> {
-        let msg = self
-            .create_request_s(to, None, true, InternalCommand::Ping.into(), None, None)
-            .await;
-        self.socket_stream
-            .send((MsgData::Request(msg), to.into()))
-            .await?;
-        Ok(())
-    }
-
-    pub async fn send(&self, request: Request) -> Result<Receiver<Reply>> {
-        let buff = request.encode(self, false)?;
-        let socket_addr = SocketAddr::from(&request.to);
-        let (tx, rx) = channel();
-        self.inflight
-            .write()
-            .unwrap()
-            .insert(request.tid, (tx, request));
-        self.socket.read().await.send(socket_addr, &buff);
-        Ok(rx)
-    }
-
-    fn create_request(
-        &self,
-        to: &Peer,
-        token: Option<[u8; 32]>,
-        internal: bool,
-        command: InternalCommand,
-        target: Option<[u8; 32]>,
-        value: Option<Vec<u8>>,
-    ) -> Request {
-        let tid = self.tid.fetch_add(1, Ordering::Relaxed);
-        Request::new(
-            tid,
-            None,
-            to.clone(),
-            token,
-            internal,
-            command.into(),
-            target,
-            value,
-        )
-    }
-
-    // js Io::onresponse
-    fn on_reply(&self, _reply: Reply) -> Result<()> {
-        todo!()
-    }
-}
 fn on_message(inflight: &Inflight, buff: Vec<u8>, addr: SocketAddr) -> Result<()> {
     match decode_message(buff, addr)? {
         Message::Request(_r) => todo!(),
@@ -385,5 +226,362 @@ impl Secrets {
 
     pub fn token(&self, peer: &Peer, secret_index: usize) -> Result<[u8; 32]> {
         generic_hash_with_key(&ipv4(&peer.addr)?.octets()[..], &self.secrets[secret_index])
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum OutMessage {
+    Request((Option<QueryId>, RequestMsgData)),
+    Reply(ReplyMsgData),
+}
+
+impl OutMessage {
+    fn to(&self) -> Peer {
+        match self {
+            OutMessage::Request((_, x)) => x.to.clone(),
+            OutMessage::Reply(x) => x.to.clone(),
+        }
+    }
+    fn inner(self) -> MsgData {
+        match self {
+            OutMessage::Request((_, x)) => MsgData::Request(x),
+            OutMessage::Reply(x) => MsgData::Reply(x),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct InflightRequest {
+    /// The message send
+    message: RequestMsgData,
+    /// The remote peer
+    peer: Peer,
+    /// Timestamp when the request was sent
+    #[allow(unused)] // FIXME not read. Why not?
+    timestamp: Instant,
+    ///// Identifier for the query this request is used with
+    query_id: Option<QueryId>,
+}
+
+#[derive(Debug)]
+pub struct IoHandler {
+    id: Slave<Key<IdBytes>>,
+    ephemeral: bool,
+    socket: MessageDataStream,
+    /// Messages to send
+    pending_send: VecDeque<OutMessage>,
+    /// Current message
+    pending_flush: Option<OutMessage>,
+    /// Sent requests we currently wait for a response
+    pending_recv: FnvHashMap<Tid, InflightRequest>,
+    secrets: Secrets,
+    tid: AtomicU16,
+    rotation: Duration,
+    last_rotation: Instant,
+}
+
+impl IoHandler {
+    pub fn new(id: Slave<Key<IdBytes>>, socket: MessageDataStream, config: IoConfig) -> Self {
+        Self {
+            id,
+            ephemeral: true,
+            socket,
+            pending_send: Default::default(),
+            pending_flush: None,
+            pending_recv: Default::default(),
+            secrets: Secrets::new(),
+            tid: AtomicU16::new(rand::thread_rng().gen()),
+            rotation: config
+                .rotation
+                .unwrap_or_else(|| Duration::from_millis(ROTATE_INTERVAL)),
+            last_rotation: Instant::now(),
+        }
+    }
+    pub fn is_ephemeral(&self) -> bool {
+        self.ephemeral
+    }
+
+    pub fn local_addr(&self) -> crate::Result<SocketAddr> {
+        self.socket.local_addr()
+    }
+    /// TODO check this is correct.
+    fn token(&self, peer: &Peer, secret_index: usize) -> crate::Result<[u8; 32]> {
+        self.secrets.token(peer, secret_index)
+    }
+
+    fn request(&mut self, ev: OutMessage) {
+        self.pending_send.push_back(ev)
+    }
+
+    pub fn query(
+        &mut self,
+        command: udx::Command,
+        target: Option<[u8; 32]>,
+        value: Option<Vec<u8>>,
+        peer: Peer,
+        query_id: Option<QueryId>,
+    ) -> QueryAndTid {
+        let id = if !self.ephemeral {
+            Some(self.id.get().preimage().0)
+        } else {
+            None
+        };
+
+        let tid = self.tid.fetch_add(1, Ordering::Relaxed);
+        self.request(OutMessage::Request((
+            query_id,
+            RequestMsgData {
+                tid,
+                to: peer,
+                id,
+                internal: true,
+                token: None,
+                command,
+                target,
+                value,
+            },
+        )));
+        (query_id, tid)
+    }
+    pub fn error(
+        &mut self,
+        request: RequestMsgData,
+        error: usize,
+        value: Option<Vec<u8>>,
+        closer_nodes: Option<Vec<Peer>>,
+        peer: &Peer,
+    ) -> crate::Result<()> {
+        let id = if !self.ephemeral {
+            Some(self.id.get().preimage().0)
+        } else {
+            None
+        };
+
+        let token = Some(self.token(peer, 1)?);
+
+        self.pending_send.push_back(OutMessage::Reply(ReplyMsgData {
+            tid: request.tid,
+            to: peer.clone(),
+            id,
+            token,
+            closer_nodes: closer_nodes.unwrap_or_default(),
+            error,
+            value,
+        }));
+        Ok(())
+    }
+
+    pub fn reply(&mut self, msg: ReplyMsgData) {
+        self.pending_send.push_back(OutMessage::Reply(msg))
+    }
+
+    pub fn response(
+        &mut self,
+        request: RequestMsgData,
+        value: Option<Vec<u8>>,
+        closer_nodes: Option<Vec<Peer>>,
+        peer: Peer,
+    ) -> crate::Result<()> {
+        let id = if !self.ephemeral {
+            Some(self.id.get().preimage().0)
+        } else {
+            None
+        };
+        let token = Some(self.token(&peer, 1)?);
+        self.pending_send.push_back(OutMessage::Reply(ReplyMsgData {
+            tid: request.tid,
+            to: peer.clone(),
+            id,
+            token,
+            closer_nodes: closer_nodes.unwrap_or_default(),
+            error: 0,
+            value,
+        }));
+        Ok(())
+    }
+    fn on_response(&mut self, recv: ReplyMsgData, peer: Peer) -> IoHandlerEvent {
+        if let Some(req) = self.pending_recv.remove(&recv.tid) {
+            return IoHandlerEvent::InResponse {
+                peer,
+                resp: recv,
+                req: Box::new(req.message),
+                query_id: req.query_id,
+            };
+        }
+        IoHandlerEvent::InResponseBadRequestId {
+            peer,
+            message: recv,
+        }
+    }
+    /// A new `Message` was read from the socket.
+    fn on_message(&mut self, msg: MsgData, rinfo: SocketAddr) -> IoHandlerEvent {
+        let peer = Peer::from(&rinfo);
+        match msg {
+            MsgData::Request(req) => IoHandlerEvent::InRequest { message: req, peer },
+            MsgData::Reply(rep) => self.on_response(rep, peer),
+        }
+    }
+
+    fn start_send_next(&mut self) -> crate::Result<()> {
+        if self.pending_flush.is_none() {
+            if let Some(msg) = self.pending_send.pop_front() {
+                //log::trace!("send to {}: {}", peer.addr, msg);
+                let addr = SocketAddr::from(&msg.to());
+
+                Sink::start_send(Pin::new(&mut self.socket), (msg.clone().inner(), addr))?;
+                self.pending_flush = Some(msg);
+            }
+        }
+        Ok(())
+    }
+}
+#[derive(Debug, Clone, Default)]
+pub struct IoConfig {
+    pub rotation: Option<Duration>,
+    pub secrets: Option<([u8; 32], [u8; 32])>,
+}
+
+impl Stream for IoHandler {
+    type Item = IoHandlerEvent;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let pin = self.get_mut();
+
+        // queue in the next message if not currently flushing
+        // moves msg pending_flush = pending_send[0]
+        // and sends it
+        if let Err(err) = pin.start_send_next() {
+            let out = IoHandlerEvent::OutSocketErr { err };
+            trace!("{out:#?}");
+            return Poll::Ready(Some(out));
+        }
+
+        // flush the message
+        if let Some(ev) = pin.pending_flush.take() {
+            if Sink::poll_ready(Pin::new(&mut pin.socket), cx).is_ready() {
+                return match ev {
+                    OutMessage::Request((query_id, message)) => {
+                        let tid = message.tid;
+                        let peer = message.to.clone();
+                        pin.pending_recv.insert(
+                            message.tid,
+                            InflightRequest {
+                                message,
+                                peer,
+                                timestamp: Instant::now(),
+                                query_id,
+                            },
+                        );
+                        let out = IoHandlerEvent::OutRequest { tid };
+                        trace!("{out:#?}");
+                        return Poll::Ready(Some(out));
+                    }
+                    OutMessage::Reply(message) => {
+                        let peer = message.to.clone();
+                        let out = IoHandlerEvent::OutResponse { message, peer };
+                        trace!("{out:#?}");
+                        return Poll::Ready(Some(out));
+                    }
+                };
+            } else {
+                pin.pending_flush = Some(ev);
+            }
+        }
+
+        // read from socket
+        match Stream::poll_next(Pin::new(&mut pin.socket), cx) {
+            Poll::Ready(Some(Ok((msg, rinfo)))) => {
+                let out = pin.on_message(msg, rinfo);
+                trace!("{out:#?}");
+                return Poll::Ready(Some(out));
+            }
+            Poll::Ready(Some(Err(err))) => {
+                let out = IoHandlerEvent::InSocketErr { err };
+                trace!("{out:#?}");
+                return Poll::Ready(Some(out));
+            }
+            _ => {}
+        }
+
+        //if pin.last_rotation + pin.rotation > Instant::now() {
+        //    pin.rotate_secrets();
+        //}
+
+        Poll::Pending
+    }
+}
+
+/// Event generated by the IO handler
+#[derive(Debug)]
+pub enum IoHandlerEvent {
+    ///  A response was sent
+    OutResponse { message: ReplyMsgData, peer: Peer },
+    /// A request was sent
+    OutRequest { tid: Tid },
+    /// A Response to a Query Message was recieved
+    InResponse {
+        req: Box<RequestMsgData>,
+        resp: ReplyMsgData,
+        peer: Peer,
+        query_id: Option<QueryId>,
+    },
+    /// A Request was receieved
+    InRequest { message: RequestMsgData, peer: Peer },
+    /// Error while sending a message
+    OutSocketErr { err: crate::Error },
+    /// A request did not recieve a response within the given timeout
+    RequestTimeout {
+        message: MsgData,
+        peer: Peer,
+        sent: Instant,
+        query_id: QueryId,
+    },
+    /// Error while decoding a message from socket
+    /// TODO unused
+    InMessageErr { err: io::Error, peer: Peer },
+    /// Error while reading from socket
+    InSocketErr { err: crate::Error },
+    /// Received a response with a request id that was doesn't match any pending
+    /// responses.
+    InResponseBadRequestId { message: ReplyMsgData, peer: Peer },
+}
+
+#[cfg(test)]
+mod test {
+    use futures::StreamExt;
+    use udx::{mslave::Master, thirty_two_random_bytes, InternalCommand};
+
+    use super::*;
+
+    fn new_io() -> IoHandler {
+        let view = Master::new(Key::new(IdBytes::from(thirty_two_random_bytes()))).view();
+        let socket = MessageDataStream::defualt_bind().unwrap();
+        IoHandler::new(view, socket, Default::default())
+    }
+    #[tokio::test]
+    async fn foo() -> crate::Result<()> {
+        let mut a = new_io();
+        let mut b = new_io();
+
+        let to = Peer::from(&b.local_addr()?);
+        let id = Some(thirty_two_random_bytes());
+        let msg = RequestMsgData {
+            tid: 42,
+            to,
+            id,
+            internal: true,
+            token: None,
+            command: InternalCommand::Ping.into(),
+            target: None,
+            value: None,
+        };
+        let query_id = Some(QueryId(42));
+        a.request(OutMessage::Request((query_id, msg.clone())));
+        a.next().await;
+        let IoHandlerEvent::InRequest { message: res, .. } = b.next().await.unwrap() else {
+            panic!()
+        };
+        assert_eq!(res, msg);
+        Ok(())
     }
 }
