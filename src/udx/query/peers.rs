@@ -1,4 +1,4 @@
-use crate::udx::smod::Peer;
+use crate::udx::Peer;
 
 /// The state of a peer iterator.
 #[derive(Debug, Clone, PartialEq, Eq)]

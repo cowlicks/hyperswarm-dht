@@ -1,16 +1,13 @@
-use std::{
-    net::{SocketAddr, ToSocketAddrs},
-    sync::OnceLock,
-};
+use std::{net::ToSocketAddrs, sync::OnceLock};
 
 use futures::StreamExt;
 
 use crate::{
-    udx::smod::{DhtConfig, Peer, RpcDht},
+    udx::{DhtConfig, Peer, RpcDht},
     DEFAULT_BOOTSTRAP,
 };
 
-use super::smod::RpcDhtEvent;
+use super::RpcDhtEvent;
 
 #[allow(unused)]
 pub fn log() {

@@ -17,8 +17,7 @@ use crate::{
 use super::{
     io::{Reply, Request},
     message::{MsgData, ReplyMsgData, RequestMsgData},
-    smod::{Node, Peer},
-    Command, ExternalCommand,
+    Command, ExternalCommand, Node, Peer,
 };
 
 impl CompactEncoding<InternalCommand> for State {

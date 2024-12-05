@@ -25,9 +25,8 @@ use compact_encoding::State;
 use super::{
     cenc::{generic_hash, generic_hash_with_key, ipv4, validate_id},
     message::{MsgData, ReplyMsgData, RequestMsgData},
-    smod::Peer,
     stream::MessageDataStream,
-    thirty_two_random_bytes, Command, InternalCommand,
+    thirty_two_random_bytes, Command, InternalCommand, Peer,
 };
 
 #[derive(Debug, PartialEq, Clone)]

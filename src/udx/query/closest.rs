@@ -20,7 +20,7 @@
 
 use crate::kbucket::{distance, Distance, KeyBytes, ALPHA_VALUE, K_VALUE};
 use crate::udx::cenc::calculate_peer_id;
-use crate::udx::smod::Peer;
+use crate::udx::Peer;
 use crate::IdBytes;
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::iter::FromIterator;

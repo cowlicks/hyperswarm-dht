@@ -1,22 +1,19 @@
 use crate::{
-    kbucket::{KBucketsTable, KeyBytes},
     udx::{
         io::{Io, Reply, Request},
-        thirty_two_random_bytes, Command, InternalCommand, RpcDhtBuilder,
+        thirty_two_random_bytes, Command, InternalCommand,
     },
-    Result, DEFAULT_BOOTSTRAP,
+    Result,
 };
-use async_udx::UdxSocket;
 use compact_encoding::State;
 use std::{
     cell::RefCell,
     convert::TryInto,
-    net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
-    time::Duration,
 };
 
-use super::{cenc::validate_id, smod::Peer};
+use super::{cenc::validate_id, Peer};
 const HOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 const BOOTSTRAP_PORT: u16 = 10001;
 const BOOTSTRAP_SOCKET: SocketAddr = SocketAddr::new(IpAddr::V4(HOST), BOOTSTRAP_PORT);
@@ -26,67 +23,7 @@ const BOOTSTRAP_PEER: Peer = Peer {
     referrer: None,
 };
 
-#[ignore]
-#[tokio::test]
-async fn bootstrap_local() -> Result<()> {
-    let hosts = ["127.0.0.1:10001"];
-    for bs in hosts {
-        for addr in bs.to_socket_addrs().unwrap() {
-            let mut rpc = RpcDhtBuilder::default().add_bootstrap_node(addr)?.build()?;
-            let rec = rpc.bootstrap().await?;
-            dbg!(rec);
-        }
-    }
-    Ok(())
-}
-
-#[tokio::test]
-async fn ping_global() -> Result<()> {
-    let addr = DEFAULT_BOOTSTRAP[0]
-        .to_socket_addrs()
-        .unwrap()
-        .last()
-        .unwrap();
-    let id = thirty_two_random_bytes();
-    let key = KeyBytes::new(id);
-    let kbuckets = KBucketsTable::new(
-        key,
-        Duration::from_secs(DEFAULT_KBUCKET_PENDING_TIMEOUT_SECS),
-    );
-    let rpc = RpcDhtBuilder::default()
-        .kbuckets(kbuckets)
-        .add_bootstrap_node(addr)?
-        .with_default_io()?
-        .build()?;
-    let _rec = rpc.ping(&addr).await?;
-    Ok(())
-}
-
 const DEFAULT_KBUCKET_PENDING_TIMEOUT_SECS: u64 = 300;
-
-#[tokio::test]
-async fn bootstrap_global() -> Result<()> {
-    let addr = DEFAULT_BOOTSTRAP[0]
-        .to_socket_addrs()
-        .unwrap()
-        .last()
-        .unwrap();
-    let id = thirty_two_random_bytes();
-    let key = KeyBytes::new(id);
-    let kbuckets = KBucketsTable::new(
-        key,
-        Duration::from_secs(DEFAULT_KBUCKET_PENDING_TIMEOUT_SECS),
-    );
-    let mut rpc = RpcDhtBuilder::default()
-        .id(Arc::new(RefCell::new(id)))
-        .add_bootstrap_node(addr)?
-        .kbuckets(kbuckets)
-        .with_default_io()?
-        .build()?;
-    let rec = rpc.bootstrap().await?;
-    dbg!(rec);
-    Ok(())
-}
 
 // This data and expected result are taken from the initial message a node sends to a bootstrap
 // node in dht-rpc 6.15.1
@@ -105,22 +42,6 @@ fn mk_request() -> Request {
         internal: true,
         tid: 50632,
     }
-}
-
-#[ignore]
-#[tokio::test]
-async fn test_ping() -> Result<()> {
-    let sock = UdxSocket::bind("127.0.0.1:0")?;
-    let io = Io::new(Arc::new(RefCell::new(thirty_two_random_bytes())))?;
-    let ping_req = io.create_ping(&BOOTSTRAP_PEER);
-    let buff = ping_req.encode(&io, false)?;
-    println!("{buff:?}");
-    //ping_req.en
-    let sock_addr: SocketAddr = format!("{HOST}:{BOOTSTRAP_PORT}").parse().unwrap();
-    sock.send(sock_addr, &buff);
-    //socke.send(&B
-    tokio::time::sleep(Duration::from_millis(1000)).await;
-    Ok(())
 }
 
 #[tokio::test]

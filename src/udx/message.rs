@@ -3,7 +3,7 @@ use crate::{
     IdBytes,
 };
 
-use super::{smod::Peer, Command};
+use super::{Command, Peer};
 
 #[derive(Clone, PartialEq)]
 pub struct ReplyMsgData {

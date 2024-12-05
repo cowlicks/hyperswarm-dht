@@ -21,8 +21,8 @@ use wasm_timer::Instant;
 
 use super::message::{MsgData, ReplyMsgData, RequestMsgData};
 use super::mslave::Slave;
-use super::smod::{Peer, QueryAndTid};
 use super::{io::Secrets, stream::MessageDataStream};
+use super::{Peer, QueryAndTid};
 
 pub const VERSION: u64 = 1;
 

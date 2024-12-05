@@ -23,7 +23,7 @@ use std::{collections::hash_map::Entry, num::NonZeroUsize, vec};
 use fnv::FnvHashMap;
 
 use super::peers::PeersIterState;
-use crate::udx::smod::Peer;
+use crate::udx::Peer;
 /// A peer iterator for bootstrapping a query.
 #[derive(Debug)]
 pub struct FixedPeersIter {
