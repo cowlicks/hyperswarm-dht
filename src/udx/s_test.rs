@@ -1,15 +1,16 @@
-use std::{net::ToSocketAddrs, sync::OnceLock};
+use std::{
+    net::{SocketAddr, ToSocketAddrs},
+    sync::OnceLock,
+};
 
 use futures::StreamExt;
 
 use crate::{
-    kbucket::Key,
-    udx::{
-        smod::{DhtConfig, RpcDht},
-        Command, InternalCommand,
-    },
-    IdBytes, DEFAULT_BOOTSTRAP,
+    udx::smod::{DhtConfig, Peer, RpcDht},
+    DEFAULT_BOOTSTRAP,
 };
+
+use super::smod::RpcDhtEvent;
 
 #[allow(unused)]
 pub fn log() {
@@ -25,42 +26,54 @@ pub fn log() {
 }
 
 #[tokio::test]
-async fn t() -> crate::Result<()> {
-    log();
+async fn bootstrap() -> crate::Result<()> {
     let conf = DhtConfig::default()
         .add_bootstrap_node(DEFAULT_BOOTSTRAP[0].to_socket_addrs()?.last().unwrap());
 
     let mut rpc = RpcDht::with_config(conf).await?;
-    rpc.bootstrap();
 
+    rpc.bootstrap();
     let mut i = 0;
     loop {
-        let x = rpc.next().await;
-        //dbg!(x);
-        if i == 3 {
-            i += 1;
+        if let Some(RpcDhtEvent::QueryResult { .. }) = rpc.next().await {
             break;
-        }
+        };
+        dbg!(i);
         i += 1;
     }
-    let target: [u8; 32] = [
-        63, 63, 55, 18, 215, 204, 29, 175, 17, 182, 238, 196, 140, 156, 151, 174, 81, 108, 176,
-        148, 18, 92, 110, 122, 174, 0, 158, 250, 102, 181, 105, 250,
-    ];
-    rpc.query(
-        Command::Internal(InternalCommand::FindNode),
-        Key::from(IdBytes(target)),
-        None,
-    );
+    println!("# events {i}");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn ping() -> crate::Result<()> {
+    let conf = DhtConfig::default()
+        .add_bootstrap_node(DEFAULT_BOOTSTRAP[0].to_socket_addrs()?.last().unwrap());
+
+    let mut rpc = RpcDht::with_config(conf).await?;
+
+    rpc.bootstrap();
+    let mut i = 0;
+    loop {
+        if let Some(RpcDhtEvent::QueryResult { .. }) = rpc.next().await {
+            break;
+        };
+        i += 1;
+    }
+    log();
+
+    rpc.ping(&Peer {
+        addr: "170.187.185.104:60531".parse()?,
+        id: None,
+        referrer: None,
+    });
+    println!("PING_DONE");
+
     loop {
         let x = rpc.next().await;
         dbg!(x);
         dbg!(i);
         i += 1;
-        if i == 7 {
-            break;
-        }
     }
-
-    Ok(())
 }
