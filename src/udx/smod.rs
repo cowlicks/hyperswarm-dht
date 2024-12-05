@@ -301,7 +301,7 @@ impl RpcDht {
         match msg.command {
             Command::Internal(cmd) => match cmd {
                 InternalCommand::Ping => self.on_ping(msg, &peer),
-                InternalCommand::FindNode => self.on_findnode(msg, peer),
+                InternalCommand::FindNode => self.on_find_node(msg, peer),
                 InternalCommand::PingNat => self.on_ping_nat(msg, peer),
                 InternalCommand::DownHint => self.on_down_hint(msg, peer),
             },
@@ -404,7 +404,7 @@ impl RpcDht {
     /// Handle an incoming find peers request.
     ///
     /// Reply only if the remote provided a target to get the closest nodes for.
-    fn on_findnode(&mut self, request: RequestMsgData, peer: Peer) {
+    fn on_find_node(&mut self, request: RequestMsgData, peer: Peer) {
         let closer_nodes: Vec<Peer> = match request.target {
             Some(t) => self
                 .kbuckets
