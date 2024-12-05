@@ -1,5 +1,8 @@
-use std::sync::{Arc, RwLock};
-use std::{collections::BTreeMap, net::SocketAddr};
+use std::{
+    collections::BTreeMap,
+    net::SocketAddr,
+    sync::{Arc, RwLock},
+};
 use tracing::warn;
 
 use tokio::sync::oneshot::Sender;

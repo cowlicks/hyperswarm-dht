@@ -3,16 +3,17 @@
 #![allow(unreachable_code, dead_code)]
 use ed25519_dalek::PUBLIC_KEY_LENGTH;
 use futures::Stream;
-use std::borrow::Borrow;
-use std::collections::VecDeque;
-use std::convert::TryInto;
-use std::fmt::Display;
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::pin::Pin;
-use std::str::FromStr;
-use std::task::{Context, Poll};
-use std::time::Duration;
-use std::{collections::HashSet, convert::TryFrom};
+use std::{
+    borrow::Borrow,
+    collections::{HashSet, VecDeque},
+    convert::{TryFrom, TryInto},
+    fmt::Display,
+    net::{SocketAddr, ToSocketAddrs},
+    pin::Pin,
+    str::FromStr,
+    task::{Context, Poll},
+    time::Duration,
+};
 use tracing::{debug, trace, warn};
 use wasm_timer::Instant;
 
