@@ -18,12 +18,11 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::kbucket::{distance, Distance, Key, KeyBytes, ALPHA_VALUE, K_VALUE};
+use crate::kbucket::{distance, Distance, KeyBytes, ALPHA_VALUE, K_VALUE};
 use crate::udx::cenc::calculate_peer_id;
 use crate::udx::smod::Peer;
-use crate::{IdBytes, PeerId};
+use crate::IdBytes;
 use std::collections::btree_map::{BTreeMap, Entry};
-use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::net::SocketAddr;
 use std::{num::NonZeroUsize, time::Duration};
