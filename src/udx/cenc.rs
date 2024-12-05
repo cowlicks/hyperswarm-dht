@@ -1,5 +1,4 @@
 use std::{
-    borrow::Borrow,
     convert::{TryFrom, TryInto},
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
@@ -8,12 +7,11 @@ use compact_encoding::{CompactEncoding, EncodingError, EncodingErrorKind, State}
 
 use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
-    kbucket::{self, EntryView},
     peers::PeersEncoding,
     udx::{
         io::{Reply, Request},
         message::{MsgData, ReplyMsgData, RequestMsgData},
-        Command, ExternalCommand, IdBytes, InternalCommand, Node, Peer, PeerId,
+        Command, ExternalCommand, IdBytes, InternalCommand, Peer, PeerId,
     },
     Error, Result,
 };

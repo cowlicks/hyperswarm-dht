@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //dbg!(&conf);
 
     dbg!();
-    let node = RpcDht::with_config(conf).await?;
+    let _node = RpcDht::with_config(conf).await?;
     dbg!();
     /*
     while let Some(x) = node.next().await {
