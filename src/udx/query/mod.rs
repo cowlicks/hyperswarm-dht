@@ -20,7 +20,7 @@ use self::{
     peers::PeersIterState,
     table::{PeerState, QueryTable},
 };
-use super::{message::ReplyMsgData, Command, Peer, RequestMsgData, Response};
+use super::{message::ReplyMsgData, Command, Peer, Response};
 
 /// A `QueryPool` provides an aggregate state machine for driving `Query`s to
 /// completion.

@@ -6,7 +6,7 @@ use core::cmp;
 use std::{
     array::TryFromSliceError,
     convert::{TryFrom, TryInto},
-    fmt, io,
+    fmt,
     net::{AddrParseError, IpAddr, SocketAddr, SocketAddrV4, ToSocketAddrs},
     pin::Pin,
     time::Duration,
@@ -32,10 +32,9 @@ use crate::{
     dht_proto::{encode_input, Mutable, PeersInput, PeersOutput},
     lru::{CacheKey, PeerCache},
     peers::{decode_local_peers, decode_peers, PeersEncoding},
-    rpc::message::{Message, Type},
     store::{StorageEntry, StorageKey, Store, PUT_VALUE_MAX_SIZE},
     udx::{
-        query::{CommandQuery, CommandQueryResponse, QueryId, QueryStats},
+        query::{CommandQuery, QueryId, QueryStats},
         RequestOk, Response, ResponseOk, RpcDht, RpcDhtEvent,
     },
 };
@@ -1027,6 +1026,7 @@ pub struct Peers {
 
 /// Type to keep track of the responses for queries in progress.
 #[derive(Debug)]
+#[allow(unused)]
 enum QueryStreamType {
     LookUp(QueryStreamInner),
     Announce(QueryStreamInner),
