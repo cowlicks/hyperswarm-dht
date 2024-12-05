@@ -181,7 +181,7 @@ impl AddressCache {
         }
     }
 
-    pub fn iter_locals<'a>(&'a self) -> Option<impl Iterator<Item = &[u8; 4]> + 'a> {
+    pub fn iter_locals(&self) -> Option<impl Iterator<Item = &[u8; 4]>> {
         if let AddressCache::Local(cache) = self {
             Some(cache.list.iter())
         } else {
@@ -189,7 +189,7 @@ impl AddressCache {
         }
     }
 
-    pub fn iter_remotes<'a>(&'a self) -> Option<impl Iterator<Item = &SocketAddr> + 'a> {
+    pub fn iter_remotes(&self) -> Option<impl Iterator<Item = &SocketAddr>> {
         if let AddressCache::Remote(cache) = self {
             Some(cache.list.iter())
         } else {
