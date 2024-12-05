@@ -90,8 +90,7 @@ mod key;
 ///   1) The (fixed) maximum number of nodes in a bucket.
 ///   2) The (default) replication factor, which in turn determines:
 ///       a) The number of closer peers returned in response to a request.
-///       b) The number of closest peers to a key to search for in an iterative
-/// query.
+///       b) The number of closest peers to a key to search for in an iterative query.
 ///
 /// The choice of (1) is fixed to this constant. The replication factor is
 /// configurable but should generally be no greater than `K_VALUE`. All nodes in

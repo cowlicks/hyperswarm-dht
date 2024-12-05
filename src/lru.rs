@@ -331,11 +331,7 @@ impl PeerCache {
     }
 
     // Move `key` in the ordered list to the last
-    fn update_key<Key, Q: ?Sized>(list: &mut VecDeque<Key>, key: &Q)
-    where
-        Key: Borrow<Q>,
-        Q: Ord,
-    {
+    fn update_key<Key: Borrow<Q>, Q: ?Sized + Ord>(list: &mut VecDeque<Key>, key: &Q) {
         if let Some(pos) = list.iter().position(|k| k.borrow() == key) {
             let _ = list.remove(pos).map(|it| list.push_back(it));
         }

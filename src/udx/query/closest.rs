@@ -285,10 +285,7 @@ impl ClosestPeersIter {
     pub fn waiting(&self) -> impl Iterator<Item = &IterPeer> {
         self.closest_peers
             .values()
-            .filter_map(|peer| match peer.state {
-                PeerState::Waiting(..) => Some(peer),
-                _ => None,
-            })
+            .filter(|peer| matches!(peer.state, PeerState::Waiting { .. }))
     }
 
     /// Returns the number of peers for which the iterator is currently
