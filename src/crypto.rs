@@ -7,7 +7,7 @@ pub use ed25519_dalek::{ExpandedSecretKey, Keypair, PublicKey, SecretKey, Signat
 
 use crate::{
     dht_proto::Mutable,
-    udx::{fill_random_bytes, IdBytes},
+    rpc::{fill_random_bytes, IdBytes},
 };
 
 /// VALUE_MAX_SIZE + packet overhead (i.e. the key etc.)

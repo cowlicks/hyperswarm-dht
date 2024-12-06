@@ -1,5 +1,5 @@
 use crate::{
-    udx::IdBytes,
+    rpc::IdBytes,
     util::{debug_vec, pretty_bytes},
 };
 

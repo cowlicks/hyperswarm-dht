@@ -1,4 +1,4 @@
-//! udx/dht-rpc internnals
+//! rpc/dht-rpc internnals
 #![allow(unreachable_code, dead_code)]
 use ed25519_dalek::{PublicKey, PUBLIC_KEY_LENGTH};
 use futures::Stream;
@@ -24,7 +24,7 @@ use rand::{
 
 use crate::{
     kbucket::{Entry, EntryView, InsertResult, KBucketsTable, Key, KeyBytes, NodeStatus, K_VALUE},
-    udx::{cenc::generic_hash, jobs::PeriodicJob, query::QueryId},
+    rpc::{cenc::generic_hash, jobs::PeriodicJob, query::QueryId},
     util::pretty_bytes,
 };
 

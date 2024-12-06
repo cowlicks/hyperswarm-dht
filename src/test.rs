@@ -2,7 +2,7 @@ use futures::StreamExt;
 use std::{net::TcpListener, time::Duration};
 
 use crate::{
-    udx::{RpcDht, RpcDhtEvent},
+    rpc::{RpcDht, RpcDhtEvent},
     DhtConfig, Result,
 };
 pub fn free_port() -> Option<u16> {

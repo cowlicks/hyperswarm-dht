@@ -9,7 +9,7 @@
 //! afterwards unannouce a topic and a port.
 use std::{net::Ipv4Addr, time::Duration};
 
-use hyperswarm_dht::{udx::RpcDht, DhtConfig};
+use hyperswarm_dht::{rpc::RpcDht, DhtConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

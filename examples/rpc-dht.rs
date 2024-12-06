@@ -1,5 +1,5 @@
 use futures::StreamExt;
-use hyperswarm_dht::udx::{DhtConfig, RpcDht, RpcDhtEvent};
+use hyperswarm_dht::rpc::{DhtConfig, RpcDht, RpcDhtEvent};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

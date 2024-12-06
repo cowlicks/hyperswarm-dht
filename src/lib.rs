@@ -21,22 +21,22 @@ use futures::{
     Stream,
 };
 use prost::Message as ProstMessage;
+use rpc::{Command, ExternalCommand, RequestMsgData, RpcDhtBuilderError};
 use sha2::digest::generic_array::{typenum::U32, GenericArray};
 use smallvec::alloc::collections::VecDeque;
 use tokio::sync::oneshot::error::RecvError;
 use tracing::trace;
-use udx::{Command, ExternalCommand, RequestMsgData, RpcDhtBuilderError};
 
-pub use crate::udx::{DhtConfig, IdBytes, Peer, PeerId};
+pub use crate::rpc::{DhtConfig, IdBytes, Peer, PeerId};
 use crate::{
     dht_proto::{encode_input, Mutable, PeersInput, PeersOutput},
     lru::{CacheKey, PeerCache},
     peers::{decode_local_peers, decode_peers, PeersEncoding},
-    store::{StorageEntry, StorageKey, Store, PUT_VALUE_MAX_SIZE},
-    udx::{
+    rpc::{
         query::{CommandQuery, QueryId, QueryStats},
         RequestOk, Response, ResponseOk, RpcDht, RpcDhtEvent,
     },
+    store::{StorageEntry, StorageKey, Store, PUT_VALUE_MAX_SIZE},
 };
 
 mod dht_proto {
@@ -60,8 +60,8 @@ pub mod crypto;
 pub mod kbucket;
 pub mod lru;
 pub mod peers;
+pub mod rpc;
 pub mod store;
-pub mod udx;
 mod util;
 
 #[allow(dead_code)]

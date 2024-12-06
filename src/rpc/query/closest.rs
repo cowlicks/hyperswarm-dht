@@ -20,7 +20,7 @@
 
 use crate::{
     kbucket::{distance, Distance, KeyBytes, ALPHA_VALUE, K_VALUE},
-    udx::{cenc::calculate_peer_id, Peer},
+    rpc::{cenc::calculate_peer_id, Peer},
     IdBytes,
 };
 use std::{

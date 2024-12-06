@@ -8,7 +8,7 @@ use compact_encoding::{CompactEncoding, EncodingError, EncodingErrorKind, State}
 use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
     peers::PeersEncoding,
-    udx::{
+    rpc::{
         io::{Reply, Request},
         message::{MsgData, ReplyMsgData, RequestMsgData},
         Command, ExternalCommand, IdBytes, InternalCommand, Peer, PeerId,

@@ -4,7 +4,7 @@ use fnv::FnvHashMap;
 use smallvec::alloc::collections::VecDeque;
 use wasm_timer::Instant;
 
-use crate::udx::IdBytes;
+use crate::rpc::IdBytes;
 
 #[derive(Debug, Clone)]
 pub enum Address {

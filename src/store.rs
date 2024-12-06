@@ -7,7 +7,7 @@ use prost::Message;
 use crate::{
     crypto::{self, VALUE_MAX_SIZE},
     dht_proto::Mutable,
-    udx::{
+    rpc::{
         query::{CommandQuery, CommandQueryResponse},
         IdBytes,
     },

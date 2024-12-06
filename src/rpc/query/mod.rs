@@ -7,7 +7,7 @@ use wasm_timer::Instant;
 
 use crate::{
     kbucket::{Key, ALPHA_VALUE, K_VALUE},
-    udx::{IdBytes, PeerId},
+    rpc::{IdBytes, PeerId},
 };
 
 mod closest;

@@ -12,7 +12,7 @@ use compact_encoding::State;
 use crate::{
     constants::{REQUEST_ID, RESPONSE_ID},
     kbucket::Key,
-    udx::{self, IdBytes},
+    rpc::{self, IdBytes},
     Result,
 };
 use fnv::FnvHashMap;
@@ -314,7 +314,7 @@ impl IoHandler {
 
     pub fn query(
         &mut self,
-        command: udx::Command,
+        command: rpc::Command,
         target: Option<[u8; 32]>,
         value: Option<Vec<u8>>,
         peer: Peer,
@@ -548,7 +548,7 @@ pub enum IoHandlerEvent {
 #[cfg(test)]
 mod test {
     use futures::StreamExt;
-    use udx::{mslave::Master, thirty_two_random_bytes, InternalCommand};
+    use rpc::{mslave::Master, thirty_two_random_bytes, InternalCommand};
 
     use super::*;
 

@@ -3,7 +3,7 @@ use std::{net::ToSocketAddrs, sync::OnceLock};
 use futures::StreamExt;
 
 use crate::{
-    udx::{DhtConfig, Peer, RpcDht},
+    rpc::{DhtConfig, Peer, RpcDht},
     DEFAULT_BOOTSTRAP,
 };
 

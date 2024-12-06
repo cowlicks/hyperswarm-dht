@@ -36,7 +36,7 @@ use sha2::{
 };
 use uint::construct_uint;
 
-use crate::{udx::IdBytes, util::debug_vec, PeerId};
+use crate::{rpc::IdBytes, util::debug_vec, PeerId};
 
 construct_uint! {
     /// 256-bit unsigned integer.
