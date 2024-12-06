@@ -1,0 +1,66 @@
+[package]
+name = "hyperswarm-dht"
+edition = "2018"
+description = "rust implementation of the DHT powering the hyperswarm stack"
+version = "0.1.0"
+authors = ["Matthias Seitz <matthias.seitz@tum.de>"]
+license = "MIT"
+readme = "README.md"
+documentation = "https://docs.rs/hyperswarm-dht/"
+repository = "https://github.com/mattsse/hyperswarm-dht"
+keywords = ["dat", "peer-to-peer", "networking"]
+categories = ["network-programming", "asynchronous"]
+
+[build-dependencies]
+prost-build = "0.6.1"
+
+[dependencies]
+rand = "0.7.3"
+anyhow = "1.0.31"
+bytes = "0.5.5"
+prost = "0.6.1"
+arrayvec = "0.5.1"
+sha2 = "0.9.1"
+uint = "0.8.3"
+futures = "0.3.5"
+futures_codec = "0.4.1"
+wasm-timer = "0.2.4"
+fnv = "1.0.7"
+structopt = { version = "0.3.15", optional = true }
+ed25519-dalek = "1.0.0-pre.4"
+blake2 = "0.9.0"
+lru = "0.5.3"
+smallvec = "1.4.1"
+either = "1.5.3"
+thiserror = "1.0.68"
+libsodium-sys-stable = "1.21.2"
+derive_builder = "0.20.2"
+petgraph = "0.6.5"
+syn = "2.0.89"
+walkdir = "2.5.0"
+tracing = "0.1.41"
+
+[dependencies.compact-encoding]
+path = "../../compact-encoding"
+
+[dependencies.async-udx]
+path = "../../async-udx"
+
+[dependencies.tokio]
+version = "1.41.0"
+features = ["rt", "net", "sync"]
+
+[features]
+cli = ["structopt"]
+
+[dev-dependencies]
+pretty_env_logger = "0.4.0"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+
+[dev-dependencies.rusty_nodejs_repl]
+#rusty_nodejs_repl = "0.2.1"
+path = "../../js-repl-rs"
+
+[dev-dependencies.tokio]
+version = "1.41.0"
+features = ["rt-multi-thread", "io-util", "io-std", "macros", "time"]
