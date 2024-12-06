@@ -159,19 +159,19 @@ pub struct RpcDht {
 
 #[derive(Debug)]
 pub struct DhtConfig {
-    kbucket_pending_timeout: Duration,
-    local_id: Option<[u8; 32]>,
-    commands: HashSet<usize>,
-    query_config: QueryConfig,
-    io_config: IoConfig,
-    bootstrap_interval: Duration,
-    ping_interval: Duration,
+    pub kbucket_pending_timeout: Duration,
+    pub local_id: Option<[u8; 32]>,
+    pub commands: HashSet<usize>,
+    pub query_config: QueryConfig,
+    pub io_config: IoConfig,
+    pub bootstrap_interval: Duration,
+    pub ping_interval: Duration,
     #[allow(unused)] // FIXME bg: why never read?
-    connection_idle_timeout: Duration,
-    ephemeral: bool,
-    pub(crate) adaptive: bool,
+    pub connection_idle_timeout: Duration,
+    pub ephemeral: bool,
+    pub adaptive: bool,
     pub bootstrap_nodes: Vec<SocketAddr>,
-    socket: Option<MessageDataStream>,
+    pub socket: Option<MessageDataStream>,
 }
 
 impl Default for DhtConfig {
@@ -1183,7 +1183,7 @@ impl Borrow<[u8]> for PeerId {
 
 /// Fill the slice with random bytes
 #[inline]
-pub(crate) fn fill_random_bytes(dest: &mut [u8]) {
+pub fn fill_random_bytes(dest: &mut [u8]) {
     use rand::{
         rngs::{OsRng, StdRng},
         RngCore, SeedableRng,

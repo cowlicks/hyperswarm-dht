@@ -21,22 +21,25 @@ use futures::{
     Stream,
 };
 use prost::Message as ProstMessage;
-use rpc::{Command, ExternalCommand, RequestMsgData, RpcDhtBuilderError};
 use sha2::digest::generic_array::{typenum::U32, GenericArray};
 use smallvec::alloc::collections::VecDeque;
 use tokio::sync::oneshot::error::RecvError;
 use tracing::trace;
 
-pub use crate::rpc::{fill_random_bytes, DhtConfig, IdBytes, Peer, PeerId};
 use crate::{
     dht_proto::{encode_input, Mutable, PeersInput, PeersOutput},
     lru::{CacheKey, PeerCache},
+    store::{StorageEntry, StorageKey, Store, PUT_VALUE_MAX_SIZE},
+};
+pub use ::dht_rpc::{
+    kbucket::Key,
     peers::{decode_local_peers, decode_peers, PeersEncoding},
     rpc::{
         query::{CommandQuery, QueryId, QueryStats},
-        RequestOk, Response, ResponseOk, RpcDht, RpcDhtEvent,
+        Command, ExternalCommand, RequestMsgData, RequestOk, Response, ResponseOk, RpcDht,
+        RpcDhtBuilderError, RpcDhtEvent,
     },
-    store::{StorageEntry, StorageKey, Store, PUT_VALUE_MAX_SIZE},
+    DhtConfig, IdBytes, Peer, PeerId,
 };
 
 mod dht_proto {
@@ -52,17 +55,9 @@ mod dht_proto {
         buf
     }
 }
-#[cfg(test)]
-pub mod test;
-
-pub mod constants;
 pub mod crypto;
-pub mod kbucket;
 pub mod lru;
-pub mod peers;
-pub mod rpc;
 pub mod store;
-mod util;
 
 #[allow(dead_code)]
 const EPH_AFTER: u64 = 1000 * 60 * 20;
@@ -87,6 +82,8 @@ pub const PEERS_CMD: usize = 3;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Error from dht_rpc: {0}")]
+    RpcError(#[from] ::dht_rpc::Error),
     #[error("Error from compact_encoding: {0}")]
     CompactEncodingError(EncodingError),
     #[error("IO Eror")]
@@ -164,7 +161,7 @@ impl HyperDht {
     /// The local address of the underlying `UdpSocket`
     #[inline]
     pub fn local_addr(&self) -> Result<SocketAddr> {
-        self.inner.local_addr()
+        Ok(self.inner.local_addr()?)
     }
 
     #[allow(dead_code)]
@@ -223,7 +220,7 @@ impl HyperDht {
 
         let query_id = self.inner.query(
             Command::External(ExternalCommand(IMMUTABLE_STORE_CMD)),
-            kbucket::Key::new(key.clone()),
+            Key::new(key.clone()),
             None,
         );
 
@@ -263,7 +260,7 @@ impl HyperDht {
         // query the DHT
         let query_id = self.inner.query(
             Command::External(ExternalCommand(MUTABLE_STORE_CMD)),
-            kbucket::Key::new(get.key.clone()),
+            Key::new(get.key.clone()),
             Some(buf),
         );
 
@@ -451,7 +448,7 @@ impl HyperDht {
 
         let id = self.inner.query(
             Command::External(ExternalCommand(PEERS_CMD)),
-            kbucket::Key::new(opts.topic.clone()),
+            Key::new(opts.topic.clone()),
             Some(buf),
         );
         self.queries.insert(

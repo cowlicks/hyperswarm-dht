@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+  "hdht",
   "rpc",
 ]
 resolver = "2"
