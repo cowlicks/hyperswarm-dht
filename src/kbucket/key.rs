@@ -26,6 +26,7 @@
 
 use std::{
     borrow::Borrow,
+    convert::TryInto,
     hash::{Hash, Hasher},
 };
 
@@ -42,6 +43,7 @@ construct_uint! {
     pub(super) struct U256(4);
 }
 
+/// TODO simplify this. `Key` is just the preimage now. Simpify it
 /// A `Key` in the DHT keyspace with preserved preimage.
 ///
 /// Keys in the DHT keyspace identify both the participating nodes, as well as
@@ -55,17 +57,18 @@ pub struct Key<T> {
     bytes: KeyBytes,
 }
 
-impl<T> Key<T> {
+fn to_keybytes<T: Borrow<[u8]>>(x: &T) -> KeyBytes {
+    KeyBytes(*GenericArray::from_slice(x.borrow()))
+}
+
+impl<T: Borrow<[u8]>> Key<T> {
     /// Constructs a new `Key` by running the given value through a random
     /// oracle.
     ///
     /// The preimage of type `T` is preserved. See [`Key::preimage`] and
     /// [`Key::into_preimage`].
-    pub fn new(preimage: T) -> Key<T>
-    where
-        T: Borrow<[u8]>,
-    {
-        let bytes = KeyBytes::new(preimage.borrow());
+    pub fn new(preimage: T) -> Key<T> {
+        let bytes = to_keybytes(&preimage);
         Key { preimage, bytes }
     }
 
@@ -84,16 +87,8 @@ impl<T> Key<T> {
     where
         U: AsRef<KeyBytes>,
     {
-        self.bytes.distance(other)
-    }
-
-    /// Returns the uniquely determined key with the given distance to `self`.
-    ///
-    /// This implements the following equivalence:
-    ///
-    /// `self xor other = distance <==> other = self xor distance`
-    pub fn for_distance(&self, d: Distance) -> KeyBytes {
-        self.bytes.for_distance(d)
+        let x: &[u8] = self.preimage.borrow();
+        distance(x, other.as_ref().0.as_slice())
     }
 }
 
@@ -111,7 +106,7 @@ impl From<IdBytes> for Key<IdBytes> {
 
 impl From<PeerId> for Key<PeerId> {
     fn from(p: PeerId) -> Self {
-        let bytes = KeyBytes(Sha256::digest(&p.id.0));
+        let bytes = to_keybytes(&p);
         Key { preimage: p, bytes }
     }
 }
@@ -160,7 +155,8 @@ impl KeyBytes {
     where
         T: Borrow<[u8]>,
     {
-        KeyBytes(Sha256::digest(value.borrow()))
+        let x: &[u8] = value.borrow();
+        KeyBytes(*GenericArray::from_slice(x))
     }
 
     /// Computes the distance of the keys according to the XOR metric.

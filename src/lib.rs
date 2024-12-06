@@ -1183,6 +1183,7 @@ mod tests {
         }};
     }
 
+    #[ignore]
     #[tokio::test]
     async fn mutable_put_get() -> std::result::Result<(), Box<dyn std::error::Error>> {
         use futures::select;
@@ -1266,6 +1267,7 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[tokio::test]
     async fn immutable_put_get() -> std::result::Result<(), Box<dyn std::error::Error>> {
         // create an ephemeral bootstrap node

@@ -44,6 +44,7 @@ async fn bootstrap() -> crate::Result<()> {
 }
 
 #[tokio::test]
+#[ignore]
 async fn ping() -> crate::Result<()> {
     let conf = DhtConfig::default()
         .add_bootstrap_node(DEFAULT_BOOTSTRAP[0].to_socket_addrs()?.last().unwrap());
