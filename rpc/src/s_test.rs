@@ -2,10 +2,7 @@ use std::{net::ToSocketAddrs, sync::OnceLock};
 
 use futures::StreamExt;
 
-use crate::{
-    rpc::{DhtConfig, Peer, RpcDht},
-    DEFAULT_BOOTSTRAP,
-};
+use crate::{DhtConfig, Peer, RpcDht, DEFAULT_BOOTSTRAP};
 
 use super::RpcDhtEvent;
 

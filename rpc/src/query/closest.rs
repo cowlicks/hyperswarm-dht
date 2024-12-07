@@ -19,9 +19,9 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::{
+    cenc::calculate_peer_id,
     kbucket::{distance, Distance, KeyBytes, ALPHA_VALUE, K_VALUE},
-    rpc::{cenc::calculate_peer_id, Peer},
-    IdBytes,
+    IdBytes, Peer,
 };
 use std::{
     collections::btree_map::{BTreeMap, Entry},

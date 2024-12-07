@@ -115,7 +115,7 @@ impl Sink<(MsgData, SocketAddr)> for MessageDataStream {
 
 #[cfg(test)]
 mod test {
-    use crate::rpc::{message::ReplyMsgData, Peer};
+    use crate::{message::ReplyMsgData, Peer};
     use futures::{SinkExt, StreamExt};
 
     use super::*;

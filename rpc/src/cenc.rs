@@ -7,13 +7,10 @@ use compact_encoding::{CompactEncoding, EncodingError, EncodingErrorKind, State}
 
 use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
+    io::{Reply, Request},
+    message::{MsgData, ReplyMsgData, RequestMsgData},
     peers::PeersEncoding,
-    rpc::{
-        io::{Reply, Request},
-        message::{MsgData, ReplyMsgData, RequestMsgData},
-        Command, ExternalCommand, IdBytes, InternalCommand, Peer, PeerId,
-    },
-    Error, Result,
+    Command, Error, ExternalCommand, IdBytes, InternalCommand, Peer, PeerId, Result,
 };
 
 impl CompactEncoding<InternalCommand> for State {
