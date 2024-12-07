@@ -259,7 +259,7 @@ where
 
     /// Returns an iterator over the keys closest to `target`, ordered by
     /// increasing distance.
-    pub fn closest_keys<'a, T>(&'a mut self, target: &'a T) -> impl Iterator<Item = TKey> + '_
+    pub fn closest_keys<'a, T>(&'a mut self, target: &'a T) -> impl Iterator<Item = TKey> + 'a
     where
         T: Clone + AsRef<KeyBytes>,
     {
@@ -280,7 +280,7 @@ where
     pub fn closest<'a, T>(
         &'a mut self,
         target: &'a T,
-    ) -> impl Iterator<Item = EntryView<TKey, TVal>> + '_
+    ) -> impl Iterator<Item = EntryView<TKey, TVal>> + 'a
     where
         T: Clone + AsRef<KeyBytes>,
         TVal: Clone,
