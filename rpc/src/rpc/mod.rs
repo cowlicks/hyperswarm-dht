@@ -40,8 +40,8 @@ use self::{
     stream::MessageDataStream,
 };
 
-mod cenc;
-mod io;
+pub mod cenc;
+pub mod io;
 mod jobs;
 mod message;
 mod mslave;
