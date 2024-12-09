@@ -1,7 +1,7 @@
 use std::hash::Hash;
 
 use ::dht_rpc::{
-    rpc::query::{CommandQuery, CommandQueryResponse},
+    query::{CommandQuery, CommandQueryResponse},
     IdBytes,
 };
 use ed25519_dalek::PublicKey;

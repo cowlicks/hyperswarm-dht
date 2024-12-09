@@ -34,12 +34,9 @@ use crate::{
 pub use ::dht_rpc::{
     kbucket::Key,
     peers::{decode_local_peers, decode_peers, PeersEncoding},
-    rpc::{
-        query::{CommandQuery, QueryId, QueryStats},
-        Command, ExternalCommand, RequestMsgData, RequestOk, Response, ResponseOk, RpcDht,
-        RpcDhtBuilderError, RpcDhtEvent,
-    },
-    DhtConfig, IdBytes, Peer, PeerId,
+    query::{CommandQuery, QueryId, QueryStats},
+    Command, DhtConfig, ExternalCommand, IdBytes, Peer, PeerId, RequestMsgData, RequestOk,
+    Response, ResponseOk, RpcDht, RpcDhtBuilderError, RpcDhtEvent,
 };
 
 mod dht_proto {
