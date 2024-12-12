@@ -123,7 +123,7 @@ pub(crate) fn calculate_peer_id(from: &Peer) -> [u8; ID_SIZE] {
     id_from_socket(&from.addr)
 }
 
-pub(crate) fn generic_hash(input: &[u8]) -> [u8; HASH_SIZE] {
+pub fn generic_hash(input: &[u8]) -> [u8; HASH_SIZE] {
     let mut out = [0; HASH_SIZE];
     let ret = unsafe {
         libsodium_sys::crypto_generichash(
