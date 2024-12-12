@@ -70,6 +70,18 @@ pub(crate) const ERR_INVALID_INPUT: usize = 7;
 pub(crate) const ERR_INVALID_SEQ: usize = 11;
 pub(crate) const ERR_SEQ_MUST_EXCEED_CURRENT: usize = 13;
 
+pub mod commands {
+    pub const PEER_HANDSHAKE: usize = 0;
+    pub const PEER_HOLEPUNCH: usize = 1;
+    pub const FIND_PEER: usize = 2;
+    pub const LOOKUP: usize = 3;
+    pub const ANNOUNCE: usize = 4;
+    pub const UNANNOUNCE: usize = 5;
+    pub const MUTABLE_PUT: usize = 6;
+    pub const MUTABLE_GET: usize = 7;
+    pub const IMMUTABLE_PUT: usize = 8;
+    pub const IMMUTABLE_GET: usize = 9;
+}
 /// The command identifier for `Mutable` storage
 pub const MUTABLE_STORE_CMD: usize = 1;
 /// The command identifier for immutable storage
