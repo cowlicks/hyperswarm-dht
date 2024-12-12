@@ -457,26 +457,12 @@ impl HyperDht {
     ///
     /// The result of the query is delivered in a
     /// [`HyperDhtEvent::LookupResult`].
-    pub fn lookup(&mut self, opts: impl Into<QueryOpts>) -> QueryId {
-        let opts = opts.into();
-
-        let peers = PeersInput {
-            port: opts.port,
-            local_address: opts.local_addr_encoded(),
-            unannounce: None,
-        };
-        let buf = encode_input(&peers);
-
-        let id = self.inner.query(
-            Command::External(ExternalCommand(PEERS_CMD)),
-            Key::new(opts.topic.clone()),
-            Some(buf),
-        );
-        self.queries.insert(
-            id,
-            QueryStreamType::LookUp(QueryStreamInner::new(opts.topic, opts.local_addr)),
-        );
-        id
+    pub fn lookup(&mut self, target: Key<IdBytes>) -> QueryId {
+        self.inner.query(
+            Command::External(ExternalCommand(commands::LOOKUP)),
+            target,
+            None,
+        )
     }
 
     /// Initiates an iterative query to announce the topic to the closest peers.
