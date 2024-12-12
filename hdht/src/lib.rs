@@ -13,6 +13,7 @@ use std::{
 };
 
 use compact_encoding::EncodingError;
+use dht_rpc::cenc::generic_hash;
 use ed25519_dalek::{Keypair, PublicKey, Signature};
 use either::Either;
 use fnv::FnvHashMap;
@@ -198,6 +199,17 @@ impl HyperDht {
                     peer,
                 }),
         }
+    }
+
+    pub fn find_peer(&mut self, pub_key: PublicKey) -> QueryId {
+        let target = generic_hash(pub_key.as_bytes());
+        let target = Key::from(IdBytes(target));
+
+        self.inner.query(
+            Command::External(ExternalCommand(commands::FIND_PEER)),
+            target,
+            None,
+        )
     }
 
     /// Initiates an iterative query to the closest peers to fetch the immutable
