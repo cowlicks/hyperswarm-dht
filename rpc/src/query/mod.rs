@@ -25,7 +25,7 @@ use super::{message::ReplyMsgData, Command, Peer, Response};
 #[derive(Debug)]
 pub struct QueryPool {
     local_id: Key<IdBytes>,
-    queries: FnvHashMap<QueryId, QueryStream>,
+    queries: FnvHashMap<QueryId, Query>,
     config: QueryConfig,
     next_id: usize,
 }
@@ -65,7 +65,7 @@ impl QueryPool {
     }
 
     /// Returns an iterator over the queries in the pool.
-    pub fn iter(&self) -> impl Iterator<Item = &QueryStream> {
+    pub fn iter(&self) -> impl Iterator<Item = &Query> {
         self.queries.values()
     }
 
@@ -98,7 +98,7 @@ impl QueryPool {
         //S: IntoIterator<Item = Peer>,
     {
         let id = self.next_query_id();
-        let query = QueryStream::bootstrap(
+        let query = Query::bootstrap(
             id,
             cmd,
             self.config.parallelism,
@@ -113,13 +113,13 @@ impl QueryPool {
     }
 
     /// Returns a reference to a query with the given ID, if it is in the pool.
-    pub fn get(&self, id: &QueryId) -> Option<&QueryStream> {
+    pub fn get(&self, id: &QueryId) -> Option<&Query> {
         self.queries.get(id)
     }
 
     /// Returns a mutable reference to a query with the given ID, if it is in
     /// the pool.
-    pub fn get_mut(&mut self, id: &QueryId) -> Option<&mut QueryStream> {
+    pub fn get_mut(&mut self, id: &QueryId) -> Option<&mut Query> {
         self.queries.get_mut(id)
     }
 
@@ -183,21 +183,21 @@ pub enum QueryPoolState<'a> {
     Idle,
     /// At least one query is waiting for results. `Some(request)` indicates
     /// that a new request is now being waited on.
-    Waiting(Option<(&'a mut QueryStream, QueryEvent)>),
+    Waiting(Option<(&'a mut Query, QueryEvent)>),
     /// A query has finished.
-    Finished(QueryStream),
+    Finished(Query),
     /// A query has timed out.
-    Timeout(QueryStream),
+    Timeout(Query),
 }
 
 #[derive(Debug)]
-pub struct QueryStream {
+pub struct Query {
     /// identifier for this stream
     id: QueryId,
     /// The permitted parallelism, i.e. number of pending results.
     parallelism: NonZeroUsize,
     /// The peer iterator that drives the query state.
-    peer_iter: QueryPeerIter,
+    peer_iter: ClosestPeersIter,
     /// The rpc command of this stream
     cmd: Command,
     /// Stats about this query
@@ -208,7 +208,7 @@ pub struct QueryStream {
     inner: QueryTable,
 }
 
-impl QueryStream {
+impl Query {
     #[allow(clippy::too_many_arguments)]
     pub fn bootstrap<I, S>(
         id: QueryId,
@@ -227,10 +227,7 @@ impl QueryStream {
         Self {
             id,
             parallelism,
-            peer_iter: QueryPeerIter::Closest(ClosestPeersIter::new(
-                target.clone().into(),
-                bootstrap,
-            )),
+            peer_iter: ClosestPeersIter::new(target.clone().into(), bootstrap),
             cmd,
             stats: QueryStats::empty(),
             value,
@@ -291,7 +288,7 @@ impl QueryStream {
         }
 
         self.stats.success += 1;
-        self.peer_iter.on_success(&peer, &resp);
+        self.peer_iter.on_success(&peer, &resp.closer_nodes);
 
         if let Some(token) = resp.token.take() {
             if let Some(remote) = remote {
@@ -308,48 +305,6 @@ impl QueryStream {
             peer_id: resp.valid_id_bytes(),
             value: resp.value,
         })
-    }
-
-    fn next_closest(&mut self, state: PeersIterState) -> Poll<Option<QueryEvent>> {
-        match state {
-            PeersIterState::Waiting(peer) => {
-                if let Some(peer) = peer {
-                    Poll::Ready(Some(self.send(peer, false)))
-                } else {
-                    Poll::Pending
-                }
-            }
-            PeersIterState::WaitingAtCapacity => Poll::Pending,
-            PeersIterState::Finished => Poll::Ready(None),
-        }
-    }
-
-    fn next_move_closer(&mut self, state: PeersIterState) -> Poll<Option<QueryEvent>> {
-        match state {
-            PeersIterState::Waiting(peer) => {
-                if let Some(peer) = peer {
-                    Poll::Ready(Some(self.send(peer, false)))
-                } else {
-                    Poll::Pending
-                }
-            }
-            PeersIterState::WaitingAtCapacity => Poll::Pending,
-            PeersIterState::Finished => Poll::Ready(None),
-        }
-    }
-
-    fn next_update(&mut self, state: PeersIterState) -> Poll<Option<QueryEvent>> {
-        match state {
-            PeersIterState::Waiting(peer) => {
-                if let Some(peer) = peer {
-                    Poll::Ready(Some(self.send(peer, true)))
-                } else {
-                    Poll::Pending
-                }
-            }
-            PeersIterState::WaitingAtCapacity => Poll::Pending,
-            PeersIterState::Finished => Poll::Ready(None),
-        }
     }
 
     fn send(&mut self, peer: Peer, update: bool) -> QueryEvent {
@@ -377,17 +332,18 @@ impl QueryStream {
         }
     }
 
-    fn poll_iter(&mut self, now: Instant) -> Poll<Option<QueryEvent>> {
-        match &mut self.peer_iter {
-            QueryPeerIter::Closest(iter) => {
-                let state = iter.next(now);
-                self.next_closest(state)
-            }
-        }
-    }
-
     fn poll(&mut self, now: Instant) -> Poll<Option<QueryEvent>> {
-        self.poll_iter(now)
+        match self.peer_iter.next(now) {
+            PeersIterState::Waiting(peer) => {
+                if let Some(peer) = peer {
+                    Poll::Ready(Some(self.send(peer, false)))
+                } else {
+                    Poll::Pending
+                }
+            }
+            PeersIterState::WaitingAtCapacity => Poll::Pending,
+            PeersIterState::Finished => Poll::Ready(None),
+        }
     }
 
     /// Consumes the query, producing the final `QueryResult`.
@@ -397,26 +353,6 @@ impl QueryStream {
             inner: self.id,
             stats: self.stats,
             cmd: self.cmd,
-        }
-    }
-}
-
-/// The peer selection strategies that can be used by queries.
-#[derive(Debug)]
-enum QueryPeerIter {
-    Closest(ClosestPeersIter),
-}
-
-impl QueryPeerIter {
-    fn on_success(&mut self, peer: &Peer, resp: &ReplyMsgData) -> bool {
-        match self {
-            QueryPeerIter::Closest(iter) => iter.on_success(peer, &resp.closer_nodes),
-        }
-    }
-
-    fn on_failure(&mut self, peer: &Peer) -> bool {
-        match self {
-            QueryPeerIter::Closest(iter) => iter.on_failure(peer),
         }
     }
 }

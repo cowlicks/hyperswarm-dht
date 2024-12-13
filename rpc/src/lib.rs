@@ -43,8 +43,8 @@ use self::{
     message::valid_id_bytes,
     mslave::Master,
     query::{
-        table::PeerState, CommandQuery, QueryConfig, QueryEvent, QueryPool, QueryPoolState,
-        QueryStats, QueryStream,
+        table::PeerState, CommandQuery, Query, QueryConfig, QueryEvent, QueryPool, QueryPoolState,
+        QueryStats,
     },
     stream::MessageDataStream,
 };
@@ -849,7 +849,7 @@ impl RpcDht {
     }
 
     /// Handles a finished query.
-    fn query_finished(&mut self, query: QueryStream) -> RpcDhtEvent {
+    fn query_finished(&mut self, query: Query) -> RpcDhtEvent {
         let is_find_node = matches!(
             query.command(),
             Command::Internal(InternalCommand::FindNode)
@@ -888,7 +888,7 @@ impl RpcDht {
         }
     }
     /// Handles a query that timed out.
-    fn query_timeout(&mut self, query: QueryStream) -> RpcDhtEvent {
+    fn query_timeout(&mut self, query: Query) -> RpcDhtEvent {
         self.query_finished(query)
     }
 }
