@@ -11,12 +11,10 @@ use crate::{
 };
 
 mod closest;
-mod fixed;
 mod peers;
 pub mod table;
 
 use self::{
-    fixed::FixedPeersIter,
     peers::PeersIterState,
     table::{PeerState, QueryTable},
 };
@@ -295,12 +293,6 @@ impl QueryStream {
         self.stats.success += 1;
         self.peer_iter.on_success(&peer, &resp);
 
-        if let QueryPeerIter::Bootstrap(_) = self.peer_iter {
-            for node in resp.decode_closer_nodes() {
-                self.inner.add_unverified(node);
-            }
-        }
-
         if let Some(token) = resp.token.take() {
             if let Some(remote) = remote {
                 self.inner
@@ -329,24 +321,6 @@ impl QueryStream {
             }
             PeersIterState::WaitingAtCapacity => Poll::Pending,
             PeersIterState::Finished => Poll::Ready(None),
-        }
-    }
-
-    fn next_bootstrap(&mut self, state: PeersIterState, now: Instant) -> Poll<Option<QueryEvent>> {
-        match state {
-            PeersIterState::Waiting(peer) => {
-                if let Some(peer) = peer {
-                    Poll::Ready(Some(self.send(peer, false)))
-                } else {
-                    Poll::Pending
-                }
-            }
-            PeersIterState::WaitingAtCapacity => Poll::Pending,
-            PeersIterState::Finished => {
-                self.peer_iter =
-                    QueryPeerIter::MovingCloser(self.inner.unverified_peers_iter(self.parallelism));
-                self.poll_iter(now)
-            }
         }
     }
 
@@ -409,14 +383,6 @@ impl QueryStream {
                 let state = iter.next(now);
                 self.next_closest(state)
             }
-            QueryPeerIter::Bootstrap(iter) => {
-                let state = iter.next();
-                self.next_bootstrap(state, now)
-            }
-            QueryPeerIter::MovingCloser(iter) => {
-                let state = iter.next();
-                self.next_move_closer(state)
-            }
         }
     }
 
@@ -439,25 +405,18 @@ impl QueryStream {
 #[derive(Debug)]
 enum QueryPeerIter {
     Closest(ClosestPeersIter),
-    //ClosestDisjoint(ClosestDisjointPeersIter),
-    Bootstrap(FixedPeersIter),
-    MovingCloser(FixedPeersIter),
 }
 
 impl QueryPeerIter {
     fn on_success(&mut self, peer: &Peer, resp: &ReplyMsgData) -> bool {
         match self {
             QueryPeerIter::Closest(iter) => iter.on_success(peer, &resp.closer_nodes),
-            QueryPeerIter::Bootstrap(iter) => iter.on_success(peer),
-            QueryPeerIter::MovingCloser(iter) => iter.on_success(peer),
         }
     }
 
     fn on_failure(&mut self, peer: &Peer) -> bool {
         match self {
             QueryPeerIter::Closest(iter) => iter.on_failure(peer),
-            QueryPeerIter::Bootstrap(iter) => iter.on_failure(peer),
-            QueryPeerIter::MovingCloser(iter) => iter.on_failure(peer),
         }
     }
 }

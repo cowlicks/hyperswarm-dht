@@ -7,8 +7,6 @@ use crate::{
     IdBytes, PeerId,
 };
 
-use super::fixed::FixedPeersIter;
-
 #[derive(Debug)]
 pub struct QueryTable {
     id: Key<IdBytes>,
@@ -58,35 +56,6 @@ impl QueryTable {
             .map(|(_, s)| s.get_token())
             .next()
             .flatten()
-    }
-
-    pub fn unverified_peers_iter(&self, parallelism: NonZeroUsize) -> FixedPeersIter {
-        FixedPeersIter::new(
-            self.peers
-                .iter()
-                .filter(|(_, s)| s.is_not_contacted())
-                .map(|(p, _)| crate::Peer::from(p.preimage().addr)),
-            parallelism,
-        )
-    }
-
-    pub fn closest_peers_iter(&self, parallelism: NonZeroUsize) -> FixedPeersIter {
-        let mut peers = self
-            .peers
-            .iter()
-            .filter(|(_, s)| s.is_verified())
-            .map(|(p, _)| p)
-            .collect::<Vec<_>>();
-
-        peers.sort_by_key(|&a| self.target.distance(a));
-
-        FixedPeersIter::new(
-            peers
-                .into_iter()
-                .take(usize::from(K_VALUE))
-                .map(|p| crate::Peer::from(p.preimage().addr)),
-            parallelism,
-        )
     }
 
     pub(crate) fn add_unverified(&mut self, peer: PeerId) {
