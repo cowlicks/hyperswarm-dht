@@ -303,7 +303,7 @@ impl IoHandler {
         self.socket.local_addr()
     }
     /// TODO check this is correct.
-    fn token(&self, peer: &Peer, secret_index: usize) -> crate::Result<[u8; 32]> {
+    pub fn token(&self, peer: &Peer, secret_index: usize) -> crate::Result<[u8; 32]> {
         self.secrets.token(peer, secret_index)
     }
 
@@ -369,7 +369,10 @@ impl IoHandler {
         Ok(())
     }
 
-    pub fn reply(&mut self, msg: ReplyMsgData) {
+    pub fn reply(&mut self, mut msg: ReplyMsgData) {
+        if msg.token.is_none() {
+            msg.token = self.token(&msg.to, 1).ok();
+        }
         self.pending_send.push_back(OutMessage::Reply(msg))
     }
 

@@ -595,12 +595,12 @@ impl RpcDht {
     }
 
     /// Handle a ping request
-    fn on_ping(&mut self, msg: RequestMsgData, peer: &Peer) {
+    fn on_ping(&mut self, msg: RequestMsgData, peer: &Peer /* peer who sent ping */) {
         let msg = ReplyMsgData {
             tid: msg.tid,
             to: peer.clone(),
             id: (!self.ephemeral).then(|| self.id.get().preimage().0),
-            token: None,
+            token: self.io.token(peer, 1).ok(),
             closer_nodes: vec![],
             error: 0,
             value: None,
@@ -629,7 +629,7 @@ impl RpcDht {
             tid: request.tid,
             to: peer.clone(),
             id: (!self.ephemeral).then(|| self.id.get().preimage().0),
-            token: None,
+            token: self.io.token(&peer, 1).ok(),
             closer_nodes,
             error: 0,
             value: None,
@@ -711,9 +711,9 @@ impl RpcDht {
                 }
                 self.io.reply(ReplyMsgData {
                     tid: request.tid,
+                    token: self.io.token(&peer, 1).ok(),
                     to: peer,
                     id: (!self.ephemeral).then(|| self.id.get().preimage().0),
-                    token: None,
                     closer_nodes: vec![],
                     error: 0,
                     value: None,
@@ -744,11 +744,12 @@ impl RpcDht {
             }
         };
         peer.addr.set_port(port);
+        let token = self.io.token(&peer, 1).ok();
         self.io.reply(ReplyMsgData {
             tid: request.tid,
             to: peer,
             id: (!self.ephemeral).then(|| self.id.get().preimage().0),
-            token: None,
+            token,
             closer_nodes: vec![],
             error: 0,
             value: None,
