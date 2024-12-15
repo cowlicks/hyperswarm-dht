@@ -7,7 +7,7 @@ use tokio::sync::oneshot::error::RecvError;
 
 use ed25519_dalek::{PublicKey, PUBLIC_KEY_LENGTH};
 use futures::Stream;
-use query::CommandQueryResponse;
+use query::{CommandQueryResponse, Commit};
 use std::{
     array::TryFromSliceError,
     borrow::Borrow,
@@ -353,11 +353,18 @@ impl RpcDht {
 
     pub fn bootstrap(&mut self) {
         if !self.bootstrap_nodes.is_empty() {
-            self.query(
-                InternalCommand::FindNode.into(),
-                self.id.get().clone(),
-                None,
-            );
+            let target = self.id.get().clone();
+            /// get closest peers
+            let peers = self
+                .kbuckets
+                .closest(&target)
+                .take(usize::from(K_VALUE))
+                .map(|e| PeerId::new(e.node.value.addr, e.node.key.preimage().clone()))
+                .map(Key::new)
+                .collect::<Vec<_>>();
+            /// with bootstrap nodes
+            let bootstrap_nodes: Vec<Peer> = self.bootstrap_nodes.iter().map(Peer::from).collect();
+            self.queries.bootstrap(target, peers, bootstrap_nodes);
         } else if !self.bootstrapped {
             self.queued_events.push_back(RpcDhtEvent::Bootstrapped {
                 stats: QueryStats::empty(),
@@ -370,8 +377,14 @@ impl RpcDht {
         self.bootstrapped
     }
 
-    pub fn query(&mut self, cmd: Command, target: Key<IdBytes>, value: Option<Vec<u8>>) -> QueryId {
-        self.run_command(cmd, target, value)
+    pub fn query(
+        &mut self,
+        cmd: Command,
+        target: Key<IdBytes>,
+        value: Option<Vec<u8>>,
+        commit: Commit,
+    ) -> QueryId {
+        self.run_command(cmd, target, value, commit)
     }
 
     fn run_command(
@@ -379,6 +392,7 @@ impl RpcDht {
         cmd: Command,
         target: Key<IdBytes>,
         value: Option<Vec<u8>>,
+        commit: Commit,
     ) -> QueryId {
         let peers = self
             .kbuckets
@@ -390,7 +404,7 @@ impl RpcDht {
 
         let bootstrap_nodes: Vec<Peer> = self.bootstrap_nodes.iter().map(Peer::from).collect();
         self.queries
-            .add_stream(cmd, peers, target, value, bootstrap_nodes)
+            .add_stream(cmd, peers, target, value, bootstrap_nodes, commit)
     }
 
     pub fn ping(&mut self, peer: &Peer) -> QueryAndTid {

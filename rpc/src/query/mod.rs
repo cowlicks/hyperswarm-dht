@@ -84,21 +84,34 @@ impl QueryPool {
         id
     }
 
+    pub fn bootstrap(
+        &mut self,
+        target: Key<IdBytes>,
+        peers: Vec<Key<PeerId>>,
+        bootstrap: Vec<Peer>,
+    ) -> QueryId {
+        self.add_stream(
+            Command::Internal(crate::InternalCommand::FindNode),
+            peers,
+            target,
+            None,
+            bootstrap,
+            Commit::No,
+        )
+    }
+
     /// Adds a query to the pool.
-    pub fn add_stream<I>(
+    pub fn add_stream(
         &mut self,
         cmd: Command,
-        peers: I,
+        peers: Vec<Key<PeerId>>,
         target: Key<IdBytes>,
         value: Option<Vec<u8>>,
         bootstrap: Vec<Peer>,
-    ) -> QueryId
-    where
-        I: IntoIterator<Item = Key<PeerId>>,
-        //S: IntoIterator<Item = Peer>,
-    {
+        commit: Commit,
+    ) -> QueryId {
         let id = self.next_query_id();
-        let query = Query::bootstrap(
+        let query = Query::new(
             id,
             cmd,
             self.config.parallelism,
@@ -107,6 +120,7 @@ impl QueryPool {
             value,
             peers,
             bootstrap,
+            commit,
         );
         self.queries.insert(id, query);
         id
@@ -191,6 +205,13 @@ pub enum QueryPoolState<'a> {
 }
 
 #[derive(Debug)]
+pub enum Commit {
+    No,
+    Auto,
+    Custom,
+}
+
+#[derive(Debug)]
 pub struct Query {
     /// identifier for this stream
     id: QueryId,
@@ -206,24 +227,22 @@ pub struct Query {
     value: Option<Vec<u8>>,
     /// The inner query state.
     inner: QueryTable,
+    /// Whether to send commits when query completes
+    commit: Commit,
 }
 
 impl Query {
-    #[allow(clippy::too_many_arguments)]
-    pub fn bootstrap<I, S>(
+    pub fn new(
         id: QueryId,
         cmd: Command,
         parallelism: NonZeroUsize,
         local_id: Key<IdBytes>,
         target: Key<IdBytes>,
         value: Option<Vec<u8>>,
-        peers: I,
-        bootstrap: S,
-    ) -> Self
-    where
-        I: IntoIterator<Item = Key<PeerId>>,
-        S: IntoIterator<Item = Peer>,
-    {
+        peers: Vec<Key<PeerId>>,
+        bootstrap: Vec<Peer>,
+        commit: Commit,
+    ) -> Self {
         Self {
             id,
             parallelism,
@@ -232,6 +251,7 @@ impl Query {
             stats: QueryStats::empty(),
             value,
             inner: QueryTable::new(local_id, target, peers),
+            commit,
         }
     }
 
