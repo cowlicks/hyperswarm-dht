@@ -13,7 +13,7 @@ use std::{
 };
 
 use compact_encoding::EncodingError;
-use dht_rpc::cenc::generic_hash;
+use dht_rpc::{cenc::generic_hash, query::Commit};
 use ed25519_dalek::{Keypair, PublicKey, Signature};
 use either::Either;
 use fnv::FnvHashMap;
@@ -209,6 +209,7 @@ impl HyperDht {
             Command::External(ExternalCommand(commands::FIND_PEER)),
             target,
             None,
+            Commit::No,
         )
     }
 
@@ -243,6 +244,7 @@ impl HyperDht {
             Command::External(ExternalCommand(IMMUTABLE_STORE_CMD)),
             Key::new(key.clone()),
             None,
+            Commit::No,
         );
 
         self.queries.insert(
@@ -253,6 +255,7 @@ impl HyperDht {
         Either::Left(query_id)
     }
 
+    /// Gets a value stored with a public key
     /// Initiates an iterative query to the closest peers to fetch the `Mutable`
     /// from the DHT.
     ///
@@ -283,6 +286,7 @@ impl HyperDht {
             Command::External(ExternalCommand(MUTABLE_STORE_CMD)),
             Key::new(get.key.clone()),
             Some(buf),
+            Commit::Custom, // maybe could be auto, looks the same
         );
 
         self.queries.insert(
@@ -314,6 +318,13 @@ impl HyperDht {
         // set locally for easy cached retrieval
         self.store.put_immutable(key.clone(), value.clone());
 
+        let query_id = self.inner.query(
+            Command::External(ExternalCommand(commands::IMMUTABLE_PUT)),
+            Key::new(key.clone()),
+            None,
+            Commit::Custom, // maybe could be auto, looks the same
+        );
+
         /*
         let query_id = self.inner.update(
             IMMUTABLE_STORE_CMD,
@@ -328,6 +339,8 @@ impl HyperDht {
         todo!()
     }
 
+    /// Stores a mutable value key'd by the public key
+    ///
     /// Initiates an iterative query to the closest peers to put the value as
     /// `Mutable`.
     ///
@@ -462,13 +475,26 @@ impl HyperDht {
             Command::External(ExternalCommand(commands::LOOKUP)),
             target,
             None,
+            Commit::No,
         )
     }
 
-    /// Initiates an iterative query to announce the topic to the closest peers.
+    /// Do a LOOKUP and send an UNANNOUNCE to each node that replies
+    fn lookup_and_unannounce(&mut self, target: Key<IdBytes>, keypair: Keypair) -> QueryId {
+        let query_id = self.inner.query(
+            Command::External(ExternalCommand(commands::LOOKUP)),
+            target,
+            None,
+            Commit::Custom,
+        );
+        self.queries
+            .insert(query_id, QueryStreamType::LookupAndUnannounce(todo!()));
+        query_id
+    }
+
+    /// Announce the topic to the closest peers
     ///
-    /// The result of the query is delivered in a
-    /// [`HyperDhtEvent::AnnounceResult`].
+    /// Query result is a [`HyperDhtEvent::AnnounceResult`].
     pub fn announce(&mut self, opts: impl Into<QueryOpts>) -> QueryId {
         let opts = opts.into();
 
@@ -527,6 +553,11 @@ impl HyperDht {
                 QueryStreamType::LookUp(inner)
                 | QueryStreamType::Announce(inner)
                 | QueryStreamType::UnAnnounce(inner) => inner.inject_response(resp),
+                QueryStreamType::LookupAndUnannounce(inner) => {
+                    // do unannnounce request
+                    // store request id to wait for request to finish
+                    todo!()
+                }
                 QueryStreamType::GetImmutable(get) => {
                     if let Some(value) = resp.value {
                         let key = crypto::hash_id(&value);
@@ -1029,6 +1060,7 @@ pub struct Peers {
 #[derive(Debug)]
 #[allow(unused)]
 enum QueryStreamType {
+    LookupAndUnannounce(QueryStreamInner),
     LookUp(QueryStreamInner),
     Announce(QueryStreamInner),
     UnAnnounce(QueryStreamInner),
@@ -1051,6 +1083,7 @@ enum QueryStreamType {
 impl QueryStreamType {
     fn finalize(self, query_id: QueryId) -> HyperDhtEvent {
         match self {
+            QueryStreamType::LookupAndUnannounce(_inner) => todo!(),
             QueryStreamType::LookUp(inner) => HyperDhtEvent::LookupResult {
                 lookup: Lookup {
                     peers: inner.responses,
