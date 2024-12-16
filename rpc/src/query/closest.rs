@@ -20,7 +20,7 @@
 
 use crate::{
     cenc::calculate_peer_id,
-    kbucket::{distance, Distance, KeyBytes, ALPHA_VALUE, K_VALUE},
+    kbucket::{distance, Distance, Key, ALPHA_VALUE, K_VALUE},
     IdBytes, Peer,
 };
 use std::{
@@ -43,7 +43,7 @@ pub struct ClosestPeersIter {
 
     /// The target whose distance to any peer determines the position of
     /// the peer in the iterator.
-    target: KeyBytes,
+    target: Key<IdBytes>,
 
     /// The internal iterator state.
     state: State,
@@ -92,7 +92,7 @@ impl Default for ClosestPeersIterConfig {
 
 impl ClosestPeersIter {
     /// Creates a new iterator with a default configuration.
-    pub fn new<I>(target: KeyBytes, known_closest_peers: I) -> Self
+    pub fn new<I>(target: Key<IdBytes>, known_closest_peers: I) -> Self
     where
         I: IntoIterator<Item = Peer>,
     {
@@ -104,24 +104,21 @@ impl ClosestPeersIter {
     }
 
     /// Creates a new iterator with the given configuration.
-    pub fn with_config<I, T>(
+    pub fn with_config<I>(
         config: ClosestPeersIterConfig,
-        target: T,
+        target: Key<IdBytes>,
         known_closest_peers: I,
     ) -> Self
     where
         I: IntoIterator<Item = Peer>,
-        T: Into<KeyBytes>,
     {
-        let target = target.into();
-
         // Initialise the closest peers to start the iterator with.
         let closest_peers = BTreeMap::from_iter(
             known_closest_peers
                 .into_iter()
                 .map(|p| {
                     let id = calculate_peer_id(&p);
-                    let distance = distance(id.as_slice(), target.0.as_slice());
+                    let distance = target.distance(id.as_slice());
                     (
                         distance,
                         IterPeer {
@@ -168,7 +165,7 @@ impl ClosestPeersIter {
         }
 
         let id = calculate_peer_id(peer);
-        let distance = distance(&id, &self.target.0);
+        let distance = distance(&id, &self.target.as_slice());
 
         // Mark the peer as succeeded.
         match self.closest_peers.entry(distance) {
@@ -210,7 +207,7 @@ impl ClosestPeersIter {
         let mut progress = self.closest_peers.len() < self.config.num_results.get();
         for peer in closer_peers {
             let peer = IterPeer::from(peer.clone());
-            let distance = peer.distance(self.target.0.as_slice());
+            let distance = peer.distance(self.target.as_slice());
 
             let is_first_insert = match self.closest_peers.entry(distance) {
                 Entry::Occupied(_) => false,
@@ -262,7 +259,7 @@ impl ClosestPeersIter {
         }
 
         let id = calculate_peer_id(peer);
-        let distance = distance(&id, &self.target.0);
+        let distance = distance(&id, &self.target.as_slice());
 
         match self.closest_peers.entry(distance) {
             Entry::Vacant(_) => return false,

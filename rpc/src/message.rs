@@ -10,6 +10,7 @@ pub struct ReplyMsgData {
     pub tid: u16,
     pub to: Peer,
     pub id: Option<[u8; 32]>,
+    /// TODO remove option? we always send token with reply I thought
     pub token: Option<[u8; 32]>,
     pub closer_nodes: Vec<Peer>,
     pub error: usize,

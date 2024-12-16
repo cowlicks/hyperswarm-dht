@@ -54,11 +54,12 @@ construct_uint! {
 #[derive(Clone, Debug)]
 pub struct Key<T> {
     preimage: T,
-    bytes: KeyBytes,
 }
 
-fn to_keybytes<T: Borrow<[u8]>>(x: &T) -> KeyBytes {
-    KeyBytes(*GenericArray::from_slice(x.borrow()))
+impl AsRef<Key<IdBytes>> for Key<IdBytes> {
+    fn as_ref(&self) -> &Key<IdBytes> {
+        &self
+    }
 }
 
 impl<T: Borrow<[u8]>> Key<T> {
@@ -68,8 +69,7 @@ impl<T: Borrow<[u8]>> Key<T> {
     /// The preimage of type `T` is preserved. See [`Key::preimage`] and
     /// [`Key::into_preimage`].
     pub fn new(preimage: T) -> Key<T> {
-        let bytes = to_keybytes(&preimage);
-        Key { preimage, bytes }
+        Key { preimage }
     }
 
     /// Borrows the preimage of the key.
@@ -85,16 +85,14 @@ impl<T: Borrow<[u8]>> Key<T> {
     /// Computes the distance of the keys according to the XOR metric.
     pub fn distance<U>(&self, other: &U) -> Distance
     where
-        U: AsRef<KeyBytes>,
+        U: AsRef<[u8]> + ?Sized,
     {
         let x: &[u8] = self.preimage.borrow();
-        distance(x, other.as_ref().0.as_slice())
+        distance(x, other.as_ref())
     }
-}
 
-impl<T> From<Key<T>> for KeyBytes {
-    fn from(val: Key<T>) -> Self {
-        val.bytes
+    pub fn as_slice(&self) -> &[u8] {
+        self.preimage().borrow()
     }
 }
 
@@ -106,20 +104,14 @@ impl From<IdBytes> for Key<IdBytes> {
 
 impl From<PeerId> for Key<PeerId> {
     fn from(p: PeerId) -> Self {
-        let bytes = to_keybytes(&p);
-        Key { preimage: p, bytes }
-    }
-}
-
-impl<T> AsRef<KeyBytes> for Key<T> {
-    fn as_ref(&self) -> &KeyBytes {
-        &self.bytes
+        Key { preimage: p }
     }
 }
 
 impl<T, U> PartialEq<Key<U>> for Key<T> {
     fn eq(&self, other: &Key<U>) -> bool {
-        self.bytes == other.bytes
+        ///self.bytes == other.bytes
+        todo!()
     }
 }
 
@@ -127,18 +119,9 @@ impl<T> Eq for Key<T> {}
 
 impl<T> Hash for Key<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.bytes.0.hash(state);
-    }
-}
-
-/// The raw bytes of a key in the DHT keyspace.
-#[derive(PartialEq, Eq, Clone)]
-pub struct KeyBytes(pub GenericArray<u8, U32>);
-impl std::fmt::Debug for KeyBytes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("KeyBytes")
-            .field(&debug_vec(&self.0))
-            .finish()
+        //self.bytes.0.hash(state);
+        // is this used
+        todo!()
     }
 }
 
@@ -146,42 +129,6 @@ pub fn distance(a: &[u8], b: &[u8]) -> Distance {
     let a = U256::from(a);
     let b = U256::from(b);
     Distance(a ^ b)
-}
-
-impl KeyBytes {
-    /// Creates a new key in the DHT keyspace by running the given
-    /// value through a random oracle.
-    pub fn new<T>(value: T) -> Self
-    where
-        T: Borrow<[u8]>,
-    {
-        let x: &[u8] = value.borrow();
-        KeyBytes(*GenericArray::from_slice(x))
-    }
-
-    /// Computes the distance of the keys according to the XOR metric.
-    pub fn distance<U>(&self, other: &U) -> Distance
-    where
-        U: AsRef<KeyBytes>,
-    {
-        distance(&self.0, other.as_ref().0.as_slice())
-    }
-
-    /// Returns the uniquely determined key with the given distance to `self`.
-    ///
-    /// This implements the following equivalence:
-    ///
-    /// `self xor other = distance <==> other = self xor distance`
-    pub fn for_distance(&self, d: Distance) -> KeyBytes {
-        let key_int = U256::from(self.0.as_slice()) ^ d.0;
-        KeyBytes(GenericArray::from(<[u8; 32]>::from(key_int)))
-    }
-}
-
-impl AsRef<KeyBytes> for KeyBytes {
-    fn as_ref(&self) -> &KeyBytes {
-        self
-    }
 }
 
 /// A distance between two keys in the DHT keyspace.

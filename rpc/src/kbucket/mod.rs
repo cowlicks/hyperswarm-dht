@@ -79,6 +79,8 @@ use arrayvec::{self, ArrayVec};
 use bucket::KBucket;
 pub use entry::*;
 
+use crate::IdBytes;
+
 mod bucket;
 mod entry;
 mod key;
@@ -165,7 +167,7 @@ impl BucketIndex {
 
 impl<TKey, TVal> KBucketsTable<TKey, TVal>
 where
-    TKey: Clone + AsRef<KeyBytes>,
+    TKey: Clone + AsRef<Key<IdBytes>>,
     TVal: Clone,
 {
     /// Creates a new, empty Kademlia routing table with entries partitioned
@@ -192,7 +194,7 @@ where
     /// Returns an `Entry` for the given key, representing the state of the
     /// entry in the routing table.
     pub fn entry<'a>(&'a mut self, key: &'a TKey) -> Entry<'a, TKey, TVal> {
-        let index = BucketIndex::new(&self.local_key.as_ref().distance(key));
+        let index = BucketIndex::new(&self.local_key.as_ref().distance(key.as_ref().as_slice()));
         if let Some(i) = index {
             let bucket = &mut self.buckets[i.get()];
             if let Some(applied) = bucket.apply_pending() {
@@ -261,9 +263,9 @@ where
     /// increasing distance.
     pub fn closest_keys<'a, T>(&'a mut self, target: &'a T) -> impl Iterator<Item = TKey> + 'a
     where
-        T: Clone + AsRef<KeyBytes>,
+        T: Clone + AsRef<Key<IdBytes>>,
     {
-        let distance = self.local_key.as_ref().distance(target);
+        let distance = self.local_key.as_ref().distance(target.as_ref().as_slice());
         ClosestIter {
             target,
             iter: None,
@@ -282,10 +284,10 @@ where
         target: &'a T,
     ) -> impl Iterator<Item = EntryView<TKey, TVal>> + 'a
     where
-        T: Clone + AsRef<KeyBytes>,
+        T: Clone + AsRef<Key<IdBytes>>,
         TVal: Clone,
     {
-        let distance = self.local_key.as_ref().distance(target);
+        let distance = self.local_key.as_ref().distance(target.as_ref().as_slice());
         ClosestIter {
             target,
             iter: None,
@@ -307,17 +309,16 @@ where
     ///
     /// The number of nodes between the local node and the target are
     /// calculated by backtracking from the target towards the local key.
-    pub fn count_nodes_between<T>(&mut self, target: &T) -> usize
-    where
-        T: AsRef<KeyBytes>,
-    {
+    pub fn count_nodes_between(&mut self, target: &Key<IdBytes>) -> usize {
         let local_key = self.local_key.clone();
-        let distance = target.as_ref().distance(&local_key);
+        let distance = target.as_ref().distance(&local_key.as_ref().as_slice());
         let mut iter = ClosestBucketsIter::new(distance).take_while(|i| i.get() != 0);
         if let Some(i) = iter.next() {
             let num_first = self.buckets[i.get()]
                 .iter()
-                .filter(|(n, _)| n.key.as_ref().distance(&local_key) <= distance)
+                .filter(|(n, _)| {
+                    n.key.as_ref().distance(&local_key.as_ref().as_slice()) <= distance
+                })
                 .count();
             let num_rest: usize = iter.map(|i| self.buckets[i.get()].num_entries()).sum();
             num_first + num_rest
@@ -444,11 +445,11 @@ impl Iterator for ClosestBucketsIter {
 
 impl<TTarget, TKey, TVal, TMap, TOut> Iterator for ClosestIter<'_, TTarget, TKey, TVal, TMap, TOut>
 where
-    TTarget: AsRef<KeyBytes>,
-    TKey: Clone + AsRef<KeyBytes>,
+    TTarget: AsRef<Key<IdBytes>>,
+    TKey: Clone + AsRef<Key<IdBytes>>,
     TVal: Clone,
     TMap: Fn(&KBucket<TKey, TVal>) -> ArrayVec<[TOut; K_VALUE.get()]>,
-    TOut: AsRef<KeyBytes>,
+    TOut: AsRef<Key<IdBytes>>,
 {
     type Item = TOut;
 
@@ -469,8 +470,8 @@ where
                         v.sort_by(|a, b| {
                             self.target
                                 .as_ref()
-                                .distance(a.as_ref())
-                                .cmp(&self.target.as_ref().distance(b.as_ref()))
+                                .distance(a.as_ref().as_slice())
+                                .cmp(&self.target.as_ref().distance(b.as_ref().as_slice()))
                         });
                         self.iter = Some(v.into_iter());
                     } else {
@@ -490,7 +491,7 @@ pub struct KBucketRef<'a, TPeerId, TVal> {
 
 impl<TKey, TVal> KBucketRef<'_, TKey, TVal>
 where
-    TKey: Clone + AsRef<KeyBytes>,
+    TKey: Clone + AsRef<Key<IdBytes>>,
     TVal: Clone,
 {
     /// Returns the number of entries in the bucket.

@@ -166,7 +166,7 @@ pub struct AppliedPending<TKey, TVal> {
 
 impl<TKey, TVal> KBucket<TKey, TVal>
 where
-    TKey: Clone + AsRef<KeyBytes>,
+    TKey: Clone + AsRef<Key<IdBytes>>,
     TVal: Clone,
 {
     /// Creates a new `KBucket` with the given timeout for pending entries.

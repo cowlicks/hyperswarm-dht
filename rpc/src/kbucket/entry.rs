@@ -69,8 +69,8 @@ pub struct EntryView<TKey, TVal> {
     pub status: NodeStatus,
 }
 
-impl<TKey: AsRef<KeyBytes>, TVal> AsRef<KeyBytes> for EntryView<TKey, TVal> {
-    fn as_ref(&self) -> &KeyBytes {
+impl<TKey: AsRef<Key<IdBytes>>, TVal> AsRef<Key<IdBytes>> for EntryView<TKey, TVal> {
+    fn as_ref(&self) -> &Key<IdBytes> {
         self.node.key.as_ref()
     }
 }
@@ -98,7 +98,7 @@ struct EntryRef<'a, TKey, TVal> {
 
 impl<'a, TKey, TVal> Entry<'a, TKey, TVal>
 where
-    TKey: Clone + AsRef<KeyBytes>,
+    TKey: Clone + AsRef<Key<IdBytes>>,
     TVal: Clone,
 {
     /// Creates a new `Entry` for a `Key`, encapsulating access to a bucket.
@@ -172,7 +172,7 @@ pub struct PresentEntry<'a, TKey, TVal>(EntryRef<'a, TKey, TVal>);
 
 impl<'a, TKey, TVal> PresentEntry<'a, TKey, TVal>
 where
-    TKey: Clone + AsRef<KeyBytes>,
+    TKey: Clone + AsRef<Key<IdBytes>>,
     TVal: Clone,
 {
     fn new(bucket: &'a mut KBucket<TKey, TVal>, key: &'a TKey) -> Self {
@@ -217,7 +217,7 @@ pub struct PendingEntry<'a, TKey, TVal>(EntryRef<'a, TKey, TVal>);
 
 impl<'a, TKey, TVal> PendingEntry<'a, TKey, TVal>
 where
-    TKey: Clone + AsRef<KeyBytes>,
+    TKey: Clone + AsRef<Key<IdBytes>>,
     TVal: Clone,
 {
     fn new(bucket: &'a mut KBucket<TKey, TVal>, key: &'a TKey) -> Self {
@@ -262,7 +262,7 @@ pub struct AbsentEntry<'a, TKey, TVal>(EntryRef<'a, TKey, TVal>);
 
 impl<'a, TKey, TVal> AbsentEntry<'a, TKey, TVal>
 where
-    TKey: Clone + AsRef<KeyBytes>,
+    TKey: Clone + AsRef<Key<IdBytes>>,
     TVal: Clone,
 {
     fn new(bucket: &'a mut KBucket<TKey, TVal>, key: &'a TKey) -> Self {

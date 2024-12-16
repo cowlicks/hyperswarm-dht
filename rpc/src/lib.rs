@@ -32,7 +32,7 @@ use rand::{
 use crate::{
     cenc::generic_hash,
     jobs::PeriodicJob,
-    kbucket::{Entry, EntryView, InsertResult, KBucketsTable, Key, KeyBytes, NodeStatus, K_VALUE},
+    kbucket::{Entry, EntryView, InsertResult, KBucketsTable, Key, NodeStatus, K_VALUE},
     query::QueryId,
     util::pretty_bytes,
 };
@@ -175,12 +175,6 @@ impl TryFrom<u8> for InternalCommand {
             3 => DownHint,
             x => return Err(crate::Error::InvalidRpcCommand(x)),
         })
-    }
-}
-
-impl From<[u8; 32]> for KeyBytes {
-    fn from(value: [u8; 32]) -> Self {
-        Self::new(value)
     }
 }
 
@@ -354,7 +348,6 @@ impl RpcDht {
     pub fn bootstrap(&mut self) {
         if !self.bootstrap_nodes.is_empty() {
             let target = self.id.get().clone();
-            /// get closest peers
             let peers = self
                 .kbuckets
                 .closest(&target)
@@ -362,7 +355,6 @@ impl RpcDht {
                 .map(|e| PeerId::new(e.node.value.addr, e.node.key.preimage().clone()))
                 .map(Key::new)
                 .collect::<Vec<_>>();
-            /// with bootstrap nodes
             let bootstrap_nodes: Vec<Peer> = self.bootstrap_nodes.iter().map(Peer::from).collect();
             self.queries.bootstrap(target, peers, bootstrap_nodes);
         } else if !self.bootstrapped {
@@ -590,7 +582,7 @@ impl RpcDht {
         let t: Vec<Peer> = match (has_closer_nodes, request.target) {
             (true, Some(t)) => self
                 .kbuckets
-                .closest(&KeyBytes::from(t))
+                .closest(&Key::new(IdBytes::from(t)))
                 .take(usize::from(K_VALUE))
                 .map(|entry| Peer::from(entry.node.value.addr))
                 .collect(),
@@ -629,7 +621,7 @@ impl RpcDht {
         let closer_nodes: Vec<Peer> = match request.target {
             Some(t) => self
                 .kbuckets
-                .closest(&KeyBytes::from(t))
+                .closest(&Key::new(IdBytes::from(t)))
                 .take(usize::from(K_VALUE))
                 .map(|entry| Peer::from(entry.node.value.addr))
                 .collect(),
@@ -654,7 +646,7 @@ impl RpcDht {
     fn closer_nodes(&mut self, key: IdBytes, num: usize) -> Vec<Peer> {
         let nodes = self
             .kbuckets
-            .closest(&KeyBytes::new(key))
+            .closest(&Key::new(key))
             .take(num)
             .map(|p| Peer::from(&p.node.value.addr))
             .collect::<Vec<_>>();
@@ -934,9 +926,9 @@ pub enum RpcDhtEvent {
         id: QueryId,
         /// The command of the executed query.
         cmd: Command,
-        /// TODO store these
+        /// TODO store these.
         closest_replies: Vec<ReplyMsgData>,
-        ///
+        /// Kind of commit
         commit_kind: Commit,
     },
     /// A completed query.
