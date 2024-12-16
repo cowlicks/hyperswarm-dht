@@ -926,6 +926,19 @@ pub enum RpcDhtEvent {
         /// Execution statistics from the bootstrap query.
         stats: QueryStats,
     },
+
+    /// Query arrived at final node, and neighbors need to be committed.
+    // dht.request({ token: reply.token, target: query.target, command: query.command, value: query.value }, reply.from)
+    ReadyToCommit {
+        /// The ID of the query that finished.
+        id: QueryId,
+        /// The command of the executed query.
+        cmd: Command,
+        /// TODO store these
+        closest_replies: Vec<ReplyMsgData>,
+        ///
+        commit_kind: Commit,
+    },
     /// A completed query.
     ///
     /// No more responses are expected for this query
