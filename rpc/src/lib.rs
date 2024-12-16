@@ -3,6 +3,7 @@
 #![allow(unreachable_code)]
 
 use compact_encoding::EncodingError;
+use kbucket::{distance, Distance};
 use tokio::sync::oneshot::error::RecvError;
 
 use ed25519_dalek::{PublicKey, PUBLIC_KEY_LENGTH};
@@ -1201,6 +1202,9 @@ impl IdBytes {
 
     pub fn to_vec(&self) -> Vec<u8> {
         self.0.to_vec()
+    }
+    pub fn distance(&self, other: impl AsRef<[u8]>) -> Distance {
+        distance(&self.0, other.as_ref())
     }
 }
 
