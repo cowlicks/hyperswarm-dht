@@ -6,7 +6,7 @@ use futures::task::Poll;
 use wasm_timer::Instant;
 
 use crate::{
-    kbucket::{Key, ALPHA_VALUE, K_VALUE},
+    kbucket::{distance, Key, ALPHA_VALUE, K_VALUE},
     IdBytes, PeerId,
 };
 
@@ -229,6 +229,31 @@ pub struct Query {
     inner: QueryTable,
     /// Whether to send commits when query completes
     commit: Commit,
+    /// Closest replies are store for commiting data
+    closest_replies: Vec<ReplyMsgData>,
+}
+
+struct ClosestReplies {
+    target: Key<IdBytes>,
+    arr: Vec<ReplyMsgData>,
+}
+
+/// List of replies ordererd by how close the node is to the target.
+/// right side is farther from target
+impl ClosestReplies {
+    fn _maybe_add(&mut self, reply: ReplyMsgData) -> Option<usize> {
+        let Some(id) = reply.id.clone() else {
+            return None;
+        };
+
+        //let reply_distance = self.target.distance(&id);
+        //if self.arr.len() < K_VALUE.into()
+        //    || reply_distance < self.target.distance(&self.arr.last().unwrap().id.unwrap())
+        //{
+        //    todo!()
+        //}
+        todo!()
+    }
 }
 
 impl Query {
@@ -252,6 +277,7 @@ impl Query {
             value,
             inner: QueryTable::new(local_id, target, peers),
             commit,
+            closest_replies: vec![],
         }
     }
 
