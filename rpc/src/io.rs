@@ -11,7 +11,6 @@ use compact_encoding::State;
 
 use crate::{
     constants::{REQUEST_ID, RESPONSE_ID},
-    kbucket::Key,
     IdBytes, Result,
 };
 use fnv::FnvHashMap;
@@ -263,7 +262,7 @@ struct InflightRequest {
 
 #[derive(Debug)]
 pub struct IoHandler {
-    id: Slave<Key<IdBytes>>,
+    id: Slave<IdBytes>,
     ephemeral: bool,
     socket: MessageDataStream,
     /// Messages to send
@@ -279,7 +278,7 @@ pub struct IoHandler {
 }
 
 impl IoHandler {
-    pub fn new(id: Slave<Key<IdBytes>>, socket: MessageDataStream, config: IoConfig) -> Self {
+    pub fn new(id: Slave<IdBytes>, socket: MessageDataStream, config: IoConfig) -> Self {
         Self {
             id,
             ephemeral: true,
@@ -320,7 +319,7 @@ impl IoHandler {
         query_id: Option<QueryId>,
     ) -> QueryAndTid {
         let id = if !self.ephemeral {
-            Some(self.id.get().preimage().0)
+            Some(self.id.get().0)
         } else {
             None
         };
@@ -350,7 +349,7 @@ impl IoHandler {
         peer: &Peer,
     ) -> crate::Result<()> {
         let id = if !self.ephemeral {
-            Some(self.id.get().preimage().0)
+            Some(self.id.get().0)
         } else {
             None
         };
@@ -384,7 +383,7 @@ impl IoHandler {
         peer: Peer,
     ) -> crate::Result<()> {
         let id = if !self.ephemeral {
-            Some(self.id.get().preimage().0)
+            Some(self.id.get().0)
         } else {
             None
         };
@@ -555,7 +554,7 @@ mod test {
     use super::*;
 
     fn new_io() -> IoHandler {
-        let view = Master::new(Key::new(IdBytes::from(thirty_two_random_bytes()))).view();
+        let view = Master::new(IdBytes::from(thirty_two_random_bytes())).view();
         let socket = MessageDataStream::defualt_bind().unwrap();
         IoHandler::new(view, socket, Default::default())
     }

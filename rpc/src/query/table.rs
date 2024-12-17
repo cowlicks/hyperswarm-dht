@@ -2,26 +2,23 @@ use std::{net::SocketAddr, num::NonZeroUsize};
 
 use fnv::FnvHashMap;
 
-use crate::{
-    kbucket::{Key, K_VALUE},
-    IdBytes, PeerId,
-};
+use crate::{kbucket::K_VALUE, IdBytes, PeerId};
 
 #[derive(Debug)]
 pub struct QueryTable {
-    id: Key<IdBytes>,
-    target: Key<IdBytes>,
+    id: IdBytes,
+    target: IdBytes,
     /// The closest peers to the target.
-    peers: FnvHashMap<Key<PeerId>, PeerState>,
+    peers: FnvHashMap<PeerId, PeerState>,
 }
 
 impl QueryTable {
-    pub fn new<T>(id: Key<IdBytes>, target: Key<IdBytes>, known_closest_peers: T) -> Self
+    pub fn new<T>(id: IdBytes, target: IdBytes, known_closest_peers: T) -> Self
     where
-        T: IntoIterator<Item = Key<PeerId>>,
+        T: IntoIterator<Item = PeerId>,
     {
         // Initialise the closest peers to start the iterator with.
-        let peers: FnvHashMap<Key<PeerId>, PeerState> = known_closest_peers
+        let peers: FnvHashMap<PeerId, PeerState> = known_closest_peers
             .into_iter()
             .map(|key| (key, PeerState::NotContacted))
             .collect();
@@ -29,49 +26,49 @@ impl QueryTable {
         Self { id, target, peers }
     }
 
-    pub fn peers(&self) -> &FnvHashMap<Key<PeerId>, PeerState> {
+    pub fn peers(&self) -> &FnvHashMap<PeerId, PeerState> {
         &self.peers
     }
 
-    pub(crate) fn peers_mut(&mut self) -> &mut FnvHashMap<Key<PeerId>, PeerState> {
+    pub(crate) fn peers_mut(&mut self) -> &mut FnvHashMap<PeerId, PeerState> {
         &mut self.peers
     }
 
-    pub fn target(&self) -> &Key<IdBytes> {
+    pub fn target(&self) -> &IdBytes {
         &self.target
     }
 
     pub fn get_peer(&self, peer: &crate::Peer) -> Option<crate::Peer> {
         self.peers
             .keys()
-            .filter(|p| p.preimage().addr == peer.addr)
-            .map(|p| crate::Peer::from(p.preimage().addr))
+            .filter(|p| p.addr == peer.addr)
+            .map(|p| crate::Peer::from(p.addr))
             .next()
     }
 
     pub fn get_token(&self, peer: &crate::Peer) -> Option<&Vec<u8>> {
         self.peers
             .iter()
-            .filter(|(p, _)| p.preimage().addr == peer.addr)
+            .filter(|(p, _)| p.addr == peer.addr)
             .map(|(_, s)| s.get_token())
             .next()
             .flatten()
     }
 
     pub(crate) fn add_unverified(&mut self, peer: PeerId) {
-        if &peer.id == self.id.preimage() {
+        if peer.id == self.id {
             return;
         }
-        self.peers.insert(Key::new(peer), PeerState::NotContacted);
+        self.peers.insert(peer, PeerState::NotContacted);
     }
 
     pub(crate) fn add_verified(
         &mut self,
-        key: Key<PeerId>,
+        key: PeerId,
         roundtrip_token: Vec<u8>,
         to: Option<SocketAddr>,
     ) {
-        if key == self.id {
+        if key.id == self.id {
             return;
         }
         if let Some(prev) = self.peers.get_mut(&key) {
@@ -98,7 +95,7 @@ impl QueryTable {
     }
 
     pub(crate) fn into_result(self) -> impl Iterator<Item = (PeerId, PeerState)> {
-        self.peers.into_iter().map(|(k, v)| (k.into_preimage(), v))
+        self.peers.into_iter().map(|(k, v)| (k.clone(), v))
     }
 }
 
@@ -106,7 +103,7 @@ impl QueryTable {
 #[allow(unused)] // FIXME bg: why is this not used?
 #[derive(Debug, Clone)]
 pub(crate) struct Peer {
-    key: Key<PeerId>,
+    key: PeerId,
     state: PeerState,
 }
 

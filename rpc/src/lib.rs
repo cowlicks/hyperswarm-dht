@@ -15,8 +15,8 @@ use std::{
     collections::{HashSet, VecDeque},
     convert::{TryFrom, TryInto},
     fmt::Display,
-    net::AddrParseError,
-    net::{SocketAddr, ToSocketAddrs},
+    net::{AddrParseError, SocketAddr, ToSocketAddrs},
+    ops::Deref,
     pin::Pin,
     str::FromStr,
     task::{Context, Poll},
@@ -33,7 +33,7 @@ use rand::{
 use crate::{
     cenc::generic_hash,
     jobs::PeriodicJob,
-    kbucket::{Entry, EntryView, InsertResult, KBucketsTable, Key, NodeStatus, K_VALUE},
+    kbucket::{Entry, EntryView, InsertResult, KBucketsTable, NodeStatus, K_VALUE},
     query::QueryId,
     util::pretty_bytes,
 };
@@ -192,10 +192,10 @@ pub(crate) type QueryAndTid = (Option<QueryId>, u16);
 #[builder(pattern = "owned")]
 pub struct RpcDht {
     // TODO use message passing to update id's in IoHandler
-    #[builder(default = "Master::new(Key::new(IdBytes::from(thirty_two_random_bytes())))")]
-    pub id: Master<Key<IdBytes>>,
+    #[builder(default = "Master::new(IdBytes::from(thirty_two_random_bytes()))")]
+    pub id: Master<IdBytes>,
     ephemeral: bool,
-    pub(crate) kbuckets: KBucketsTable<Key<IdBytes>, Node>,
+    pub(crate) kbuckets: KBucketsTable<Node>,
     io: IoHandler,
     bootstrap_job: PeriodicJob,
     ping_job: PeriodicJob,
@@ -208,7 +208,7 @@ pub struct RpcDht {
     #[builder(field(ty = "Vec<SocketAddr>"))]
     bootstrap_nodes: Vec<SocketAddr>,
     bootstrapped: bool,
-    down_hints_in_progress: Vec<(u16, Key<IdBytes>, Instant)>,
+    down_hints_in_progress: Vec<(u16, IdBytes, Instant)>,
 }
 
 #[derive(Debug)]
@@ -304,7 +304,7 @@ impl RpcDht {
     pub async fn with_config(config: DhtConfig) -> crate::Result<Self> {
         let bites = config.local_id.unwrap_or_else(thirty_two_random_bytes);
         let id_bytes = IdBytes::from(bites);
-        let local_id = Key::new(id_bytes.clone());
+        let local_id = id_bytes.clone();
         let id = Master::new(local_id.clone());
 
         let socket = config
@@ -343,7 +343,7 @@ impl RpcDht {
     }
     /// Returns the id used to identify this node.
     pub fn local_id(&self) -> &IdBytes {
-        self.id.get_ref().preimage()
+        self.id.get_ref()
     }
 
     pub fn bootstrap(&mut self) {
@@ -353,8 +353,7 @@ impl RpcDht {
                 .kbuckets
                 .closest(&target)
                 .take(usize::from(K_VALUE))
-                .map(|e| PeerId::new(e.node.value.addr, e.node.key.preimage().clone()))
-                .map(Key::new)
+                .map(|e| PeerId::new(e.node.value.addr, e.node.key.clone()))
                 .collect::<Vec<_>>();
             let bootstrap_nodes: Vec<Peer> = self.bootstrap_nodes.iter().map(Peer::from).collect();
             self.queries.bootstrap(target, peers, bootstrap_nodes);
@@ -373,7 +372,7 @@ impl RpcDht {
     pub fn query(
         &mut self,
         cmd: Command,
-        target: Key<IdBytes>,
+        target: IdBytes,
         value: Option<Vec<u8>>,
         commit: Commit,
     ) -> QueryId {
@@ -383,7 +382,7 @@ impl RpcDht {
     fn run_command(
         &mut self,
         cmd: Command,
-        target: Key<IdBytes>,
+        target: IdBytes,
         value: Option<Vec<u8>>,
         commit: Commit,
     ) -> QueryId {
@@ -391,8 +390,7 @@ impl RpcDht {
             .kbuckets
             .closest(&target)
             .take(usize::from(K_VALUE))
-            .map(|e| PeerId::new(e.node.value.addr, e.node.key.preimage().clone()))
-            .map(Key::new)
+            .map(|e| PeerId::new(e.node.value.addr, e.node.key.clone()))
             .collect::<Vec<_>>();
 
         let bootstrap_nodes: Vec<Peer> = self.bootstrap_nodes.iter().map(Peer::from).collect();
@@ -526,8 +524,7 @@ impl RpcDht {
         roundtrip_token: Option<Vec<u8>>,
         to: Option<SocketAddr>,
     ) {
-        let key = Key::new(id);
-        match self.kbuckets.entry(&key) {
+        match self.kbuckets.entry(&id) {
             Entry::Present(mut entry, _) => {
                 entry.value().last_seen = Instant::now();
             }
@@ -583,7 +580,7 @@ impl RpcDht {
         let t: Vec<Peer> = match (has_closer_nodes, request.target) {
             (true, Some(t)) => self
                 .kbuckets
-                .closest(&Key::new(IdBytes::from(t)))
+                .closest(&IdBytes::from(t))
                 .take(usize::from(K_VALUE))
                 .map(|entry| Peer::from(entry.node.value.addr))
                 .collect(),
@@ -606,7 +603,7 @@ impl RpcDht {
         let msg = ReplyMsgData {
             tid: msg.tid,
             to: peer.clone(),
-            id: (!self.ephemeral).then(|| self.id.get().preimage().0),
+            id: (!self.ephemeral).then(|| self.id.get().0),
             token: self.io.token(peer, 1).ok(),
             closer_nodes: vec![],
             error: 0,
@@ -622,7 +619,7 @@ impl RpcDht {
         let closer_nodes: Vec<Peer> = match request.target {
             Some(t) => self
                 .kbuckets
-                .closest(&Key::new(IdBytes::from(t)))
+                .closest(&IdBytes::from(t))
                 .take(usize::from(K_VALUE))
                 .map(|entry| Peer::from(entry.node.value.addr))
                 .collect(),
@@ -635,7 +632,7 @@ impl RpcDht {
         self.io.reply(ReplyMsgData {
             tid: request.tid,
             to: peer.clone(),
-            id: (!self.ephemeral).then(|| self.id.get().preimage().0),
+            id: (!self.ephemeral).then(|| self.id.get().0),
             token: self.io.token(&peer, 1).ok(),
             closer_nodes,
             error: 0,
@@ -647,7 +644,7 @@ impl RpcDht {
     fn closer_nodes(&mut self, key: IdBytes, num: usize) -> Vec<Peer> {
         let nodes = self
             .kbuckets
-            .closest(&Key::new(key))
+            .closest(&key)
             .take(num)
             .map(|p| Peer::from(&p.node.value.addr))
             .collect::<Vec<_>>();
@@ -667,7 +664,7 @@ impl RpcDht {
                     return;
                 }
                 if self.down_hints_in_progress.len() < 10 {
-                    let key = Key::new(IdBytes::from(generic_hash(&value[..6])));
+                    let key = IdBytes::from(generic_hash(&value[..6]));
                     // NB: akwardness follows.
                     // We have to mutate some state to track the DownHint progress. but doing this
                     // is split up between outside and inside the match statement
@@ -720,7 +717,7 @@ impl RpcDht {
                     tid: request.tid,
                     token: self.io.token(&peer, 1).ok(),
                     to: peer,
-                    id: (!self.ephemeral).then(|| self.id.get().preimage().0),
+                    id: (!self.ephemeral).then(|| self.id.get().0),
                     closer_nodes: vec![],
                     error: 0,
                     value: None,
@@ -755,7 +752,7 @@ impl RpcDht {
         self.io.reply(ReplyMsgData {
             tid: request.tid,
             to: peer,
-            id: (!self.ephemeral).then(|| self.id.get().preimage().0),
+            id: (!self.ephemeral).then(|| self.id.get().0),
             token,
             closer_nodes: vec![],
             error: 0,
@@ -800,7 +797,7 @@ impl RpcDht {
                     .query(command, Some(target.0), value, peer, Some(id));
             }
             QueryEvent::RemoveNode { id } => {
-                self.remove_peer(&Key::new(id));
+                self.remove_peer(&id);
             }
             QueryEvent::MissingRoundtripToken { .. } => {
                 // TODO
@@ -826,7 +823,7 @@ impl RpcDht {
     ///
     /// Returns `None` if the peer was not in the routing table,
     /// not even pending insertion.
-    pub fn remove_peer(&mut self, key: &Key<IdBytes>) -> Option<EntryView<Key<IdBytes>, Node>> {
+    pub fn remove_peer(&mut self, key: &IdBytes) -> Option<EntryView<Node>> {
         match self.kbuckets.entry(key) {
             Entry::Present(entry, _) => Some(entry.remove()),
             Entry::Pending(entry, _) => Some(entry.remove()),
@@ -835,9 +832,9 @@ impl RpcDht {
     }
     pub fn remove_stale_peer(
         &mut self,
-        key: &Key<IdBytes>,
+        key: &IdBytes,
         last_seen: Instant,
-    ) -> Option<EntryView<Key<IdBytes>, Node>> {
+    ) -> Option<EntryView<Node>> {
         match self.kbuckets.entry(key) {
             Entry::Present(mut entry, _) => {
                 if entry.value().last_seen <= last_seen {
@@ -868,7 +865,7 @@ impl RpcDht {
         for (peer, state) in result.peers {
             match state {
                 PeerState::Failed => {
-                    self.remove_peer(&Key::new(peer.id));
+                    self.remove_peer(&peer.id);
                 }
                 PeerState::Succeeded {
                     roundtrip_token,
@@ -1246,7 +1243,7 @@ impl TryFrom<&[u8]> for IdBytes {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct PeerId {
     pub addr: SocketAddr,
     pub id: IdBytes,

@@ -33,7 +33,6 @@ use crate::{
     store::{StorageEntry, StorageKey, Store, PUT_VALUE_MAX_SIZE},
 };
 pub use ::dht_rpc::{
-    kbucket::Key,
     peers::{decode_local_peers, decode_peers, PeersEncoding},
     query::{CommandQuery, QueryId, QueryStats},
     Command, DhtConfig, ExternalCommand, IdBytes, Peer, PeerId, RequestMsgData, RequestOk,
@@ -202,8 +201,7 @@ impl HyperDht {
     }
 
     pub fn find_peer(&mut self, pub_key: PublicKey) -> QueryId {
-        let target = generic_hash(pub_key.as_bytes());
-        let target = Key::from(IdBytes(target));
+        let target = IdBytes(generic_hash(pub_key.as_bytes()));
 
         self.inner.query(
             Command::External(ExternalCommand(commands::FIND_PEER)),
@@ -242,7 +240,7 @@ impl HyperDht {
 
         let query_id = self.inner.query(
             Command::External(ExternalCommand(IMMUTABLE_STORE_CMD)),
-            Key::new(key.clone()),
+            key.clone(),
             None,
             Commit::No,
         );
@@ -284,7 +282,7 @@ impl HyperDht {
         // query the DHT
         let query_id = self.inner.query(
             Command::External(ExternalCommand(MUTABLE_STORE_CMD)),
-            Key::new(get.key.clone()),
+            get.key.clone(),
             Some(buf),
             Commit::Custom, // maybe could be auto, looks the same
         );
@@ -320,7 +318,7 @@ impl HyperDht {
 
         let query_id = self.inner.query(
             Command::External(ExternalCommand(commands::IMMUTABLE_PUT)),
-            Key::new(key.clone()),
+            key.clone(),
             None,
             Commit::Custom, // maybe could be auto, looks the same
         );
@@ -470,7 +468,7 @@ impl HyperDht {
     ///
     /// The result of the query is delivered in a
     /// [`HyperDhtEvent::LookupResult`].
-    pub fn lookup(&mut self, target: Key<IdBytes>) -> QueryId {
+    pub fn lookup(&mut self, target: IdBytes) -> QueryId {
         self.inner.query(
             Command::External(ExternalCommand(commands::LOOKUP)),
             target,
@@ -480,7 +478,7 @@ impl HyperDht {
     }
 
     /// Do a LOOKUP and send an UNANNOUNCE to each node that replies
-    fn lookup_and_unannounce(&mut self, target: Key<IdBytes>, keypair: Keypair) -> QueryId {
+    fn lookup_and_unannounce(&mut self, target: IdBytes, keypair: Keypair) -> QueryId {
         let query_id = self.inner.query(
             Command::External(ExternalCommand(commands::LOOKUP)),
             target,

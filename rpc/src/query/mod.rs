@@ -6,7 +6,7 @@ use futures::task::Poll;
 use wasm_timer::Instant;
 
 use crate::{
-    kbucket::{distance, Key, ALPHA_VALUE, K_VALUE},
+    kbucket::{distance, ALPHA_VALUE, K_VALUE},
     IdBytes, PeerId,
 };
 
@@ -24,7 +24,7 @@ use super::{message::ReplyMsgData, Command, Peer, Response};
 /// completion.
 #[derive(Debug)]
 pub struct QueryPool {
-    local_id: Key<IdBytes>,
+    local_id: IdBytes,
     queries: FnvHashMap<QueryId, Query>,
     config: QueryConfig,
     next_id: usize,
@@ -55,7 +55,7 @@ impl Default for QueryConfig {
 
 impl QueryPool {
     /// Creates a new `QueryPool` with the given configuration.
-    pub fn new(local_id: Key<IdBytes>, config: QueryConfig) -> Self {
+    pub fn new(local_id: IdBytes, config: QueryConfig) -> Self {
         Self {
             local_id,
             next_id: 0,
@@ -86,8 +86,8 @@ impl QueryPool {
 
     pub fn bootstrap(
         &mut self,
-        target: Key<IdBytes>,
-        peers: Vec<Key<PeerId>>,
+        target: IdBytes,
+        peers: Vec<PeerId>,
         bootstrap: Vec<Peer>,
     ) -> QueryId {
         self.add_stream(
@@ -104,8 +104,8 @@ impl QueryPool {
     pub fn add_stream(
         &mut self,
         cmd: Command,
-        peers: Vec<Key<PeerId>>,
-        target: Key<IdBytes>,
+        peers: Vec<PeerId>,
+        target: IdBytes,
         value: Option<Vec<u8>>,
         bootstrap: Vec<Peer>,
         commit: Commit,
@@ -234,7 +234,7 @@ pub struct Query {
 }
 
 struct ClosestReplies {
-    target: Key<IdBytes>,
+    target: IdBytes,
     arr: Vec<ReplyMsgData>,
 }
 
@@ -261,10 +261,10 @@ impl Query {
         id: QueryId,
         cmd: Command,
         parallelism: NonZeroUsize,
-        local_id: Key<IdBytes>,
-        target: Key<IdBytes>,
+        local_id: IdBytes,
+        target: IdBytes,
         value: Option<Vec<u8>>,
-        peers: Vec<Key<PeerId>>,
+        peers: Vec<PeerId>,
         bootstrap: Vec<Peer>,
         commit: Commit,
     ) -> Self {
@@ -285,7 +285,7 @@ impl Query {
         &self.cmd
     }
 
-    pub fn target(&self) -> &Key<IdBytes> {
+    pub fn target(&self) -> &IdBytes {
         self.inner.target()
     }
     pub fn value(&self) -> Option<&Vec<u8>> {
@@ -299,7 +299,7 @@ impl Query {
     pub(crate) fn on_timeout(&mut self, peer: Peer) {
         self.stats.failure += 1;
         for (p, state) in self.inner.peers_mut() {
-            if p.preimage().addr == peer.addr {
+            if p.addr == peer.addr {
                 *state = PeerState::Failed;
                 break;
             }
@@ -318,9 +318,7 @@ impl Query {
         // resp is Message. This is the Message::id
         // What is the Message::id in new RPC?
         // if Message::id is None
-        let remote = resp
-            .id
-            .map(|id| Key::new(PeerId::new(peer.addr, IdBytes::from(id))));
+        let remote = resp.id.map(|id| PeerId::new(peer.addr, IdBytes::from(id)));
 
         if resp.is_error() {
             self.stats.failure += 1;
@@ -359,7 +357,7 @@ impl Query {
                 QueryEvent::Update {
                     command: self.cmd,
                     token: Some(token.clone()),
-                    target: self.target().preimage().clone(),
+                    target: self.target().clone(),
                     peer,
                     value: self.value.clone(),
                 }
@@ -371,7 +369,7 @@ impl Query {
         } else {
             QueryEvent::Query {
                 command: self.cmd,
-                target: self.target().preimage().clone(),
+                target: self.target().clone(),
                 value: self.value.clone(),
                 peer,
             }

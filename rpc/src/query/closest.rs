@@ -20,7 +20,7 @@
 
 use crate::{
     cenc::calculate_peer_id,
-    kbucket::{distance, Distance, Key, ALPHA_VALUE, K_VALUE},
+    kbucket::{distance, Distance, ALPHA_VALUE, K_VALUE},
     IdBytes, Peer,
 };
 use std::{
@@ -43,7 +43,7 @@ pub struct ClosestPeersIter {
 
     /// The target whose distance to any peer determines the position of
     /// the peer in the iterator.
-    target: Key<IdBytes>,
+    target: IdBytes,
 
     /// The internal iterator state.
     state: State,
@@ -92,7 +92,7 @@ impl Default for ClosestPeersIterConfig {
 
 impl ClosestPeersIter {
     /// Creates a new iterator with a default configuration.
-    pub fn new<I>(target: Key<IdBytes>, known_closest_peers: I) -> Self
+    pub fn new<I>(target: IdBytes, known_closest_peers: I) -> Self
     where
         I: IntoIterator<Item = Peer>,
     {
@@ -106,7 +106,7 @@ impl ClosestPeersIter {
     /// Creates a new iterator with the given configuration.
     pub fn with_config<I>(
         config: ClosestPeersIterConfig,
-        target: Key<IdBytes>,
+        target: IdBytes,
         known_closest_peers: I,
     ) -> Self
     where
@@ -165,7 +165,7 @@ impl ClosestPeersIter {
         }
 
         let id = calculate_peer_id(peer);
-        let distance = distance(&id, &self.target.as_slice());
+        let distance = distance(&id, &self.target.as_ref());
 
         // Mark the peer as succeeded.
         match self.closest_peers.entry(distance) {
@@ -207,7 +207,7 @@ impl ClosestPeersIter {
         let mut progress = self.closest_peers.len() < self.config.num_results.get();
         for peer in closer_peers {
             let peer = IterPeer::from(peer.clone());
-            let distance = peer.distance(self.target.as_slice());
+            let distance = peer.distance(self.target.as_ref());
 
             let is_first_insert = match self.closest_peers.entry(distance) {
                 Entry::Occupied(_) => false,
@@ -259,7 +259,7 @@ impl ClosestPeersIter {
         }
 
         let id = calculate_peer_id(peer);
-        let distance = distance(&id, &self.target.as_slice());
+        let distance = distance(&id, &self.target.as_ref());
 
         match self.closest_peers.entry(distance) {
             Entry::Vacant(_) => return false,
