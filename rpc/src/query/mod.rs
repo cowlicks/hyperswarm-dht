@@ -155,10 +155,12 @@ impl QueryPool {
                     break;
                 }
                 Poll::Ready(None) => {
-                    if matches!(query.commit, Commit::No) {
-                        finished = Some(query_id);
-                    } else {
-                        commiting = Some(query_id);
+                    match query.commit {
+                        Commit::No => finished = Some(query_id),
+                        Commit::Auto(Progress::BeforeStart) => commiting = Some(query_id),
+                        Commit::Auto(Progress::InProgress(_)) => continue,
+                        Commit::Auto(Progress::Done) => finished = Some(query_id),
+                        Commit::Custom => todo!(),
                     }
                     break;
                 }
@@ -232,12 +234,12 @@ pub mod commit {
 
     #[derive(Debug)]
     pub enum Progress {
-        Start,
+        BeforeStart,
         InProgress(BTreeSet<Tid>),
         Done,
     }
 }
-use commit::Commit;
+use commit::{Commit, Progress};
 
 #[derive(Debug)]
 pub struct Query {
@@ -341,17 +343,30 @@ impl Query {
     }
 
     /// Received a response to a requested driven by this query.
-    pub(crate) fn inject_response(
-        &mut self,
-        mut resp: ReplyMsgData,
-        peer: Peer,
-    ) -> Option<Response> {
-        self.maybe_insert(resp.clone());
-        let remote = resp.id.map(|id| PeerId::new(peer.addr, IdBytes::from(id)));
+    pub(crate) fn inject_response(&mut self, data: &InResponse) -> Option<Response> {
+        // if commit has started
+        if let Commit::Auto(prog) = &mut self.commit {
+            let done = match prog {
+                commit::Progress::InProgress(tids) => {
+                    tids.remove(&data.response.tid);
+                    tids.is_empty()
+                }
+                _ => false,
+            };
+            if done {
+                *prog = commit::Progress::Done;
+            }
+            return None;
+        }
+        self.maybe_insert(data);
+        let remote = data
+            .response
+            .id
+            .map(|id| PeerId::new(data.peer.addr, IdBytes::from(id)));
 
-        if resp.is_error() {
+        if data.response.is_error() {
             self.stats.failure += 1;
-            self.peer_iter.on_failure(&peer);
+            self.peer_iter.on_failure(&data.peer);
             if let Some(ref remote) = remote {
                 if let Some(state) = self.inner.peers_mut().get_mut(remote) {
                     *state = PeerState::Failed;
@@ -361,22 +376,23 @@ impl Query {
         }
 
         self.stats.success += 1;
-        self.peer_iter.on_success(&peer, &resp.closer_nodes);
+        self.peer_iter
+            .on_success(&data.peer, &data.response.closer_nodes);
 
-        if let Some(token) = &resp.token {
+        if let Some(token) = &data.response.token {
             if let Some(remote) = remote {
                 self.inner
-                    .add_verified(remote, token.to_vec(), Some(resp.to.addr));
+                    .add_verified(remote, token.to_vec(), Some(data.response.to.addr));
             }
         }
 
         Some(Response {
             query: self.id,
             cmd: self.cmd,
-            to: Some(resp.to.addr),
-            peer: peer.addr,
-            peer_id: resp.valid_id_bytes(),
-            value: resp.value,
+            to: Some(data.response.to.addr),
+            peer: data.peer.addr,
+            peer_id: data.response.valid_id_bytes(),
+            value: data.response.value.clone(),
         })
     }
 
@@ -431,7 +447,7 @@ impl Query {
 
     pub fn start_auto_commit(&mut self, tids: Vec<Tid>) {
         match &mut self.commit {
-            Commit::Auto(prog @ commit::Progress::Start) => {
+            Commit::Auto(prog @ commit::Progress::BeforeStart) => {
                 *prog = commit::Progress::InProgress(BTreeSet::from_iter(tids))
             }
             _ => panic!("sholud only happen when Auto(Start"),

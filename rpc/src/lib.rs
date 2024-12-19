@@ -476,11 +476,7 @@ impl RpcDht {
         match resp_data.query_id {
             Some(query_id) => {
                 if let Some(query) = self.queries.get(&query_id) {
-                    if let Some(resp) = query.write().unwrap().inject_response(
-                        &resp_data,
-                        resp_data.response.clone(),
-                        resp_data.peer.clone(),
-                    ) {
+                    if let Some(resp) = query.write().unwrap().inject_response(&resp_data) {
                         self.queued_events
                             .push_back(RpcDhtEvent::ResponseResult(Ok(ResponseOk::Response(resp))))
                     }
@@ -790,6 +786,31 @@ impl RpcDht {
             .push_back(RpcDhtEvent::ResponseResult(Ok(ResponseOk::Pong(peer))));
     }
 
+    fn default_commit(
+        &mut self,
+        id: QueryId,
+        cmd: Command,
+        target: Option<[u8; 32]>,
+        value: Option<Vec<u8>>,
+        closest_replies: Vec<InResponse>,
+    ) -> Vec<Tid> {
+        closest_replies
+            .iter()
+            .map(|rep| {
+                self.io
+                    .queue_send_request(
+                        cmd,
+                        target,
+                        value.clone(),
+                        rep.peer.clone(),
+                        Some(id),
+                        rep.response.token,
+                    )
+                    .1
+            })
+            .collect()
+    }
+
     /// Delegate new query event to the io handler
     fn inject_query_event(&mut self, id: QueryId, event: QueryEvent) {
         match event {
@@ -1045,7 +1066,7 @@ impl Stream for RpcDht {
                         QueryPoolEvent::Commit(query) => {
                             if matches!(
                                 query.read().unwrap().commit,
-                                Commit::Auto(commit::Progress::Start)
+                                Commit::Auto(commit::Progress::BeforeStart)
                             ) {
                                 let tids = {
                                     let q = query.read().unwrap();
