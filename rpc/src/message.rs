@@ -21,8 +21,6 @@ pub struct RequestMsgData {
     pub tid: u16,
     pub to: Peer,
     pub id: Option<[u8; 32]>,
-    // TODO rm this, it is encoded in command
-    pub internal: bool,
     pub token: Option<[u8; 32]>,
     pub command: Command,
     pub target: Option<[u8; 32]>,
@@ -43,7 +41,6 @@ impl std::fmt::Debug for RequestMsgData {
         let mut debug_struct = f.debug_struct("RequestMsgData");
         debug_struct.field("tid", &self.tid).field("to", &self.to);
         opt_map_inner!(debug_struct, self.id, "id", pretty_bytes);
-        debug_struct.field("internal", &self.internal);
         opt_map_inner!(debug_struct, self.token, "token", pretty_bytes);
         debug_struct.field("command", &self.command);
         opt_map_inner!(debug_struct, self.target, "target", pretty_bytes);

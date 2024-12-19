@@ -7,12 +7,9 @@ use std::{
 };
 
 use crate::{
-    rpc::{
-        cenc::validate_id,
-        io::{Reply, Request},
-        Command, InternalCommand, Peer, RpcDht, RpcDhtEvent,
-    },
-    DhtConfig, Result,
+    cenc::validate_id,
+    io::{Reply, Request},
+    Command, DhtConfig, InternalCommand, Peer, Result, RpcDht, RpcDhtEvent,
 };
 pub fn free_port() -> Option<u16> {
     match TcpListener::bind(("127.0.0.1", 0)) {
@@ -54,6 +51,7 @@ async fn wip_bootstrap() -> Result<()> {
             if let Some(a_evt) = a_node.next().await {
                 println!("A = {a_evt:?}");
                 match a_evt {
+                    RpcDhtEvent::ReadyToCommit { .. } => println!("ready to commit"),
                     RpcDhtEvent::RequestResult(_res) => println!("request result"),
                     RpcDhtEvent::ResponseResult(_) => println!("response result"),
                     RpcDhtEvent::RoutingUpdated { .. } => println!("routing updated"),
@@ -83,6 +81,7 @@ async fn wip_bootstrap() -> Result<()> {
                 RpcDhtEvent::RequestResult(_res) => println!("request result"),
                 RpcDhtEvent::ResponseResult(_) => println!("response result"),
                 RpcDhtEvent::RoutingUpdated { .. } => println!("routing updated"),
+                RpcDhtEvent::ReadyToCommit { .. } => println!("ready to commit"),
                 RpcDhtEvent::QueryResult { .. } => {
                     println!("query result");
                     break;
@@ -115,7 +114,6 @@ fn mk_request() -> Request {
         token: None,
         value: None,
 
-        internal: true,
         tid: 50632,
     }
 }
@@ -153,7 +151,6 @@ fn test_decode_request() -> Result<()> {
         109, 183, 36, 71, 251, 134, 40, 25, 235, 205, 135, 36,
     ];
     let command = 2;
-    let internal = true;
     let token = None;
     let to = BOOTSTRAP_PEER;
     let mut from: Peer = format!("{HOST}:45475").parse()?;
@@ -171,7 +168,6 @@ fn test_decode_request() -> Result<()> {
         from: Some(from),
         to,
         token,
-        internal,
         command: Command::Internal(command.try_into()?),
         target: Some(target),
         value,

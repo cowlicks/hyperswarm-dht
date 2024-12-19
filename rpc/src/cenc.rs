@@ -170,8 +170,7 @@ pub fn decode_request(buff: &[u8], mut from: Peer, state: &mut State) -> Result<
     let id = decode_fixed_32_flag(flags, 1, state, buff)?;
     let token = decode_fixed_32_flag(flags, 2, state, buff)?;
 
-    let internal = (flags & 4) != 0;
-    let command = if internal {
+    let command = if (flags & 4) != 0 {
         let cmd: InternalCommand = state.decode(buff)?;
         Command::Internal(cmd)
     } else {
@@ -196,7 +195,6 @@ pub fn decode_request(buff: &[u8], mut from: Peer, state: &mut State) -> Result<
         from: Some(from),
         to,
         token,
-        internal,
         command,
         target,
         value,
@@ -313,7 +311,7 @@ impl RequestMsgData {
         if self.token.is_some() {
             flags |= 1 << 1;
         }
-        if self.internal {
+        if matches!(self.command, Command::Internal(_)) {
             flags |= 1 << 2;
         }
         if self.target.is_some() {
@@ -382,7 +380,6 @@ impl RequestMsgData {
             tid,
             to,
             id,
-            internal,
             token,
             command,
             target,

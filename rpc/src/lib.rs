@@ -3,6 +3,7 @@
 #![allow(unreachable_code)]
 
 use compact_encoding::EncodingError;
+use io::OutMessage;
 use kbucket::{distance, Distance};
 use tokio::sync::oneshot::error::RecvError;
 
