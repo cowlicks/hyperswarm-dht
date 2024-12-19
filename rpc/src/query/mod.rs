@@ -142,6 +142,7 @@ impl QueryPool {
         let mut finished = None;
         let mut timeout = None;
         let mut waiting = None;
+        let mut commiting = None;
 
         for (&query_id, query) in self.queries.iter_mut() {
             query.stats.start = query.stats.start.or(Some(now));
@@ -153,9 +154,10 @@ impl QueryPool {
                 Poll::Ready(None) => {
                     if matches!(query.commit, Commit::No) {
                         finished = Some(query_id);
-                        break;
+                    } else {
+                        commiting = Some(query_id);
                     }
-                    return QueryPoolState::Commit(query_id);
+                    break;
                 }
                 Poll::Pending => {
                     let elapsed = now - query.stats.start.unwrap_or(now);
@@ -170,6 +172,11 @@ impl QueryPool {
         if let Some((event, query_id)) = waiting {
             let query = self.queries.get_mut(&query_id).expect("s.a.");
             return QueryPoolState::Waiting(Some((query, event)));
+        }
+
+        if let Some(query_id) = commiting {
+            let query = self.queries.get_mut(&query_id).expect("s.a.");
+            return QueryPoolState::Commit(query);
         }
 
         if let Some(query_id) = finished {
@@ -201,7 +208,7 @@ pub enum QueryPoolState<'a> {
     /// that a new request is now being waited on.
     Waiting(Option<(&'a mut Query, QueryEvent)>),
     /// A query is ready to commit
-    Commit(QueryId),
+    Commit(&'a mut Query),
     /// A query has finished.
     Finished(Query),
     /// A query has timed out.
