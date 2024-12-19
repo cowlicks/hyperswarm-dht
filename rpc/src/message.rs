@@ -5,6 +5,7 @@ use crate::{
 
 use super::{Command, Peer};
 
+/// ReplyMsgData is the Reply data structure that is encoded to/from bytes
 #[derive(Clone, PartialEq)]
 pub struct ReplyMsgData {
     pub tid: u16,
@@ -16,6 +17,7 @@ pub struct ReplyMsgData {
     pub error: usize,
     pub value: Option<Vec<u8>>,
 }
+/// RequestMsgData is the  Request data structure that is encoded to/from bytes
 #[derive(Clone, PartialEq)]
 pub struct RequestMsgData {
     pub tid: u16,
@@ -62,6 +64,7 @@ impl std::fmt::Debug for ReplyMsgData {
     }
 }
 
+/// MsgData is the data structure that is converted to/from bytes
 #[derive(Debug, Clone, PartialEq)]
 pub enum MsgData {
     Request(RequestMsgData),

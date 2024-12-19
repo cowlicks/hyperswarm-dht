@@ -1,18 +1,6 @@
-use std::{
-    collections::BTreeMap,
-    net::SocketAddr,
-    sync::{Arc, RwLock},
-};
-use tracing::warn;
+use std::net::SocketAddr;
 
-use tokio::sync::oneshot::Sender;
-
-use compact_encoding::State;
-
-use crate::{
-    constants::{REQUEST_ID, RESPONSE_ID},
-    IdBytes, Result,
-};
+use crate::{IdBytes, Result};
 use fnv::FnvHashMap;
 use futures::{
     task::{Context, Poll},
@@ -44,145 +32,6 @@ const ROTATE_INTERVAL: u64 = 300_000;
 
 type Tid = u16;
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Reply {
-    pub tid: u16,
-    pub rtt: usize,
-    // who sent reply
-    pub from: Peer,
-    // who recieved it
-    pub to: Peer,
-    pub token: Option<[u8; 32]>,
-    pub closer_nodes: Vec<Peer>,
-    pub error: usize,
-    pub value: Option<Vec<u8>>,
-}
-
-impl Reply {
-    pub fn decode(from: &Peer, buff: &[u8], state: &mut State) -> Result<Self> {
-        let data = ReplyMsgData::decode(buff, state)?;
-        Self::from_data(from, data)
-    }
-    fn from_data(from: &Peer, data: ReplyMsgData) -> Result<Self> {
-        let mut new_from = from.clone();
-        if let Some(id) = data.id {
-            new_from.id = validate_id(&id, from);
-        }
-        Ok(Reply {
-            tid: data.tid,
-            rtt: 0,
-            from: new_from,
-            to: data.to,
-            token: data.token,
-            closer_nodes: data.closer_nodes,
-            error: data.error,
-            value: data.value,
-        })
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Request {
-    pub tid: u16,
-    pub from: Option<Peer>,
-    // TODO remove this field?
-    pub to: Peer,
-    pub token: Option<[u8; 32]>,
-    pub command: Command,
-    pub target: Option<[u8; 32]>,
-    pub value: Option<Vec<u8>>,
-}
-
-impl Request {
-    pub fn decode(from: &Peer, buff: &[u8], state: &mut State) -> Result<Self> {
-        let data = RequestMsgData::decode(buff, state);
-        Request::from_data(data?, from)
-    }
-    fn to_data(&self, id: Option<[u8; 32]>) -> Result<RequestMsgData> {
-        Ok(RequestMsgData {
-            tid: self.tid,
-            to: self.to.clone(),
-            id,
-            token: self.token,
-            command: self.command,
-            target: self.target,
-            value: self.value.clone(),
-        })
-    }
-    fn from_data(data: RequestMsgData, from: &Peer) -> Result<Self> {
-        let mut new_from = from.clone();
-        if let Some(id) = data.id {
-            new_from.id = validate_id(&id, from);
-        }
-        Ok(Request {
-            tid: data.tid,
-            from: Some(new_from),
-            to: data.to,
-            token: data.token,
-            command: data.command,
-            target: data.target,
-            value: data.value,
-        })
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        tid: u16,
-        from: Option<Peer>,
-        to: Peer,
-        token: Option<[u8; 32]>,
-        command: Command,
-        target: Option<[u8; 32]>,
-        value: Option<Vec<u8>>,
-    ) -> Self {
-        Self {
-            tid,
-            from,
-            to,
-            token,
-            command,
-            target,
-            value,
-        }
-    }
-    fn get_table_id(&self) -> [u8; 32] {
-        todo!()
-    }
-}
-
-type Inflight = Arc<RwLock<BTreeMap<u16, (Sender<Reply>, Request)>>>;
-
-#[derive(Debug, Clone)]
-pub enum Message {
-    Request(Request),
-    Reply(Reply),
-}
-
-fn on_message(inflight: &Inflight, buff: Vec<u8>, addr: SocketAddr) -> Result<()> {
-    match decode_message(buff, addr)? {
-        Message::Request(_r) => todo!(),
-        Message::Reply(r) => {
-            // check for tid and remove
-            match inflight.write().unwrap().remove(&r.tid) {
-                Some((sender, _req)) => {
-                    let _ = sender.send(r);
-                }
-                None => warn!("Got reply for uknown tid: {}", r.tid),
-            }
-        }
-    }
-    Ok(())
-}
-
-pub fn decode_message(buff: Vec<u8>, addr: SocketAddr) -> Result<Message> {
-    let mut state = State::new_with_start_and_end(1, buff.len());
-    let from = Peer::from(&addr);
-    Ok(match buff[0] {
-        REQUEST_ID => Message::Request(Request::decode(&from, &buff, &mut state)?),
-        RESPONSE_ID => Message::Reply(Reply::decode(&from, &buff, &mut state)?),
-        _ => todo!("eror"),
-    })
-}
 /// TODO hide secrets in fmt::Debug
 #[derive(Debug)]
 pub struct Secrets {
@@ -193,13 +42,16 @@ pub struct Secrets {
     secrets: [[u8; 32]; 2],
 }
 
-impl Secrets {
-    pub fn new() -> Self {
+impl Default for Secrets {
+    fn default() -> Self {
         Self {
             rotate_secrets: 10,
             secrets: [thirty_two_random_bytes(), thirty_two_random_bytes()],
         }
     }
+}
+
+impl Secrets {
     fn rotate_secrets(&mut self) -> Result<()> {
         let tmp = self.secrets[0];
         self.secrets[0] = self.secrets[1];
@@ -221,6 +73,7 @@ impl Secrets {
     }
 }
 
+/// OutMessage contains outgoing messages data, including local metadata for managing messages
 #[derive(Debug, Clone)]
 pub enum OutMessage {
     Request((Option<QueryId>, RequestMsgData)),
@@ -281,7 +134,7 @@ impl IoHandler {
             pending_send: Default::default(),
             pending_flush: None,
             pending_recv: Default::default(),
-            secrets: Secrets::new(),
+            secrets: Default::default(),
             tid: AtomicU16::new(rand::thread_rng().gen()),
             rotation: config
                 .rotation

@@ -7,7 +7,6 @@ use compact_encoding::{CompactEncoding, EncodingError, EncodingErrorKind, State}
 
 use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
-    io::{Reply, Request},
     message::{MsgData, ReplyMsgData, RequestMsgData},
     peers::PeersEncoding,
     Command, Error, ExternalCommand, IdBytes, InternalCommand, Peer, PeerId, Result,
@@ -159,48 +158,6 @@ pub(crate) fn generic_hash_with_key(input: &[u8], key: &[u8]) -> Result<[u8; HAS
     Ok(out)
 }
 
-pub fn decode_request(buff: &[u8], mut from: Peer, state: &mut State) -> Result<Request> {
-    let flags = buff[state.start()];
-    state.add_start(1)?;
-
-    let tid = state.decode_u16(buff)?;
-
-    let to = state.decode(buff)?;
-
-    let id = decode_fixed_32_flag(flags, 1, state, buff)?;
-    let token = decode_fixed_32_flag(flags, 2, state, buff)?;
-
-    let command = if (flags & 4) != 0 {
-        let cmd: InternalCommand = state.decode(buff)?;
-        Command::Internal(cmd)
-    } else {
-        let cmd: u8 = state.decode(buff)?;
-        Command::External(ExternalCommand(cmd as usize))
-    };
-
-    let target = decode_fixed_32_flag(flags, 8, state, buff)?;
-
-    let value = if flags & 16 > 0 {
-        Some(state.decode_buffer(buff)?.as_ref().to_vec())
-    } else {
-        None
-    };
-
-    if let Some(id) = id {
-        from.id = validate_id(&id, &from);
-    }
-
-    Ok(Request {
-        tid,
-        from: Some(from),
-        to,
-        token,
-        command,
-        target,
-        value,
-    })
-}
-
 pub(crate) fn validate_id(id: &[u8; ID_SIZE], from: &Peer) -> Option<[u8; ID_SIZE]> {
     if id == &calculate_peer_id(from) {
         return Some(*id);
@@ -232,48 +189,6 @@ pub fn decode_addr_array(state: &mut State, buffer: &[u8]) -> Result<Vec<Peer>> 
     Ok(value)
 }
 
-pub fn decode_reply(buff: &[u8], mut from: Peer, state: &mut State) -> Result<Reply> {
-    let flags = buff[state.start()];
-    state.add_start(1)?;
-
-    let tid = state.decode_u16(buff)?;
-    let to: Peer = state.decode(buff)?;
-
-    let id = decode_fixed_32_flag(flags, 1, state, buff)?;
-    let token = decode_fixed_32_flag(flags, 2, state, buff)?;
-
-    let closer_nodes: Vec<Peer> = if flags & 4 > 0 {
-        decode_addr_array(state, buff)?
-    } else {
-        vec![]
-    };
-
-    let error = if flags & 8 > 0 {
-        state.decode_usize_var(buff)?
-    } else {
-        0
-    };
-
-    let value = if flags & 16 > 0 {
-        Some(state.decode_buffer(buff)?.to_vec())
-    } else {
-        None
-    };
-
-    if let Some(id) = id {
-        from.id = validate_id(&id, &from);
-    }
-    Ok(Reply {
-        tid,
-        rtt: 0,
-        from,
-        to,
-        token,
-        closer_nodes,
-        error,
-        value,
-    })
-}
 impl RequestMsgData {
     pub fn encode(&self) -> Result<Vec<u8>> {
         let mut state = State::new();
