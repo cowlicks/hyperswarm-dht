@@ -43,7 +43,7 @@ pub struct ClosestPeersIter {
 
     /// The target whose distance to any peer determines the position of
     /// the peer in the iterator.
-    target: IdBytes,
+    pub target: IdBytes,
 
     /// The internal iterator state.
     state: State,

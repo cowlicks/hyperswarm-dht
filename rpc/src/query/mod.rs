@@ -238,24 +238,6 @@ struct ClosestReplies {
     arr: Vec<ReplyMsgData>,
 }
 
-/// List of replies ordererd by how close the node is to the target.
-/// right side is farther from target
-impl ClosestReplies {
-    fn _maybe_add(&mut self, reply: ReplyMsgData) -> Option<usize> {
-        let Some(id) = reply.id.clone() else {
-            return None;
-        };
-
-        //let reply_distance = self.target.distance(&id);
-        //if self.arr.len() < K_VALUE.into()
-        //    || reply_distance < self.target.distance(&self.arr.last().unwrap().id.unwrap())
-        //{
-        //    todo!()
-        //}
-        todo!()
-    }
-}
-
 impl Query {
     pub fn new(
         id: QueryId,
@@ -281,6 +263,29 @@ impl Query {
         }
     }
 
+    // TODO in theory, new elements distances get smaller. So maybe reverse the list.
+    // if that does not really hold true use a binary search
+    fn maybe_insert(&mut self, reply: ReplyMsgData) -> Option<usize> {
+        let reply_distance = self.peer_iter.target.distance(reply.id?);
+        let replace = self.closest_replies.len() >= K_VALUE.into();
+
+        for (i, cur) in self.closest_replies.iter().enumerate() {
+            if reply_distance
+                < self
+                    .peer_iter
+                    .target
+                    .distance(cur.id.expect("TODO this should be a PeerId"))
+            {
+                if replace {
+                    self.closest_replies[i] = reply;
+                } else {
+                    self.closest_replies.insert(i, reply.clone());
+                }
+                return Some(i);
+            }
+        }
+        None
+    }
     pub fn command(&self) -> &Command {
         &self.cmd
     }
@@ -313,11 +318,7 @@ impl Query {
         mut resp: ReplyMsgData,
         peer: Peer,
     ) -> Option<Response> {
-        // check for errors
-
-        // resp is Message. This is the Message::id
-        // What is the Message::id in new RPC?
-        // if Message::id is None
+        self.maybe_insert(resp.clone());
         let remote = resp.id.map(|id| PeerId::new(peer.addr, IdBytes::from(id)));
 
         if resp.is_error() {
