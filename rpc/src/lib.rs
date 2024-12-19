@@ -1037,6 +1037,23 @@ impl Stream for RpcDht {
                     }
                 } else {
                     match pin.queries.poll(now) {
+                        QueryPoolState::Commit(query) => {
+                            let Query {
+                                id,
+                                peer_iter,
+                                cmd,
+                                value,
+                                closest_replies,
+                                ..
+                            } = &query;
+
+                            let id = id.clone();
+                            let cmd = cmd.clone();
+                            let query_id = Some(peer_iter.target.clone().0);
+                            let value = value.clone();
+                            let closest_replies = closest_replies.clone();
+                            pin.default_commit(id, cmd, query_id, value, closest_replies);
+                        }
                         QueryPoolState::Waiting(Some((query, event))) => {
                             let id = query.id();
                             pin.inject_query_event(id, event);

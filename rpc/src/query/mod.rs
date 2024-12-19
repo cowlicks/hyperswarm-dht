@@ -225,23 +225,23 @@ pub enum Commit {
 #[derive(Debug)]
 pub struct Query {
     /// identifier for this stream
-    id: QueryId,
+    pub id: QueryId,
     /// The permitted parallelism, i.e. number of pending results.
     parallelism: NonZeroUsize,
     /// The peer iterator that drives the query state.
-    peer_iter: ClosestPeersIter,
+    pub peer_iter: ClosestPeersIter,
     /// The rpc command of this stream
-    cmd: Command,
+    pub cmd: Command,
     /// Stats about this query
     stats: QueryStats,
     /// The value to include in each message
-    value: Option<Vec<u8>>,
+    pub value: Option<Vec<u8>>,
     /// The inner query state.
     inner: QueryTable,
     /// Whether to send commits when query completes
     commit: Commit,
     /// Closest replies are store for commiting data
-    closest_replies: Vec<ReplyMsgData>,
+    pub closest_replies: Vec<ReplyMsgData>,
 }
 
 struct ClosestReplies {
