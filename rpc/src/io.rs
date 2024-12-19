@@ -112,7 +112,7 @@ struct InflightRequest {
 pub struct IoHandler {
     id: Slave<IdBytes>,
     ephemeral: bool,
-    socket: MessageDataStream,
+    message_stream: MessageDataStream,
     /// Messages to send
     pending_send: VecDeque<OutMessage>,
     /// Current message
@@ -126,11 +126,11 @@ pub struct IoHandler {
 }
 
 impl IoHandler {
-    pub fn new(id: Slave<IdBytes>, socket: MessageDataStream, config: IoConfig) -> Self {
+    pub fn new(id: Slave<IdBytes>, message_stream: MessageDataStream, config: IoConfig) -> Self {
         Self {
             id,
             ephemeral: true,
-            socket,
+            message_stream,
             pending_send: Default::default(),
             pending_flush: None,
             pending_recv: Default::default(),
@@ -147,7 +147,7 @@ impl IoHandler {
     }
 
     pub fn local_addr(&self) -> crate::Result<SocketAddr> {
-        self.socket.local_addr()
+        self.message_stream.local_addr()
     }
     /// TODO check this is correct.
     pub fn token(&self, peer: &Peer, secret_index: usize) -> crate::Result<[u8; 32]> {
@@ -272,7 +272,10 @@ impl IoHandler {
                 //log::trace!("send to {}: {}", peer.addr, msg);
                 let addr = SocketAddr::from(&msg.to());
 
-                Sink::start_send(Pin::new(&mut self.socket), (msg.clone().inner(), addr))?;
+                Sink::start_send(
+                    Pin::new(&mut self.message_stream),
+                    (msg.clone().inner(), addr),
+                )?;
                 self.pending_flush = Some(msg);
             }
         }
@@ -302,7 +305,7 @@ impl Stream for IoHandler {
 
         // flush the message
         if let Some(ev) = pin.pending_flush.take() {
-            if Sink::poll_ready(Pin::new(&mut pin.socket), cx).is_ready() {
+            if Sink::poll_ready(Pin::new(&mut pin.message_stream), cx).is_ready() {
                 return match ev {
                     OutMessage::Request((query_id, message)) => {
                         let tid = message.tid;
@@ -333,7 +336,7 @@ impl Stream for IoHandler {
         }
 
         // read from socket
-        match Stream::poll_next(Pin::new(&mut pin.socket), cx) {
+        match Stream::poll_next(Pin::new(&mut pin.message_stream), cx) {
             Poll::Ready(Some(Ok((msg, rinfo)))) => {
                 let out = pin.on_message(msg, rinfo);
                 trace!("{out:#?}");
@@ -399,8 +402,8 @@ mod test {
 
     fn new_io() -> IoHandler {
         let view = Master::new(IdBytes::from(thirty_two_random_bytes())).view();
-        let socket = MessageDataStream::defualt_bind().unwrap();
-        IoHandler::new(view, socket, Default::default())
+        let message_stream = MessageDataStream::defualt_bind().unwrap();
+        IoHandler::new(view, message_stream, Default::default())
     }
     #[tokio::test]
     async fn foo() -> crate::Result<()> {
