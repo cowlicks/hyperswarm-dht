@@ -138,7 +138,7 @@ impl QueryPool {
     }
 
     /// Polls the pool to advance the queries.
-    pub fn poll(&mut self, now: Instant) -> QueryPoolState<'_> {
+    pub fn poll(&mut self, now: Instant) -> QueryPoolEvent<'_> {
         let mut finished = None;
         let mut timeout = None;
         let mut waiting = None;
@@ -171,37 +171,37 @@ impl QueryPool {
 
         if let Some((event, query_id)) = waiting {
             let query = self.queries.get_mut(&query_id).expect("s.a.");
-            return QueryPoolState::Waiting(Some((query, event)));
+            return QueryPoolEvent::Waiting(Some((query, event)));
         }
 
         if let Some(query_id) = commiting {
             let query = self.queries.get_mut(&query_id).expect("s.a.");
-            return QueryPoolState::Commit(query);
+            return QueryPoolEvent::Commit(query);
         }
 
         if let Some(query_id) = finished {
             let mut query = self.queries.remove(&query_id).expect("s.a.");
             query.stats.end = Some(now);
-            return QueryPoolState::Finished(query);
+            return QueryPoolEvent::Finished(query);
         }
 
         if let Some(query_id) = timeout {
             let mut query = self.queries.remove(&query_id).expect("s.a.");
             query.stats.end = Some(now);
-            return QueryPoolState::Timeout(query);
+            return QueryPoolEvent::Timeout(query);
         }
 
         if self.queries.is_empty() {
-            QueryPoolState::Idle
+            QueryPoolEvent::Idle
         } else {
-            QueryPoolState::Waiting(None)
+            QueryPoolEvent::Waiting(None)
         }
     }
 }
 
 /// The observable states emitted by [`QueryPool::poll`].
 #[derive(Debug)]
-pub enum QueryPoolState<'a> {
+pub enum QueryPoolEvent<'a> {
     /// The pool is idle, i.e. there are no queries to process.
     Idle,
     /// At least one query is waiting for results. `Some(request)` indicates

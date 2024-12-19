@@ -45,7 +45,7 @@ use self::{
     message::valid_id_bytes,
     mslave::Master,
     query::{
-        table::PeerState, CommandQuery, Query, QueryConfig, QueryEvent, QueryPool, QueryPoolState,
+        table::PeerState, CommandQuery, Query, QueryConfig, QueryEvent, QueryPool, QueryPoolEvent,
         QueryStats,
     },
     stream::MessageDataStream,
@@ -1038,7 +1038,7 @@ impl Stream for RpcDht {
                     }
                 } else {
                     match pin.queries.poll(now) {
-                        QueryPoolState::Commit(query) => {
+                        QueryPoolEvent::Commit(query) => {
                             let Query {
                                 id,
                                 peer_iter,
@@ -1055,21 +1055,21 @@ impl Stream for RpcDht {
                             let closest_replies = closest_replies.clone();
                             pin.default_commit(id, cmd, query_id, value, closest_replies);
                         }
-                        QueryPoolState::Waiting(Some((query, event))) => {
+                        QueryPoolEvent::Waiting(Some((query, event))) => {
                             let id = query.id();
                             pin.inject_query_event(id, event);
                         }
-                        QueryPoolState::Finished(q) => {
+                        QueryPoolEvent::Finished(q) => {
                             let event = pin.query_finished(q);
                             trace!("{event:#?}");
                             return Poll::Ready(Some(event));
                         }
-                        QueryPoolState::Timeout(q) => {
+                        QueryPoolEvent::Timeout(q) => {
                             let event = pin.query_timeout(q);
                             trace!("{event:#?}");
                             return Poll::Ready(Some(event));
                         }
-                        QueryPoolState::Waiting(None) | QueryPoolState::Idle => {
+                        QueryPoolEvent::Waiting(None) | QueryPoolEvent::Idle => {
                             break;
                         }
                     }
