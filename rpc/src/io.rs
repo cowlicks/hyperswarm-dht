@@ -30,12 +30,12 @@ pub const VERSION: u64 = 1;
 
 const ROTATE_INTERVAL: u64 = 300_000;
 
-type Tid = u16;
+pub type Tid = u16;
 
 /// TODO hide secrets in fmt::Debug
 #[derive(Debug)]
 pub struct Secrets {
-    rotate_secrets: usize,
+    rotate_counter: usize,
     // NB starts null in js. Not initialized until token call.
     // so my behavior diverges when drain called until token
     // bc drain checks if secrets initialized
@@ -45,31 +45,55 @@ pub struct Secrets {
 impl Default for Secrets {
     fn default() -> Self {
         Self {
-            rotate_secrets: 10,
+            rotate_counter: 10,
             secrets: [thirty_two_random_bytes(), thirty_two_random_bytes()],
         }
     }
 }
 
 impl Secrets {
-    fn rotate_secrets(&mut self) -> Result<()> {
+    fn _rotate_secrets(&mut self) -> Result<()> {
         let tmp = self.secrets[0];
         self.secrets[0] = self.secrets[1];
         self.secrets[1] = generic_hash(&tmp);
         Ok(())
     }
 
-    fn drain(&mut self) -> Result<()> {
-        self.rotate_secrets -= 1;
-        if self.rotate_secrets == 0 {
-            self.rotate_secrets = 10;
-            self.rotate_secrets()?;
+    fn _drain(&mut self) -> Result<()> {
+        self.rotate_counter -= 1;
+        if self.rotate_counter == 0 {
+            self.rotate_counter = 10;
+            self._rotate_secrets()?;
         }
         Ok(())
     }
 
     pub fn token(&self, peer: &Peer, secret_index: usize) -> Result<[u8; 32]> {
         generic_hash_with_key(&ipv4(&peer.addr)?.octets()[..], &self.secrets[secret_index])
+    }
+}
+
+/// Recied response data along with metadata
+#[derive(Debug, Clone)]
+pub struct InResponse {
+    pub request: Box<RequestMsgData>,
+    pub response: ReplyMsgData,
+    pub peer: Peer,
+    pub query_id: Option<QueryId>,
+}
+impl InResponse {
+    fn new(
+        request: Box<RequestMsgData>,
+        response: ReplyMsgData,
+        peer: Peer,
+        query_id: Option<QueryId>,
+    ) -> Self {
+        Self {
+            request,
+            response,
+            peer,
+            query_id,
+        }
     }
 }
 
@@ -245,12 +269,12 @@ impl IoHandler {
     }
     fn on_response(&mut self, recv: ReplyMsgData, peer: Peer) -> IoHandlerEvent {
         if let Some(req) = self.pending_recv.remove(&recv.tid) {
-            return IoHandlerEvent::InResponse {
+            return IoHandlerEvent::InResponse(InResponse::new(
+                Box::new(req.message),
+                recv,
                 peer,
-                resp: recv,
-                req: Box::new(req.message),
-                query_id: req.query_id,
-            };
+                req.query_id,
+            ));
         }
         IoHandlerEvent::InResponseBadRequestId {
             peer,
@@ -366,12 +390,7 @@ pub enum IoHandlerEvent {
     /// A request was sent
     OutRequest { tid: Tid },
     /// A Response to a Query Message was recieved
-    InResponse {
-        req: Box<RequestMsgData>,
-        resp: ReplyMsgData,
-        peer: Peer,
-        query_id: Option<QueryId>,
-    },
+    InResponse(InResponse),
     /// A Request was receieved
     InRequest { message: RequestMsgData, peer: Peer },
     /// Error while sending a message

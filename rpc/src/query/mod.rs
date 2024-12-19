@@ -1,4 +1,10 @@
-use std::{num::NonZeroUsize, time::Duration};
+use std::{
+    collections::BTreeSet,
+    iter::FromIterator,
+    num::NonZeroUsize,
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use closest::ClosestPeersIter;
 use fnv::FnvHashMap;
@@ -6,7 +12,8 @@ use futures::task::Poll;
 use wasm_timer::Instant;
 
 use crate::{
-    kbucket::{distance, ALPHA_VALUE, K_VALUE},
+    io::{InResponse, Tid},
+    kbucket::{ALPHA_VALUE, K_VALUE},
     IdBytes, PeerId,
 };
 
@@ -25,7 +32,7 @@ use super::{message::ReplyMsgData, Command, Peer, Response};
 #[derive(Debug)]
 pub struct QueryPool {
     local_id: IdBytes,
-    queries: FnvHashMap<QueryId, Query>,
+    queries: FnvHashMap<QueryId, Arc<RwLock<Query>>>,
     config: QueryConfig,
     next_id: usize,
 }
@@ -62,11 +69,6 @@ impl QueryPool {
             config,
             queries: Default::default(),
         }
-    }
-
-    /// Returns an iterator over the queries in the pool.
-    pub fn iter(&self) -> impl Iterator<Item = &Query> {
-        self.queries.values()
     }
 
     /// Gets the current size of the pool, i.e. the number of running queries.
@@ -122,29 +124,30 @@ impl QueryPool {
             bootstrap,
             commit,
         );
-        self.queries.insert(id, query);
+        self.queries.insert(id, Arc::new(RwLock::new(query)));
         id
     }
 
     /// Returns a reference to a query with the given ID, if it is in the pool.
-    pub fn get(&self, id: &QueryId) -> Option<&Query> {
-        self.queries.get(id)
-    }
+    // pub fn get(&self, id: &QueryId) -> Option<&Query> {
+    //     self.queries.get(id)
+    // }
 
     /// Returns a mutable reference to a query with the given ID, if it is in
     /// the pool.
-    pub fn get_mut(&mut self, id: &QueryId) -> Option<&mut Query> {
-        self.queries.get_mut(id)
+    pub fn get(&self, id: &QueryId) -> Option<Arc<RwLock<Query>>> {
+        self.queries.get(id).cloned()
     }
 
     /// Polls the pool to advance the queries.
-    pub fn poll(&mut self, now: Instant) -> QueryPoolEvent<'_> {
+    pub fn poll(&mut self, now: Instant) -> QueryPoolEvent {
         let mut finished = None;
         let mut timeout = None;
         let mut waiting = None;
         let mut commiting = None;
 
-        for (&query_id, query) in self.queries.iter_mut() {
+        for (&query_id, query) in self.queries.iter() {
+            let mut query = query.write().unwrap();
             query.stats.start = query.stats.start.or(Some(now));
             match query.poll(now) {
                 Poll::Ready(Some(ev)) => {
@@ -170,24 +173,24 @@ impl QueryPool {
         }
 
         if let Some((event, query_id)) = waiting {
-            let query = self.queries.get_mut(&query_id).expect("s.a.");
-            return QueryPoolEvent::Waiting(Some((query, event)));
+            let query = self.queries.get(&query_id).expect("s.a.");
+            return QueryPoolEvent::Waiting(Some((query.clone(), event)));
         }
 
         if let Some(query_id) = commiting {
-            let query = self.queries.get_mut(&query_id).expect("s.a.");
-            return QueryPoolEvent::Commit(query);
+            let query = self.queries.get(&query_id).expect("s.a.");
+            return QueryPoolEvent::Commit(query.clone());
         }
 
         if let Some(query_id) = finished {
-            let mut query = self.queries.remove(&query_id).expect("s.a.");
-            query.stats.end = Some(now);
-            return QueryPoolEvent::Finished(query);
+            let query = self.queries.remove(&query_id).expect("s.a.");
+            query.write().unwrap().stats.end = Some(now);
+            return QueryPoolEvent::Finished(query.clone());
         }
 
         if let Some(query_id) = timeout {
-            let mut query = self.queries.remove(&query_id).expect("s.a.");
-            query.stats.end = Some(now);
+            let query = self.queries.remove(&query_id).expect("s.a.");
+            query.write().unwrap().stats.end = Some(now);
             return QueryPoolEvent::Timeout(query);
         }
 
@@ -201,26 +204,40 @@ impl QueryPool {
 
 /// The observable states emitted by [`QueryPool::poll`].
 #[derive(Debug)]
-pub enum QueryPoolEvent<'a> {
+pub enum QueryPoolEvent {
     /// The pool is idle, i.e. there are no queries to process.
     Idle,
     /// At least one query is waiting for results. `Some(request)` indicates
     /// that a new request is now being waited on.
-    Waiting(Option<(&'a mut Query, QueryEvent)>),
+    Waiting(Option<(Arc<RwLock<Query>>, QueryEvent)>),
     /// A query is ready to commit
-    Commit(&'a mut Query),
+    Commit(Arc<RwLock<Query>>),
     /// A query has finished.
-    Finished(Query),
+    Finished(Arc<RwLock<Query>>),
     /// A query has timed out.
-    Timeout(Query),
+    Timeout(Arc<RwLock<Query>>),
 }
 
-#[derive(Debug)]
-pub enum Commit {
-    No,
-    Auto,
-    Custom,
+pub mod commit {
+    use std::collections::BTreeSet;
+
+    use crate::io::Tid;
+
+    #[derive(Debug)]
+    pub enum Commit {
+        No,
+        Auto(Progress),
+        Custom,
+    }
+
+    #[derive(Debug)]
+    pub enum Progress {
+        Start,
+        InProgress(BTreeSet<Tid>),
+        Done,
+    }
 }
+use commit::Commit;
 
 #[derive(Debug)]
 pub struct Query {
@@ -239,9 +256,9 @@ pub struct Query {
     /// The inner query state.
     inner: QueryTable,
     /// Whether to send commits when query completes
-    commit: Commit,
+    pub commit: Commit,
     /// Closest replies are store for commiting data
-    pub closest_replies: Vec<ReplyMsgData>,
+    pub closest_replies: Vec<InResponse>,
 }
 
 struct ClosestReplies {
@@ -276,8 +293,8 @@ impl Query {
 
     // TODO in theory, new elements distances get smaller. So maybe reverse the list.
     // if that does not really hold true use a binary search
-    fn maybe_insert(&mut self, reply: ReplyMsgData) -> Option<usize> {
-        let reply_distance = self.peer_iter.target.distance(reply.id?);
+    fn maybe_insert(&mut self, data: &InResponse) -> Option<usize> {
+        let reply_distance = self.peer_iter.target.distance(data.response.id?);
         let replace = self.closest_replies.len() >= K_VALUE.into();
 
         for (i, cur) in self.closest_replies.iter().enumerate() {
@@ -285,20 +302,20 @@ impl Query {
                 < self
                     .peer_iter
                     .target
-                    .distance(cur.id.expect("TODO this should be a PeerId"))
+                    .distance(cur.response.id.expect("TODO this should be a PeerId"))
             {
                 if replace {
-                    self.closest_replies[i] = reply;
+                    self.closest_replies[i] = data.clone();
                 } else {
-                    self.closest_replies.insert(i, reply.clone());
+                    self.closest_replies.insert(i, data.clone());
                 }
                 return Some(i);
             }
         }
         None
     }
-    pub fn command(&self) -> &Command {
-        &self.cmd
+    pub fn command(&self) -> Command {
+        self.cmd
     }
 
     pub fn target(&self) -> &IdBytes {
@@ -346,7 +363,7 @@ impl Query {
         self.stats.success += 1;
         self.peer_iter.on_success(&peer, &resp.closer_nodes);
 
-        if let Some(token) = resp.token.take() {
+        if let Some(token) = &resp.token {
             if let Some(remote) = remote {
                 self.inner
                     .add_verified(remote, token.to_vec(), Some(resp.to.addr));
@@ -403,12 +420,21 @@ impl Query {
     }
 
     /// Consumes the query, producing the final `QueryResult`.
-    pub fn into_result(self) -> QueryResult<QueryId, impl Iterator<Item = (PeerId, PeerState)>> {
+    pub fn into_result(&self) -> QueryResult<QueryId, impl Iterator<Item = (PeerId, PeerState)>> {
         QueryResult {
             peers: self.inner.into_result(),
             inner: self.id,
-            stats: self.stats,
+            stats: self.stats.clone(),
             cmd: self.cmd,
+        }
+    }
+
+    pub fn start_auto_commit(&mut self, tids: Vec<Tid>) {
+        match &mut self.commit {
+            Commit::Auto(prog @ commit::Progress::Start) => {
+                *prog = commit::Progress::InProgress(BTreeSet::from_iter(tids))
+            }
+            _ => panic!("sholud only happen when Auto(Start"),
         }
     }
 }

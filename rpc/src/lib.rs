@@ -3,13 +3,16 @@
 #![allow(unreachable_code)]
 
 use compact_encoding::EncodingError;
-use io::OutMessage;
+use io::{InResponse, OutMessage, Tid};
 use kbucket::{distance, Distance};
 use tokio::sync::oneshot::error::RecvError;
 
 use ed25519_dalek::{PublicKey, PUBLIC_KEY_LENGTH};
 use futures::Stream;
-use query::{CommandQueryResponse, Commit};
+use query::{
+    commit::{self, Commit},
+    CommandQueryResponse,
+};
 use std::{
     array::TryFromSliceError,
     borrow::Borrow,
@@ -17,9 +20,9 @@ use std::{
     convert::{TryFrom, TryInto},
     fmt::Display,
     net::{AddrParseError, SocketAddr, ToSocketAddrs},
-    ops::Deref,
     pin::Pin,
     str::FromStr,
+    sync::{Arc, RwLock},
     task::{Context, Poll},
     time::Duration,
 };
@@ -451,13 +454,8 @@ impl RpcDht {
             IoHandlerEvent::OutRequest { .. } => {
                 // sent a request
             }
-            IoHandlerEvent::InResponse {
-                req,
-                resp,
-                peer,
-                query_id,
-            } => {
-                self.on_response(req, resp, peer, query_id);
+            IoHandlerEvent::InResponse(resp) => {
+                self.on_response(resp);
             }
             IoHandlerEvent::RequestTimeout { .. } => {
                 todo!()
@@ -466,33 +464,39 @@ impl RpcDht {
     }
 
     /// Process a response.
-    fn on_response(
-        &mut self,
-        req: Box<RequestMsgData>,
-        resp: ReplyMsgData,
-        peer: Peer,
-        query_id: Option<QueryId>,
-    ) {
-        if let Some(id) = valid_id_bytes(resp.id) {
-            self.add_node(id, peer.clone(), None, Some(SocketAddr::from(&resp.to)));
+    fn on_response(&mut self, resp_data: InResponse) {
+        if let Some(id) = valid_id_bytes(resp_data.response.id) {
+            self.add_node(
+                id,
+                resp_data.peer.clone(),
+                None,
+                Some(SocketAddr::from(&resp_data.response.to)),
+            );
         }
-        match query_id {
+        match resp_data.query_id {
             Some(query_id) => {
-                if let Some(query) = self.queries.get_mut(&query_id) {
-                    if let Some(resp) = query.inject_response(resp, peer) {
+                if let Some(query) = self.queries.get(&query_id) {
+                    if let Some(resp) = query.write().unwrap().inject_response(
+                        &resp_data,
+                        resp_data.response.clone(),
+                        resp_data.peer.clone(),
+                    ) {
                         self.queued_events
                             .push_back(RpcDhtEvent::ResponseResult(Ok(ResponseOk::Response(resp))))
                     }
                 } else {
-                    debug!("Recieved response for missing query with id: {query_id:?}. It could have been removed already");
+                    debug!("Recieved response for missing query with id: {:?}. It could have been removed already", resp_data.query_id);
                 }
             }
             None => {
-                if matches!(req.command, Command::Internal(InternalCommand::Ping)) {
-                    if query_id.is_some() {
+                if matches!(
+                    resp_data.request.command,
+                    Command::Internal(InternalCommand::Ping)
+                ) {
+                    if resp_data.query_id.is_some() {
                         panic!("Pings should not have a QueryId");
                     }
-                    self.on_pong(resp, peer);
+                    self.on_pong(resp_data.response, resp_data.peer);
                     return;
                 }
                 panic!("TODO");
@@ -855,13 +859,13 @@ impl RpcDht {
     }
 
     /// Handles a finished query.
-    fn query_finished(&mut self, query: Query) -> RpcDhtEvent {
+    fn query_finished(&mut self, query: Arc<RwLock<Query>>) -> RpcDhtEvent {
         let is_find_node = matches!(
-            query.command(),
+            query.read().unwrap().command(),
             Command::Internal(InternalCommand::FindNode)
         );
 
-        let result = query.into_result();
+        let result = query.read().unwrap().into_result();
 
         // add nodes to the table
         for (peer, state) in result.peers {
@@ -894,7 +898,7 @@ impl RpcDht {
         }
     }
     /// Handles a query that timed out.
-    fn query_timeout(&mut self, query: Query) -> RpcDhtEvent {
+    fn query_timeout(&mut self, query: Arc<RwLock<Query>>) -> RpcDhtEvent {
         self.query_finished(query)
     }
 }
@@ -1039,24 +1043,24 @@ impl Stream for RpcDht {
                 } else {
                     match pin.queries.poll(now) {
                         QueryPoolEvent::Commit(query) => {
-                            let Query {
-                                id,
-                                peer_iter,
-                                cmd,
-                                value,
-                                closest_replies,
-                                ..
-                            } = &query;
-
-                            let id = id.clone();
-                            let cmd = cmd.clone();
-                            let query_id = Some(peer_iter.target.clone().0);
-                            let value = value.clone();
-                            let closest_replies = closest_replies.clone();
-                            pin.default_commit(id, cmd, query_id, value, closest_replies);
+                            if matches!(
+                                query.read().unwrap().commit,
+                                Commit::Auto(commit::Progress::Start)
+                            ) {
+                                let tids = {
+                                    let q = query.read().unwrap();
+                                    let id = q.id.clone();
+                                    let cmd = q.cmd.clone();
+                                    let query_id = Some(q.peer_iter.target.clone().0);
+                                    let value = q.value.clone();
+                                    let closest_replies = q.closest_replies.clone();
+                                    pin.default_commit(id, cmd, query_id, value, closest_replies)
+                                };
+                                query.write().unwrap().start_auto_commit(tids);
+                            }
                         }
                         QueryPoolEvent::Waiting(Some((query, event))) => {
-                            let id = query.id();
+                            let id = query.read().unwrap().id();
                             pin.inject_query_event(id, event);
                         }
                         QueryPoolEvent::Finished(q) => {

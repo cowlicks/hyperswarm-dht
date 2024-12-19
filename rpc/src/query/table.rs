@@ -94,8 +94,8 @@ impl QueryTable {
         }
     }
 
-    pub(crate) fn into_result(self) -> impl Iterator<Item = (PeerId, PeerState)> {
-        self.peers.into_iter().map(|(k, v)| (k.clone(), v))
+    pub(crate) fn into_result(&self) -> impl Iterator<Item = (PeerId, PeerState)> {
+        self.peers.clone().into_iter().map(|(k, v)| (k.clone(), v))
     }
 }
 
