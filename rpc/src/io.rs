@@ -306,17 +306,14 @@ impl IoHandler {
         self.secrets.token(peer, secret_index)
     }
 
-    fn request(&mut self, ev: OutMessage) {
-        self.pending_send.push_back(ev)
-    }
-
-    pub fn query(
+    pub fn queue_send_request(
         &mut self,
         command: Command,
         target: Option<[u8; 32]>,
         value: Option<Vec<u8>>,
         peer: Peer,
         query_id: Option<QueryId>,
+        token: Option<[u8; 32]>,
     ) -> QueryAndTid {
         let id = if !self.ephemeral {
             Some(self.id.get().0)
@@ -325,14 +322,14 @@ impl IoHandler {
         };
 
         let tid = self.tid.fetch_add(1, Ordering::Relaxed);
-        self.request(OutMessage::Request((
+        self.pending_send.push_back(OutMessage::Request((
             query_id,
             RequestMsgData {
                 tid,
                 to: peer,
                 id,
                 internal: true,
-                token: None,
+                token,
                 command,
                 target,
                 value,
@@ -576,7 +573,8 @@ mod test {
             value: None,
         };
         let query_id = Some(QueryId(42));
-        a.request(OutMessage::Request((query_id, msg.clone())));
+        a.pending_send
+            .push_back(OutMessage::Request((query_id, msg.clone())));
         a.next().await;
         let IoHandlerEvent::InRequest { message: res, .. } = b.next().await.unwrap() else {
             panic!()

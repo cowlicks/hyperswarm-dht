@@ -399,11 +399,12 @@ impl RpcDht {
     }
 
     pub fn ping(&mut self, peer: &Peer) -> QueryAndTid {
-        self.io.query(
+        self.io.queue_send_request(
             Command::Internal(InternalCommand::Ping),
             None,
             None,
             peer.clone(),
+            None,
             None,
         )
     }
@@ -794,7 +795,7 @@ impl RpcDht {
                 value,
             } => {
                 self.io
-                    .query(command, Some(target.0), value, peer, Some(id));
+                    .queue_send_request(command, Some(target.0), value, peer, Some(id), None);
             }
             QueryEvent::RemoveNode { id } => {
                 self.remove_peer(&id);
