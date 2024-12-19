@@ -151,9 +151,11 @@ impl QueryPool {
                     break;
                 }
                 Poll::Ready(None) => {
-                    // query finished
-                    finished = Some(query_id);
-                    break;
+                    if matches!(query.commit, Commit::No) {
+                        finished = Some(query_id);
+                        break;
+                    }
+                    return QueryPoolState::Commit(query_id);
                 }
                 Poll::Pending => {
                     let elapsed = now - query.stats.start.unwrap_or(now);
@@ -198,6 +200,8 @@ pub enum QueryPoolState<'a> {
     /// At least one query is waiting for results. `Some(request)` indicates
     /// that a new request is now being waited on.
     Waiting(Option<(&'a mut Query, QueryEvent)>),
+    /// A query is ready to commit
+    Commit(QueryId),
     /// A query has finished.
     Finished(Query),
     /// A query has timed out.
