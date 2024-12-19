@@ -1070,14 +1070,17 @@ impl Stream for RpcDht {
                             ) {
                                 let tids = {
                                     let q = query.read().unwrap();
-                                    let id = q.id.clone();
-                                    let cmd = q.cmd.clone();
+                                    let id = q.id;
+                                    let cmd = q.cmd;
                                     let query_id = Some(q.peer_iter.target.clone().0);
                                     let value = q.value.clone();
                                     let closest_replies = q.closest_replies.clone();
                                     pin.default_commit(id, cmd, query_id, value, closest_replies)
                                 };
-                                query.write().unwrap().start_auto_commit(tids);
+                                let Commit::Auto(prog) = &mut query.write().unwrap().commit else {
+                                    panic!("see above");
+                                };
+                                prog.start(tids);
                             }
                         }
                         QueryPoolEvent::Waiting(Some((query, event))) => {
