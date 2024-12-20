@@ -256,7 +256,7 @@ pub mod commit {
                 _ => false,
             };
             if done {
-                *prog = commit::Progress::Done;
+                *self = Done;
             }
             return matches!(self, Done);
         }
@@ -369,7 +369,7 @@ impl Query {
     pub(crate) fn inject_response(&mut self, data: &InResponse) -> Option<Response> {
         // if commit has started
         if let Commit::Auto(prog) = &mut self.commit {
-            prog.tid_update(&data.response.tid);
+            prog.tid_update(data.response.tid);
         } else {
             self.maybe_insert(data);
             let remote = data
@@ -456,16 +456,6 @@ impl Query {
             inner: self.id,
             stats: self.stats.clone(),
             cmd: self.cmd,
-        }
-    }
-
-    pub fn start_auto_commit(&mut self, tids: Vec<Tid>) {
-
-        match &mut self.commit {
-            Commit::Auto(
-                *prog = commit::Progress::InProgress(BTreeSet::from_iter(tids))
-            }
-            _ => panic!("sholud only happen when Auto(Start"),
         }
     }
 }
