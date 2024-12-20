@@ -160,7 +160,9 @@ impl QueryPool {
                         Commit::Auto(Progress::BeforeStart) => commiting = Some(query_id),
                         Commit::Auto(Progress::InProgress(_)) => continue,
                         Commit::Auto(Progress::Done) => finished = Some(query_id),
-                        Commit::Custom => todo!(),
+                        Commit::Custom(Progress::BeforeStart) => commiting = Some(query_id),
+                        Commit::Custom(Progress::InProgress(_)) => continue,
+                        Commit::Custom(Progress::Done) => finished = Some(query_id),
                     }
                     break;
                 }
@@ -229,7 +231,7 @@ pub mod commit {
     pub enum Commit {
         No,
         Auto(Progress),
-        Custom,
+        Custom(Progress),
     }
 
     #[derive(Debug)]
@@ -368,34 +370,43 @@ impl Query {
     /// Received a response to a requested driven by this query.
     pub(crate) fn inject_response(&mut self, data: &InResponse) -> Option<Response> {
         // if commit has started
-        if let Commit::Auto(prog) = &mut self.commit {
-            prog.tid_update(data.response.tid);
-        } else {
-            self.maybe_insert(data);
-            let remote = data
-                .response
-                .id
-                .map(|id| PeerId::new(data.peer.addr, IdBytes::from(id)));
-
-            if data.response.is_error() {
-                self.stats.failure += 1;
-                self.peer_iter.on_failure(&data.peer);
-                if let Some(ref remote) = remote {
-                    if let Some(state) = self.inner.peers_mut().get_mut(remote) {
-                        *state = PeerState::Failed;
-                    }
-                }
-                return None;
+        match &mut self.commit {
+            Commit::Auto(prog @ Progress::InProgress(_)) => {
+                prog.tid_update(data.response.tid);
             }
+            Commit::Custom(prog @ Progress::InProgress(_)) => {
+                prog.tid_update(data.response.tid);
+            }
+            _ => {
+                self.maybe_insert(data);
+                let remote = data
+                    .response
+                    .id
+                    .map(|id| PeerId::new(data.peer.addr, IdBytes::from(id)));
 
-            self.stats.success += 1;
-            self.peer_iter
-                .on_success(&data.peer, &data.response.closer_nodes);
+                if data.response.is_error() {
+                    self.stats.failure += 1;
+                    self.peer_iter.on_failure(&data.peer);
+                    if let Some(ref remote) = remote {
+                        if let Some(state) = self.inner.peers_mut().get_mut(remote) {
+                            *state = PeerState::Failed;
+                        }
+                    }
+                    return None;
+                }
 
-            if let Some(token) = &data.response.token {
-                if let Some(remote) = remote {
-                    self.inner
-                        .add_verified(remote, token.to_vec(), Some(data.response.to.addr));
+                self.stats.success += 1;
+                self.peer_iter
+                    .on_success(&data.peer, &data.response.closer_nodes);
+
+                if let Some(token) = &data.response.token {
+                    if let Some(remote) = remote {
+                        self.inner.add_verified(
+                            remote,
+                            token.to_vec(),
+                            Some(data.response.to.addr),
+                        );
+                    }
                 }
             }
         }
