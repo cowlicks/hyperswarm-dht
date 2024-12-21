@@ -93,12 +93,4 @@ impl MsgData {
             MsgData::Reply(x) => x.to.clone(),
         }
     }
-
-    pub(crate) fn valid_id_bytes(&self) -> Option<IdBytes> {
-        let id = match self {
-            MsgData::Request(r) => r.id,
-            MsgData::Reply(r) => r.id,
-        };
-        valid_id_bytes(id)
-    }
 }

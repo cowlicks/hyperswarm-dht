@@ -7,7 +7,7 @@ use compact_encoding::{CompactEncoding, EncodingError, EncodingErrorKind, State}
 
 use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
-    message::{MsgData, ReplyMsgData, RequestMsgData},
+    message::{valid_id_bytes, MsgData, ReplyMsgData, RequestMsgData},
     peers::PeersEncoding,
     Command, Error, ExternalCommand, IdBytes, InternalCommand, Peer, PeerId, Result,
 };
@@ -320,7 +320,7 @@ impl ReplyMsgData {
             .collect()
     }
     pub(crate) fn valid_id_bytes(&self) -> Option<IdBytes> {
-        self.id.map(IdBytes::from)
+        valid_id_bytes(self.id)
     }
 
     fn encode(&self) -> Result<Vec<u8>> {

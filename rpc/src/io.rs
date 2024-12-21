@@ -18,7 +18,7 @@ use tracing::trace;
 use wasm_timer::Instant;
 
 use super::{
-    cenc::{generic_hash, generic_hash_with_key, ipv4, validate_id},
+    cenc::{generic_hash, generic_hash_with_key, ipv4},
     message::{MsgData, ReplyMsgData, RequestMsgData},
     mslave::Slave,
     query::QueryId,
@@ -35,17 +35,21 @@ pub type Tid = u16;
 /// TODO hide secrets in fmt::Debug
 #[derive(Debug)]
 pub struct Secrets {
-    rotate_counter: usize,
+    _rotate_counter: usize,
     // NB starts null in js. Not initialized until token call.
     // so my behavior diverges when drain called until token
     // bc drain checks if secrets initialized
     secrets: [[u8; 32]; 2],
+    _rotation: Duration,
+    _last_rotation: Instant,
 }
 
 impl Default for Secrets {
     fn default() -> Self {
         Self {
-            rotate_counter: 10,
+            _rotate_counter: 10,
+            _rotation: Duration::from_millis(ROTATE_INTERVAL),
+            _last_rotation: Instant::now(),
             secrets: [thirty_two_random_bytes(), thirty_two_random_bytes()],
         }
     }
@@ -60,9 +64,9 @@ impl Secrets {
     }
 
     fn _drain(&mut self) -> Result<()> {
-        self.rotate_counter -= 1;
-        if self.rotate_counter == 0 {
-            self.rotate_counter = 10;
+        self._rotate_counter -= 1;
+        if self._rotate_counter == 0 {
+            self._rotate_counter = 10;
             self._rotate_secrets()?;
         }
         Ok(())
@@ -145,12 +149,10 @@ pub struct IoHandler {
     pending_recv: FnvHashMap<Tid, InflightRequest>,
     secrets: Secrets,
     tid: AtomicU16,
-    rotation: Duration,
-    last_rotation: Instant,
 }
 
 impl IoHandler {
-    pub fn new(id: Slave<IdBytes>, message_stream: MessageDataStream, config: IoConfig) -> Self {
+    pub fn new(id: Slave<IdBytes>, message_stream: MessageDataStream, _config: IoConfig) -> Self {
         Self {
             id,
             ephemeral: true,
@@ -160,10 +162,6 @@ impl IoHandler {
             pending_recv: Default::default(),
             secrets: Default::default(),
             tid: AtomicU16::new(rand::thread_rng().gen()),
-            rotation: config
-                .rotation
-                .unwrap_or_else(|| Duration::from_millis(ROTATE_INTERVAL)),
-            last_rotation: Instant::now(),
         }
     }
     pub fn is_ephemeral(&self) -> bool {
