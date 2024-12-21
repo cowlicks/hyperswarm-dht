@@ -2,17 +2,15 @@
 #![warn(rust_2018_idioms)]
 #![allow(unreachable_code)]
 
+use commit::{Commit, CommitMessage, Progress};
 use compact_encoding::EncodingError;
-use io::{InResponse, OutMessage, Tid};
+use io::{InResponse, Tid};
 use kbucket::{distance, Distance};
 use tokio::sync::oneshot::error::RecvError;
 
 use ed25519_dalek::{PublicKey, PUBLIC_KEY_LENGTH};
 use futures::Stream;
-use query::{
-    commit::{self, Commit},
-    CommandQueryResponse,
-};
+use query::CommandQueryResponse;
 use std::{
     array::TryFromSliceError,
     borrow::Borrow,
@@ -22,7 +20,7 @@ use std::{
     net::{AddrParseError, SocketAddr, ToSocketAddrs},
     pin::Pin,
     str::FromStr,
-    sync::{Arc, RwLock},
+    sync::{mpsc, Arc, RwLock},
     task::{Context, Poll},
     time::Duration,
 };
@@ -55,6 +53,7 @@ use self::{
 };
 
 pub mod cenc;
+mod commit;
 pub mod constants;
 pub mod io;
 mod jobs;
@@ -938,17 +937,11 @@ pub enum RpcDhtEvent {
         stats: QueryStats,
     },
 
-    /// Query arrived at final node, and neighbors need to be committed.
-    // dht.request({ token: reply.token, target: query.target, command: query.command, value: query.value }, reply.from)
+    /// Only emitted when Query is made with Commit::Custom
     ReadyToCommit {
-        /// The ID of the query that finished.
-        id: QueryId,
-        /// The command of the executed query.
-        cmd: Command,
-        /// TODO store these.
-        closest_replies: Vec<ReplyMsgData>,
-        /// Kind of commit
-        commit_kind: Commit,
+        /// The query we are commiting for
+        query: Arc<RwLock<Query>>,
+        tx_commit_messages: mpsc::Sender<CommitMessage>,
     },
     /// A completed query.
     ///
@@ -1058,15 +1051,29 @@ impl Stream for RpcDht {
                 } else {
                     match pin.queries.poll(now) {
                         QueryPoolEvent::Commit(query) => {
+                            // NB: we don't use `match` here because the query would remain
+                            // read-locked into the match arm. Which would prevent aquiring a write-lock.
                             if matches!(
                                 query.read().unwrap().commit,
-                                Commit::Auto(commit::Progress::BeforeStart)
+                                Commit::Auto(Progress::BeforeStart)
                             ) {
                                 let tids = { pin.default_commit(query.clone()) };
                                 let Commit::Auto(prog) = &mut query.write().unwrap().commit else {
                                     panic!("see above");
                                 };
-                                prog.start(tids);
+                                prog.start_awaiting(tids);
+                            } else if matches!(
+                                query.read().unwrap().commit,
+                                Commit::Custom(Progress::BeforeStart)
+                            ) {
+                                let (tx, rx) = mpsc::channel();
+                                // TODO store rx on query and handle incoming messages
+                                return Poll::Ready(Some(RpcDhtEvent::ReadyToCommit {
+                                    query: query.clone(),
+                                    tx_commit_messages: tx,
+                                }));
+                            } else {
+                                debug!("Does this happen?");
                             }
                         }
                         QueryPoolEvent::Waiting(Some((query, event))) => {

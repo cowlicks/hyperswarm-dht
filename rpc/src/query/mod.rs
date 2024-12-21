@@ -12,9 +12,10 @@ use futures::task::Poll;
 use wasm_timer::Instant;
 
 use crate::{
+    commit::{Commit, Progress},
     io::{InResponse, Tid},
     kbucket::{ALPHA_VALUE, K_VALUE},
-    IdBytes, PeerId,
+    CommitMessage, IdBytes, PeerId,
 };
 
 mod closest;
@@ -155,14 +156,17 @@ impl QueryPool {
                     break;
                 }
                 Poll::Ready(None) => {
-                    match query.commit {
-                        Commit::No => finished = Some(query_id),
-                        Commit::Auto(Progress::BeforeStart) => commiting = Some(query_id),
-                        Commit::Auto(Progress::InProgress(_)) => continue,
-                        Commit::Auto(Progress::Done) => finished = Some(query_id),
-                        Commit::Custom(Progress::BeforeStart) => commiting = Some(query_id),
-                        Commit::Custom(Progress::InProgress(_)) => continue,
-                        Commit::Custom(Progress::Done) => finished = Some(query_id),
+                    use Commit::*;
+                    use Progress::*;
+                    match &mut query.commit {
+                        No | Auto(Done) | Custom(Done) => finished = Some(query_id),
+                        Auto(BeforeStart) | Custom(BeforeStart) => commiting = Some(query_id),
+                        Auto(prog @ (Sending(_) | AwaitingReplies(_)))
+                        | Custom(prog @ (AwaitingReplies(_) | Sending(_))) => {
+                            // should send message or mark query done.
+                            prog.poll();
+                            continue;
+                        }
                     }
                     break;
                 }
@@ -222,50 +226,6 @@ pub enum QueryPoolEvent {
     Timeout(Arc<RwLock<Query>>),
 }
 
-pub mod commit {
-    use std::{collections::BTreeSet, iter::FromIterator};
-
-    use crate::io::Tid;
-
-    #[derive(Debug)]
-    pub enum Commit {
-        No,
-        Auto(Progress),
-        Custom(Progress),
-    }
-
-    #[derive(Debug)]
-    pub enum Progress {
-        BeforeStart,
-        InProgress(BTreeSet<Tid>),
-        Done,
-    }
-    use Progress::*;
-    impl Progress {
-        pub fn start(&mut self, tids: Vec<Tid>) {
-            if matches!(self, BeforeStart) {
-                *self = InProgress(BTreeSet::from_iter(tids))
-            } else {
-                panic!("Tried to start commit that was already started");
-            }
-        }
-        pub fn tid_update(&mut self, tid: Tid) -> bool {
-            let done = match self {
-                Self::InProgress(tids) => {
-                    tids.remove(&tid);
-                    tids.is_empty()
-                }
-                _ => false,
-            };
-            if done {
-                *self = Done;
-            }
-            return matches!(self, Done);
-        }
-    }
-}
-use commit::{Commit, Progress};
-
 #[derive(Debug)]
 pub struct Query {
     /// identifier for this stream
@@ -286,11 +246,6 @@ pub struct Query {
     pub commit: Commit,
     /// Closest replies are store for commiting data
     pub closest_replies: Vec<InResponse>,
-}
-
-struct ClosestReplies {
-    target: IdBytes,
-    arr: Vec<ReplyMsgData>,
 }
 
 impl Query {
@@ -369,13 +324,12 @@ impl Query {
 
     /// Received a response to a requested driven by this query.
     pub(crate) fn inject_response(&mut self, data: &InResponse) -> Option<Response> {
-        // if commit has started
+        use Commit::*;
+        use Progress::*;
         match &mut self.commit {
-            Commit::Auto(prog @ Progress::InProgress(_)) => {
-                prog.tid_update(data.response.tid);
-            }
-            Commit::Custom(prog @ Progress::InProgress(_)) => {
-                prog.tid_update(data.response.tid);
+            Auto(prog @ (AwaitingReplies(_) | Sending(_)))
+            | Custom(prog @ (AwaitingReplies(_) | Sending(_))) => {
+                prog.recieved_tid(data.response.tid);
             }
             _ => {
                 self.maybe_insert(data);
@@ -449,15 +403,16 @@ impl Query {
     fn poll(&mut self, now: Instant) -> Poll<Option<QueryEvent>> {
         match self.peer_iter.next(now) {
             PeersIterState::Waiting(peer) => {
-                if let Some(peer) = peer {
+                return if let Some(peer) = peer {
                     Poll::Ready(Some(self.send(peer, false)))
                 } else {
                     Poll::Pending
-                }
+                };
             }
-            PeersIterState::WaitingAtCapacity => Poll::Pending,
-            PeersIterState::Finished => Poll::Ready(None),
-        }
+            PeersIterState::WaitingAtCapacity => return Poll::Pending,
+            PeersIterState::Finished => {}
+        };
+        poll(&mut self.commit)
     }
 
     /// Consumes the query, producing the final `QueryResult`.
@@ -468,6 +423,20 @@ impl Query {
             stats: self.stats.clone(),
             cmd: self.cmd,
         }
+    }
+}
+
+fn poll(commit: &mut Commit) -> Poll<Option<QueryEvent>> {
+    use Commit::*;
+    use Progress::*;
+    match commit {
+        No | Auto(Done) | Custom(Done) => Poll::Ready(None),
+        Auto(BeforeStart) | Custom(BeforeStart) => {
+            // emit commit start/commit ready
+            // transition to Auto(Awating) or Custom(Sending)
+            todo!()
+        }
+        _ => todo!(),
     }
 }
 
@@ -493,6 +462,15 @@ impl QueryType {
 
 #[derive(Debug)]
 pub enum QueryEvent {
+    // can be:
+    // * commit start(enum {
+    //      Auto,
+    //      Custom
+    //      }})
+    // * commit ready
+    // * send commit request
+    // * commit completed
+    Commit {},
     Query {
         peer: Peer,
         command: Command,
