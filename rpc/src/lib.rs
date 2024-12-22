@@ -1051,7 +1051,7 @@ impl Stream for RpcDht {
                     }
                 } else {
                     match pin.queries.poll(now) {
-                        QueryPoolEvent::Commit(query) => {
+                        QueryPoolEvent::Commit((query, ev)) => {
                             // NB: we don't use `match` here because the query would remain
                             // read-locked into the match arm. Which would prevent aquiring a write-lock.
                             if matches!(

@@ -8,11 +8,15 @@ use std::{
 
 use closest::ClosestPeersIter;
 use fnv::FnvHashMap;
-use futures::{channel::mpsc::Sender, task::Poll};
+use futures::{
+    channel::mpsc::{self, Sender},
+    task::Poll,
+};
 use wasm_timer::Instant;
 
 use crate::{
-    commit::{Commit, Progress},
+    commit::{Commit, CommitRequestParams, Progress},
+    constants::DEFAULT_COMMIT_CHANNEL_SIZE,
     io::{InResponse, Tid},
     kbucket::{ALPHA_VALUE, K_VALUE},
     CommitMessage, IdBytes, PeerId,
@@ -152,7 +156,10 @@ impl QueryPool {
             query.stats.start = query.stats.start.or(Some(now));
             match query.poll(now) {
                 Poll::Ready(Some(ev)) => {
-                    waiting = Some((ev, query_id));
+                    match ev {
+                        QueryEvent::Commit(cev) => commiting = Some((cev, query_id)),
+                        qev => waiting = Some((qev, query_id)),
+                    }
                     break;
                 }
                 Poll::Ready(None) => {
@@ -169,14 +176,13 @@ impl QueryPool {
             }
         }
 
+        if let Some((event, query_id)) = commiting {
+            let query = self.queries.get(&query_id).expect("s.a.");
+            return QueryPoolEvent::Commit((query.clone(), event));
+        }
         if let Some((event, query_id)) = waiting {
             let query = self.queries.get(&query_id).expect("s.a.");
             return QueryPoolEvent::Waiting(Some((query.clone(), event)));
-        }
-
-        if let Some(query_id) = commiting {
-            let query = self.queries.get(&query_id).expect("s.a.");
-            return QueryPoolEvent::Commit(query.clone());
         }
 
         if let Some(query_id) = finished {
@@ -208,7 +214,7 @@ pub enum QueryPoolEvent {
     /// that a new request is now being waited on.
     Waiting(Option<(Arc<RwLock<Query>>, QueryEvent)>),
     /// A query is ready to commit
-    Commit(Arc<RwLock<Query>>),
+    Commit((Arc<RwLock<Query>>, CommitEvent)),
     /// A query has finished.
     Finished(Arc<RwLock<Query>>),
     /// A query has timed out.
@@ -401,7 +407,10 @@ impl Query {
             PeersIterState::WaitingAtCapacity => return Poll::Pending,
             PeersIterState::Finished => {}
         };
-        poll(&mut self.commit, self.id)
+        match poll(&mut self.commit, self.id) {
+            Poll::Ready(op) => Poll::Ready(op.map(QueryEvent::Commit)),
+            Poll::Pending => Poll::Pending,
+        }
     }
 
     /// Consumes the query, producing the final `QueryResult`.
@@ -415,15 +424,33 @@ impl Query {
     }
 }
 
-fn poll(commit: &mut Commit) -> Poll<Option<QueryEvent>> {
+fn poll(commit: &mut Commit, query_id: QueryId) -> Poll<Option<CommitEvent>> {
     use Commit::*;
     use Progress::*;
     match commit {
         No | Auto(Done) | Custom(Done) => Poll::Ready(None),
-        Auto(BeforeStart) | Custom(BeforeStart) => {
-            // emit commit start/commit ready
-            // transition to Auto(Awating) or Custom(Sending)
-            todo!()
+        Auto(BeforeStart) => {
+            let (tx, rx) = mpsc::channel(DEFAULT_COMMIT_CHANNEL_SIZE);
+            *commit = Auto(Sending((rx, Default::default())));
+            /// RpcDht should recieve this and send the query messages
+            Poll::Ready(Some(CommitEvent::AutoStart((tx, query_id))))
+        }
+        Custom(BeforeStart) => {
+            let (tx, rx) = mpsc::channel(DEFAULT_COMMIT_CHANNEL_SIZE);
+            *commit = Custom(Sending((rx, Default::default())));
+            Poll::Ready(Some(CommitEvent::AutoStart((tx, query_id))))
+        }
+        Auto(Sending(_)) => Poll::Pending,
+        Custom(Sending((rx, _tids))) => {
+            let mut out = vec![];
+            while let Some(e) = rx.try_next().ok().flatten() {
+                out.push(e)
+            }
+            if !out.is_empty() {
+                let sending_done = CommitEvent::SendRequests((out, query_id));
+                return Poll::Ready(Some(sending_done));
+            }
+            return Poll::Pending;
         }
         _ => todo!(),
     }
@@ -450,6 +477,12 @@ impl QueryType {
 }
 
 #[derive(Debug)]
+pub enum CommitEvent {
+    AutoStart((Sender<CommitMessage>, QueryId)),
+    CustomStart((Sender<CommitMessage>, QueryId)),
+    SendRequests((Vec<CommitMessage>, QueryId)),
+}
+#[derive(Debug)]
 pub enum QueryEvent {
     // can be:
     // * commit start(enum {
@@ -459,7 +492,7 @@ pub enum QueryEvent {
     // * commit ready
     // * send commit request
     // * commit completed
-    Commit {},
+    Commit(CommitEvent),
     Query {
         peer: Peer,
         command: Command,

@@ -13,11 +13,13 @@ use crate::{constants::DEFAULT_COMMIT_CHANNEL_SIZE, io::Tid};
 
 use crate::{query::QueryId, Command, IdBytes};
 
+#[derive(Debug)]
 pub enum CommitMessage {
     Send(CommitRequestParams),
     Done,
 }
 
+#[derive(Debug)]
 pub struct CommitRequestParams {
     command: Command,
     target: Option<IdBytes>,
@@ -49,7 +51,8 @@ pub enum Commit {
 #[derive(Debug)]
 pub enum Progress {
     BeforeStart,
-    /// Sending commit requests in progress
+    /// Sending commit requests in progress. tids are added as they are sent, but also can be
+    /// removed when responses are recieved
     Sending((Receiver<CommitMessage>, BTreeSet<Tid>)),
     /// awaiting replies to commit messages
     AwaitingReplies(BTreeSet<Tid>),
