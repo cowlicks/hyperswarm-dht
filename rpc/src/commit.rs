@@ -1,4 +1,5 @@
 #![allow(unused)]
+use futures::channel::mpsc::{self, Receiver, Sender};
 /// Commit
 /// * commit request - An outgoing [`ReplyMsgData`] which includes a valid token. When the message
 /// is recieved and verified, the reciever does some mutation of state
@@ -6,10 +7,9 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     iter::FromIterator,
     net::SocketAddr,
-    sync::mpsc::{self, Receiver, Sender},
 };
 
-use crate::io::Tid;
+use crate::{constants::DEFAULT_COMMIT_CHANNEL_SIZE, io::Tid};
 
 use crate::{query::QueryId, Command, IdBytes};
 
@@ -25,15 +25,6 @@ pub struct CommitRequestParams {
     peer: SocketAddr,
     query_id: QueryId,
     token: [u8; 32],
-}
-pub struct CommitChannel {
-    tx: mpsc::Sender<CommitMessage>,
-}
-
-impl CommitChannel {
-    fn send(&mut self, msg: CommitRequestParams) {
-        self.tx.send(CommitMessage::Send(msg));
-    }
 }
 
 struct Commiter {
@@ -64,11 +55,12 @@ pub enum Progress {
     AwaitingReplies(BTreeSet<Tid>),
     Done,
 }
+
 use Progress::*;
 impl Progress {
     pub fn start_sending(&mut self) -> Sender<CommitMessage> {
         if matches!(self, BeforeStart) {
-            let (tx, rx) = mpsc::channel();
+            let (tx, rx) = mpsc::channel(DEFAULT_COMMIT_CHANNEL_SIZE);
             *self = Sending((rx, Default::default()));
             tx
         } else {
@@ -84,10 +76,10 @@ impl Progress {
     }
 
     pub fn poll(&mut self) -> Option<CommitMessage> {
-        let Sending((rx, _tids)) = &self else {
+        let Sending((rx, _tids)) = self else {
             panic!("poll while not sending");
         };
-        rx.try_recv().ok()
+        rx.try_next().ok().flatten()
     }
     pub fn sent_tid(&mut self) {
         // insert to Sending.tids

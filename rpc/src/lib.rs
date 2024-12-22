@@ -4,12 +4,13 @@
 
 use commit::{Commit, CommitMessage, Progress};
 use compact_encoding::EncodingError;
+use constants::DEFAULT_COMMIT_CHANNEL_SIZE;
 use io::{InResponse, Tid};
 use kbucket::{distance, Distance};
 use tokio::sync::oneshot::error::RecvError;
 
 use ed25519_dalek::{PublicKey, PUBLIC_KEY_LENGTH};
-use futures::Stream;
+use futures::{channel::mpsc, Stream};
 use query::CommandQueryResponse;
 use std::{
     array::TryFromSliceError,
@@ -20,7 +21,7 @@ use std::{
     net::{AddrParseError, SocketAddr, ToSocketAddrs},
     pin::Pin,
     str::FromStr,
-    sync::{mpsc, Arc, RwLock},
+    sync::{Arc, RwLock},
     task::{Context, Poll},
     time::Duration,
 };
@@ -1066,7 +1067,7 @@ impl Stream for RpcDht {
                                 query.read().unwrap().commit,
                                 Commit::Custom(Progress::BeforeStart)
                             ) {
-                                let (tx, rx) = mpsc::channel();
+                                let (tx, rx) = mpsc::channel(DEFAULT_COMMIT_CHANNEL_SIZE);
                                 // TODO store rx on query and handle incoming messages
                                 return Poll::Ready(Some(RpcDhtEvent::ReadyToCommit {
                                     query: query.clone(),

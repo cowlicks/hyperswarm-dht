@@ -8,7 +8,7 @@ use std::{
 
 use closest::ClosestPeersIter;
 use fnv::FnvHashMap;
-use futures::task::Poll;
+use futures::{channel::mpsc::Sender, task::Poll};
 use wasm_timer::Instant;
 
 use crate::{
@@ -156,18 +156,7 @@ impl QueryPool {
                     break;
                 }
                 Poll::Ready(None) => {
-                    use Commit::*;
-                    use Progress::*;
-                    match &mut query.commit {
-                        No | Auto(Done) | Custom(Done) => finished = Some(query_id),
-                        Auto(BeforeStart) | Custom(BeforeStart) => commiting = Some(query_id),
-                        Auto(prog @ (Sending(_) | AwaitingReplies(_)))
-                        | Custom(prog @ (AwaitingReplies(_) | Sending(_))) => {
-                            // should send message or mark query done.
-                            prog.poll();
-                            continue;
-                        }
-                    }
+                    finished = Some(query_id);
                     break;
                 }
                 Poll::Pending => {
@@ -412,7 +401,7 @@ impl Query {
             PeersIterState::WaitingAtCapacity => return Poll::Pending,
             PeersIterState::Finished => {}
         };
-        poll(&mut self.commit)
+        poll(&mut self.commit, self.id)
     }
 
     /// Consumes the query, producing the final `QueryResult`.
