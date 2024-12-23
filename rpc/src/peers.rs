@@ -3,12 +3,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
 };
 
-use smallvec::alloc::borrow::Borrow;
-
-use crate::{
-    kbucket::{self, EntryView},
-    IdBytes, Node, Peer, PeerId,
-};
+use crate::{kbucket::EntryView, IdBytes, Node, Peer, PeerId};
 
 #[derive(Debug, Clone, Default)]
 pub struct PeersCodec {

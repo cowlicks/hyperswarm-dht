@@ -1,7 +1,4 @@
-use crate::{
-    util::{debug_vec, pretty_bytes},
-    IdBytes,
-};
+use crate::util::{debug_vec, pretty_bytes};
 
 use super::{Command, Peer};
 
@@ -80,10 +77,6 @@ impl From<ReplyMsgData> for MsgData {
     fn from(value: ReplyMsgData) -> Self {
         MsgData::Reply(value)
     }
-}
-
-pub fn valid_id_bytes(id: Option<[u8; 32]>) -> Option<IdBytes> {
-    id.map(IdBytes::from)
 }
 
 impl MsgData {

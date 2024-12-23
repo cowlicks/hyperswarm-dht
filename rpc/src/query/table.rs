@@ -1,8 +1,8 @@
-use std::{net::SocketAddr, num::NonZeroUsize};
+use std::net::SocketAddr;
 
 use fnv::FnvHashMap;
 
-use crate::{kbucket::K_VALUE, IdBytes, PeerId};
+use crate::{IdBytes, PeerId};
 
 #[derive(Debug)]
 pub struct QueryTable {
@@ -55,7 +55,7 @@ impl QueryTable {
             .flatten()
     }
 
-    pub(crate) fn add_unverified(&mut self, peer: PeerId) {
+    pub(crate) fn _add_unverified(&mut self, peer: PeerId) {
         if peer.id == self.id {
             return;
         }
@@ -94,7 +94,7 @@ impl QueryTable {
         }
     }
 
-    pub(crate) fn into_result(&self) -> impl Iterator<Item = (PeerId, PeerState)> {
+    pub(crate) fn peers_iter(&self) -> impl Iterator<Item = (PeerId, PeerState)> {
         self.peers.clone().into_iter().map(|(k, v)| (k.clone(), v))
     }
 }

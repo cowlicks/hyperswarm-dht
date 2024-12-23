@@ -128,9 +128,10 @@ struct InflightRequest {
     /// The message send
     message: RequestMsgData,
     /// The remote peer
+    #[allow(unused)] // TODO  FIXME
     peer: Peer,
     /// Timestamp when the request was sent
-    #[allow(unused)] // FIXME not read. Why not?
+    #[allow(unused)] // TODO FIXME not read. Why not?
     timestamp: Instant,
     ///// Identifier for the query this request is used with
     query_id: Option<QueryId>,

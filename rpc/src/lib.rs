@@ -2,13 +2,6 @@
 #![warn(rust_2018_idioms)]
 #![allow(unreachable_code)]
 
-use commit::{Commit, CommitMessage, Progress};
-use compact_encoding::EncodingError;
-use constants::DEFAULT_COMMIT_CHANNEL_SIZE;
-use io::{InResponse, Tid};
-use kbucket::{distance, Distance};
-use tokio::sync::oneshot::error::RecvError;
-
 use ed25519_dalek::{PublicKey, PUBLIC_KEY_LENGTH};
 use futures::{channel::mpsc, Stream};
 use query::CommandQueryResponse;
@@ -35,17 +28,22 @@ use rand::{
 };
 
 use crate::{
-    cenc::generic_hash,
+    cenc::{generic_hash, validate_id},
+    commit::{Commit, CommitMessage, Progress},
+    constants::DEFAULT_COMMIT_CHANNEL_SIZE,
+    io::{InResponse, Tid},
     jobs::PeriodicJob,
+    kbucket::{distance, Distance},
     kbucket::{Entry, EntryView, InsertResult, KBucketsTable, NodeStatus, K_VALUE},
     query::QueryId,
     util::pretty_bytes,
 };
+use compact_encoding::EncodingError;
+use tokio::sync::oneshot::error::RecvError;
 
 pub use self::message::{ReplyMsgData, RequestMsgData};
 use self::{
     io::{IoConfig, IoHandler, IoHandlerEvent},
-    message::valid_id_bytes,
     mslave::Master,
     query::{
         table::PeerState, CommandQuery, Query, QueryConfig, QueryEvent, QueryPool, QueryPoolEvent,
@@ -207,6 +205,7 @@ pub struct RpcDht {
     /// The currently active (i.e. in-progress) queries.
     queries: QueryPool,
     /// Custom commands
+    #[allow(unused)] // TODO FIXME
     commands: HashSet<usize>,
     /// Queued events to return when being polled.
     queued_events: VecDeque<RpcDhtEvent>,
@@ -466,7 +465,7 @@ impl RpcDht {
 
     /// Process a response.
     fn on_response(&mut self, resp_data: InResponse) {
-        if let Some(id) = valid_id_bytes(resp_data.response.id) {
+        if let Some(id) = validate_id(&resp_data.response.id, &resp_data.peer) {
             self.add_node(
                 id,
                 resp_data.peer.clone(),
@@ -505,7 +504,7 @@ impl RpcDht {
     ///
     /// Eventually send a response.
     fn on_request(&mut self, msg: RequestMsgData, peer: Peer) {
-        if let Some(id) = valid_id_bytes(msg.id) {
+        if let Some(id) = validate_id(&msg.id, &peer) {
             self.add_node(id, peer.clone(), None, Some(SocketAddr::from(&msg.to)));
         }
 
@@ -571,6 +570,7 @@ impl RpcDht {
         self.io.reply(resp.msg)
     }
 
+    #[allow(unused)] // TODO FIXME
     fn reply(
         &mut self,
         error: usize,
@@ -580,13 +580,8 @@ impl RpcDht {
         request: RequestMsgData,
         peer: &Peer,
     ) {
-        let t: Vec<Peer> = match (has_closer_nodes, request.target) {
-            (true, Some(t)) => self
-                .kbuckets
-                .closest(&IdBytes::from(t))
-                .take(usize::from(K_VALUE))
-                .map(|entry| Peer::from(entry.node.value.addr))
-                .collect(),
+        let closer_nodes: Vec<Peer> = match (has_closer_nodes, request.target) {
+            (true, Some(key)) => self.closer_nodes(IdBytes::from(key), usize::from(K_VALUE)),
             _ => vec![],
         };
         let msg = ReplyMsgData {
@@ -594,7 +589,7 @@ impl RpcDht {
             to: peer.clone(),
             id: None,
             token,
-            closer_nodes: t,
+            closer_nodes,
             error,
             value,
         };
@@ -619,13 +614,9 @@ impl RpcDht {
     ///
     /// Reply only if the remote provided a target to get the closest nodes for.
     fn on_find_node(&mut self, request: RequestMsgData, peer: Peer) {
+        // TODO same as 582
         let closer_nodes: Vec<Peer> = match request.target {
-            Some(t) => self
-                .kbuckets
-                .closest(&IdBytes::from(t))
-                .take(usize::from(K_VALUE))
-                .map(|entry| Peer::from(entry.node.value.addr))
-                .collect(),
+            Some(t) => self.closer_nodes(IdBytes::from(t), usize::from(K_VALUE)),
             None => {
                 // TODO emit an event about this
                 warn!("Got FIND_NODE without a target. Msg: {request:?}");
@@ -1267,8 +1258,8 @@ impl Borrow<[u8]> for IdBytes {
 }
 
 impl From<[u8; 32]> for IdBytes {
-    fn from(digest: [u8; 32]) -> Self {
-        Self(digest)
+    fn from(value: [u8; 32]) -> Self {
+        Self(value)
     }
 }
 

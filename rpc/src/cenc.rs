@@ -7,9 +7,9 @@ use compact_encoding::{CompactEncoding, EncodingError, EncodingErrorKind, State}
 
 use crate::{
     constants::{HASH_SIZE, ID_SIZE, REQUEST_ID, RESPONSE_ID},
-    message::{valid_id_bytes, MsgData, ReplyMsgData, RequestMsgData},
+    message::{MsgData, ReplyMsgData, RequestMsgData},
     peers::PeersEncoding,
-    Command, Error, ExternalCommand, IdBytes, InternalCommand, Peer, PeerId, Result,
+    Command, Error, ExternalCommand, IdBytes, InternalCommand, Peer, Result,
 };
 
 impl CompactEncoding<InternalCommand> for State {
@@ -158,9 +158,11 @@ pub(crate) fn generic_hash_with_key(input: &[u8], key: &[u8]) -> Result<[u8; HAS
     Ok(out)
 }
 
-pub(crate) fn validate_id(id: &[u8; ID_SIZE], from: &Peer) -> Option<[u8; ID_SIZE]> {
-    if id == &calculate_peer_id(from) {
-        return Some(*id);
+pub(crate) fn validate_id(id: &Option<[u8; ID_SIZE]>, from: &Peer) -> Option<IdBytes> {
+    if let Some(id) = id {
+        if id == &calculate_peer_id(from) {
+            return Some(IdBytes::from(*id));
+        }
     }
     None
 }
@@ -306,21 +308,6 @@ impl RequestMsgData {
 impl ReplyMsgData {
     pub fn is_error(&self) -> bool {
         self.error != 0
-    }
-    /// Decode the `to` field into `PeerId`
-    pub(crate) fn decode_closer_nodes(&self) -> Vec<PeerId> {
-        self.closer_nodes
-            .iter()
-            .filter_map(|p| {
-                if let Some(id) = p.id {
-                    return Some(PeerId::new(p.addr, IdBytes::from(id)));
-                }
-                None
-            })
-            .collect()
-    }
-    pub(crate) fn valid_id_bytes(&self) -> Option<IdBytes> {
-        valid_id_bytes(self.id)
     }
 
     fn encode(&self) -> Result<Vec<u8>> {

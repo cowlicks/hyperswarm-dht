@@ -1,6 +1,4 @@
 use std::{
-    collections::BTreeSet,
-    iter::FromIterator,
     num::NonZeroUsize,
     sync::{Arc, RwLock},
     time::Duration,
@@ -15,9 +13,10 @@ use futures::{
 use wasm_timer::Instant;
 
 use crate::{
-    commit::{Commit, CommitRequestParams, Progress},
+    cenc::validate_id,
+    commit::Commit,
     constants::DEFAULT_COMMIT_CHANNEL_SIZE,
-    io::{InResponse, Tid},
+    io::InResponse,
     kbucket::{ALPHA_VALUE, K_VALUE},
     CommitMessage, IdBytes, PeerId,
 };
@@ -226,9 +225,10 @@ pub struct Query {
     /// identifier for this stream
     pub id: QueryId,
     /// The permitted parallelism, i.e. number of pending results.
+    #[allow(unused)] // TODO
     parallelism: NonZeroUsize,
     /// The peer iterator that drives the query state.
-    pub peer_iter: ClosestPeersIter,
+    pub(crate) peer_iter: ClosestPeersIter,
     /// The rpc command of this stream
     pub cmd: Command,
     /// Stats about this query
@@ -244,6 +244,8 @@ pub struct Query {
 }
 
 impl Query {
+    // TODO use a builder struct instead
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: QueryId,
         cmd: Command,
@@ -258,7 +260,7 @@ impl Query {
         Self {
             id,
             parallelism,
-            peer_iter: ClosestPeersIter::new(target.clone().into(), bootstrap),
+            peer_iter: ClosestPeersIter::new(target.clone(), bootstrap),
             cmd,
             stats: QueryStats::empty(),
             value,
@@ -306,7 +308,8 @@ impl Query {
         self.id
     }
 
-    pub(crate) fn on_timeout(&mut self, peer: Peer) {
+    // TODO unused
+    pub(crate) fn _on_timeout(&mut self, peer: Peer) {
         self.stats.failure += 1;
         for (p, state) in self.inner.peers_mut() {
             if p.addr == peer.addr {
@@ -319,8 +322,8 @@ impl Query {
 
     /// Received a response to a requested driven by this query.
     pub(crate) fn inject_response(&mut self, data: &InResponse) -> Option<Response> {
+        use crate::Progress::*;
         use Commit::*;
-        use Progress::*;
         match &mut self.commit {
             Auto(prog @ (AwaitingReplies(_) | Sending(_)))
             | Custom(prog @ (AwaitingReplies(_) | Sending(_))) => {
@@ -365,7 +368,7 @@ impl Query {
             cmd: self.cmd,
             to: Some(data.response.to.addr),
             peer: data.peer.addr,
-            peer_id: data.response.valid_id_bytes(),
+            peer_id: validate_id(&data.response.id, &data.peer),
             value: data.response.value.clone(),
         })
     }
@@ -416,7 +419,7 @@ impl Query {
     /// Consumes the query, producing the final `QueryResult`.
     pub fn into_result(&self) -> QueryResult<QueryId, impl Iterator<Item = (PeerId, PeerState)>> {
         QueryResult {
-            peers: self.inner.into_result(),
+            peers: self.inner.peers_iter(),
             inner: self.id,
             stats: self.stats.clone(),
             cmd: self.cmd,
@@ -425,14 +428,14 @@ impl Query {
 }
 
 fn poll(commit: &mut Commit, query_id: QueryId) -> Poll<Option<CommitEvent>> {
+    use crate::Progress::*;
     use Commit::*;
-    use Progress::*;
     match commit {
         No | Auto(Done) | Custom(Done) => Poll::Ready(None),
         Auto(BeforeStart) => {
             let (tx, rx) = mpsc::channel(DEFAULT_COMMIT_CHANNEL_SIZE);
             *commit = Auto(Sending((rx, Default::default())));
-            /// RpcDht should recieve this and send the query messages
+            // RpcDht should recieve this and send the query messages
             Poll::Ready(Some(CommitEvent::AutoStart((tx, query_id))))
         }
         Custom(BeforeStart) => {
@@ -450,7 +453,7 @@ fn poll(commit: &mut Commit, query_id: QueryId) -> Poll<Option<CommitEvent>> {
                 let sending_done = CommitEvent::SendRequests((out, query_id));
                 return Poll::Ready(Some(sending_done));
             }
-            return Poll::Pending;
+            Poll::Pending
         }
         _ => todo!(),
     }

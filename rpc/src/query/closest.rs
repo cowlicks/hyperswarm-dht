@@ -38,7 +38,7 @@ use super::peers::PeersIterState;
 /// A peer iterator for a dynamically changing list of peers, sorted by increasing
 /// distance to a chosen target.
 #[derive(Debug, Clone)]
-pub struct ClosestPeersIter {
+pub(crate) struct ClosestPeersIter {
     config: ClosestPeersIterConfig,
 
     /// The target whose distance to any peer determines the position of
@@ -279,6 +279,7 @@ impl ClosestPeersIter {
 
     /// Returns the list of peers for which the iterator is currently waiting
     /// for results.
+    #[allow(unused)] // TODO FIXME
     pub fn waiting(&self) -> impl Iterator<Item = &IterPeer> {
         self.closest_peers
             .values()
@@ -287,11 +288,13 @@ impl ClosestPeersIter {
 
     /// Returns the number of peers for which the iterator is currently
     /// waiting for results.
+    #[allow(unused)] // TODO FIXME
     pub fn num_waiting(&self) -> usize {
         self.num_waiting
     }
 
     /// Returns true if the iterator is waiting for a response from the given peer.
+    #[allow(unused)] // TODO FIXME
     pub fn is_waiting(&self, peer: &IdBytes) -> bool {
         self.waiting().any(|p| *peer == p.id)
     }
@@ -379,16 +382,19 @@ impl ClosestPeersIter {
     }
 
     /// Immediately transitions the iterator to [`PeersIterState::Finished`].
+    #[allow(unused)] // TODO FIXME
     pub fn finish(&mut self) {
         self.state = State::Finished
     }
 
     /// Checks whether the iterator has finished.
+    #[allow(unused)] // TODO FIXME
     pub fn is_finished(&self) -> bool {
         self.state == State::Finished
     }
 
     /// Consumes the iterator, returning the closest peers.
+    #[allow(unused)] // TODO FIXME
     pub fn into_result(self) -> impl Iterator<Item = Peer> {
         self.closest_peers
             .into_iter()
