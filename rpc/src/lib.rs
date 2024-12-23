@@ -15,9 +15,10 @@ use query::CommandQueryResponse;
 use std::{
     array::TryFromSliceError,
     borrow::Borrow,
-    collections::{HashSet, VecDeque},
+    collections::{BTreeSet, HashSet, VecDeque},
     convert::{TryFrom, TryInto},
     fmt::Display,
+    iter::FromIterator,
     net::{AddrParseError, SocketAddr, ToSocketAddrs},
     pin::Pin,
     str::FromStr,
@@ -54,7 +55,7 @@ use self::{
 };
 
 pub mod cenc;
-mod commit;
+pub mod commit;
 pub mod constants;
 pub mod io;
 mod jobs;
@@ -1051,7 +1052,14 @@ impl Stream for RpcDht {
                     }
                 } else {
                     match pin.queries.poll(now) {
-                        QueryPoolEvent::Commit((query, ev)) => {
+                        QueryPoolEvent::Commit((query, cev)) => {
+                            use query::CommitEvent::*;
+                            match cev {
+                                AutoStart((tx, query_id)) => {
+                                    todo!()
+                                }
+                                _ => todo!(),
+                            }
                             // NB: we don't use `match` here because the query would remain
                             // read-locked into the match arm. Which would prevent aquiring a write-lock.
                             if matches!(

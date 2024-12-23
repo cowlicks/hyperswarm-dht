@@ -48,6 +48,11 @@ pub enum Commit {
     Custom(Progress),
 }
 
+impl Default for Progress {
+    fn default() -> Self {
+        Self::BeforeStart
+    }
+}
 #[derive(Debug)]
 pub enum Progress {
     BeforeStart,

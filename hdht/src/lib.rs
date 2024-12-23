@@ -13,7 +13,6 @@ use std::{
 };
 
 use compact_encoding::EncodingError;
-use dht_rpc::{cenc::generic_hash, query::Commit};
 use ed25519_dalek::{Keypair, PublicKey, Signature};
 use either::Either;
 use fnv::FnvHashMap;
@@ -33,6 +32,8 @@ use crate::{
     store::{StorageEntry, StorageKey, Store, PUT_VALUE_MAX_SIZE},
 };
 pub use ::dht_rpc::{
+    cenc::generic_hash,
+    commit::Commit,
     peers::{decode_local_peers, decode_peers, PeersEncoding},
     query::{CommandQuery, QueryId, QueryStats},
     Command, DhtConfig, ExternalCommand, IdBytes, Peer, PeerId, RequestMsgData, RequestOk,
@@ -284,7 +285,7 @@ impl HyperDht {
             Command::External(ExternalCommand(MUTABLE_STORE_CMD)),
             get.key.clone(),
             Some(buf),
-            Commit::Custom, // maybe could be auto, looks the same
+            Commit::Custom(Default::default()), // maybe could be auto, looks the same
         );
 
         self.queries.insert(
@@ -320,7 +321,7 @@ impl HyperDht {
             Command::External(ExternalCommand(commands::IMMUTABLE_PUT)),
             key.clone(),
             None,
-            Commit::Custom, // maybe could be auto, looks the same
+            Commit::Custom(Default::default()), // maybe could be auto, looks the same
         );
 
         /*
@@ -483,7 +484,7 @@ impl HyperDht {
             Command::External(ExternalCommand(commands::LOOKUP)),
             target,
             None,
-            Commit::Custom,
+            Commit::Custom(Default::default()),
         );
         self.queries
             .insert(query_id, QueryStreamType::LookupAndUnannounce(todo!()));
