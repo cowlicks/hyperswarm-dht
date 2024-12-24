@@ -180,7 +180,7 @@ impl IoHandler {
     pub fn queue_send_request(
         &mut self,
         command: Command,
-        target: Option<[u8; 32]>,
+        target: Option<IdBytes>,
         value: Option<Vec<u8>>,
         peer: Peer,
         query_id: Option<QueryId>,
@@ -201,7 +201,7 @@ impl IoHandler {
                 id,
                 token,
                 command,
-                target,
+                target: target.map(|x| x.0),
                 value,
             },
         )));

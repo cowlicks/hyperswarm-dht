@@ -15,28 +15,21 @@ use crate::{query::QueryId, Command, IdBytes};
 
 #[derive(Debug)]
 pub enum CommitMessage {
+    /// User emit this when they want to send a commit request.
     Send(CommitRequestParams),
+    /// User emits this when they've push all commit requests
+    /// Casuse  Progress to transition to AwaitingReplies
     Done,
 }
 
 #[derive(Debug)]
 pub struct CommitRequestParams {
-    command: Command,
-    target: Option<IdBytes>,
-    value: Option<Vec<u8>>,
-    peer: SocketAddr,
-    query_id: QueryId,
-    token: [u8; 32],
-}
-
-struct Commiter {
-    rx: CommitMessage,
-}
-
-/// Events to send to [`RpcDht`] for handling
-enum Event {
-    SendCommitRequest(CommitRequestParams),
-    CommitDone,
+    pub command: Command,
+    pub target: Option<IdBytes>,
+    pub value: Option<Vec<u8>>,
+    pub peer: SocketAddr,
+    pub query_id: QueryId,
+    pub token: [u8; 32],
 }
 
 #[derive(Debug)]
@@ -76,6 +69,14 @@ impl Progress {
         }
     }
 
+    pub fn all_replies_recieved(&self) -> bool {
+        match self {
+            BeforeStart => false,
+            Sending(_) => false,
+            AwaitingReplies(tids) => tids.is_empty(),
+            Done => true,
+        }
+    }
     pub fn transition_to_awaiting(&mut self) {
         *self = AwaitingReplies(match self {
             Sending((_, tids)) => tids.clone(),
@@ -89,7 +90,11 @@ impl Progress {
         };
         rx.try_next().ok().flatten()
     }
-    pub fn sent_tid(&mut self) {
+    pub fn sent_tid(&mut self, tid: Tid) -> bool {
+        match self {
+            Sending((rx, tids)) => tids.insert(tid),
+            _ => panic!("only call while `Sending`"),
+        }
         // insert to Sending.tids
     }
 

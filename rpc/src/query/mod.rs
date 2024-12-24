@@ -441,7 +441,7 @@ fn poll(commit: &mut Commit, query_id: QueryId) -> Poll<Option<CommitEvent>> {
         Custom(BeforeStart) => {
             let (tx, rx) = mpsc::channel(DEFAULT_COMMIT_CHANNEL_SIZE);
             *commit = Custom(Sending((rx, Default::default())));
-            Poll::Ready(Some(CommitEvent::AutoStart((tx, query_id))))
+            Poll::Ready(Some(CommitEvent::CustomStart((tx, query_id))))
         }
         Auto(Sending(_)) => Poll::Pending,
         Custom(Sending((rx, _tids))) => {
@@ -481,9 +481,15 @@ impl QueryType {
 
 #[derive(Debug)]
 pub enum CommitEvent {
+    // Emitted when commit process starts for Commit::Auto. Progress is Sending
     AutoStart((Sender<CommitMessage>, QueryId)),
+    // emitted when commit process starts for custom. Progess is set to Sending
     CustomStart((Sender<CommitMessage>, QueryId)),
+    // Emitted when commit process has rquests it wants to send. Send them.
     SendRequests((Vec<CommitMessage>, QueryId)),
+    /// Commit Done
+    /// TODO add info about commit, like successful replies, timeouts, etc
+    Done,
 }
 #[derive(Debug)]
 pub enum QueryEvent {

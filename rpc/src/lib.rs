@@ -30,7 +30,6 @@ use rand::{
 use crate::{
     cenc::{generic_hash, validate_id},
     commit::{Commit, CommitMessage, Progress},
-    constants::DEFAULT_COMMIT_CHANNEL_SIZE,
     io::{InResponse, Tid},
     jobs::PeriodicJob,
     kbucket::{distance, Distance},
@@ -786,7 +785,7 @@ impl RpcDht {
                 self.io
                     .queue_send_request(
                         q.cmd,
-                        Some(q.peer_iter.target.0),
+                        Some(q.peer_iter.target),
                         q.value.clone(),
                         rep.peer.clone(),
                         Some(q.id),
@@ -807,7 +806,7 @@ impl RpcDht {
                 value,
             } => {
                 self.io
-                    .queue_send_request(command, Some(target.0), value, peer, Some(id), None);
+                    .queue_send_request(command, Some(target), value, peer, Some(id), None);
             }
             QueryEvent::RemoveNode { id } => {
                 self.remove_peer(&id);
@@ -1044,36 +1043,64 @@ impl Stream for RpcDht {
                 } else {
                     match pin.queries.poll(now) {
                         QueryPoolEvent::Commit((query, cev)) => {
+                            use commit::Commit::*;
+                            use commit::Progress::*;
                             use query::CommitEvent::*;
                             match cev {
-                                AutoStart((tx, query_id)) => {
-                                    todo!()
+                                AutoStart((_, _)) => {
+                                    let tids = pin.default_commit(query.clone());
+                                    query.write().unwrap().commit =
+                                        Auto(AwaitingReplies(BTreeSet::from_iter(tids)))
+                                }
+                                CustomStart((tx_commit_messages, _)) => {
+                                    return Poll::Ready(Some(RpcDhtEvent::ReadyToCommit {
+                                        query,
+                                        tx_commit_messages,
+                                    }));
+                                }
+                                SendRequests((commits, _)) => {
+                                    for msg in commits {
+                                        match msg {
+                                            CommitMessage::Send(cr) => {
+                                                let (_, tid) = pin.io.queue_send_request(
+                                                    cr.command,
+                                                    cr.target,
+                                                    cr.value,
+                                                    cr.peer.into(),
+                                                    Some(cr.query_id),
+                                                    Some(cr.token),
+                                                );
+                                                if let Custom(prog @ Sending(_)) =
+                                                    &mut query.write().unwrap().commit
+                                                {
+                                                    prog.sent_tid(tid);
+                                                }
+                                            }
+                                            CommitMessage::Done => {
+                                                match &mut query.write().unwrap().commit {
+                                                    Custom(prog @ Sending(_)) => {
+                                                        // Done should only be emitted last. Any
+                                                        // further rquests sent with `Send` are
+                                                        // dropped
+                                                        prog.transition_to_awaiting();
+                                                        if prog.all_replies_recieved() {
+                                                            // if we'd already recieved all replies,
+                                                            // we're done
+                                                            *prog = Progress::Done;
+                                                        }
+                                                    }
+                                                    _ => {
+                                                        // We expect that only `Custom` sends
+                                                        // SendRequests. and only sends Done while
+                                                        // in `Sending`
+                                                        todo!()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                                 _ => todo!(),
-                            }
-                            // NB: we don't use `match` here because the query would remain
-                            // read-locked into the match arm. Which would prevent aquiring a write-lock.
-                            if matches!(
-                                query.read().unwrap().commit,
-                                Commit::Auto(Progress::BeforeStart)
-                            ) {
-                                let tids = { pin.default_commit(query.clone()) };
-                                let Commit::Auto(prog) = &mut query.write().unwrap().commit else {
-                                    panic!("see above");
-                                };
-                                prog.start_awaiting(tids);
-                            } else if matches!(
-                                query.read().unwrap().commit,
-                                Commit::Custom(Progress::BeforeStart)
-                            ) {
-                                let (tx, rx) = mpsc::channel(DEFAULT_COMMIT_CHANNEL_SIZE);
-                                // TODO store rx on query and handle incoming messages
-                                return Poll::Ready(Some(RpcDhtEvent::ReadyToCommit {
-                                    query: query.clone(),
-                                    tx_commit_messages: tx,
-                                }));
-                            } else {
-                                debug!("Does this happen?");
                             }
                         }
                         QueryPoolEvent::Waiting(Some((query, event))) => {
@@ -1226,7 +1253,7 @@ impl Node {
 }
 
 /// A 32 byte identifier for a node participating in the DHT.
-#[derive(Clone, Hash, PartialOrd, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialOrd, PartialEq, Eq, Copy)]
 pub struct IdBytes(pub [u8; PUBLIC_KEY_LENGTH]);
 
 impl IdBytes {
