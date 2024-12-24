@@ -14,6 +14,18 @@ use crate::{constants::DEFAULT_COMMIT_CHANNEL_SIZE, io::Tid};
 use crate::{query::QueryId, Command, IdBytes};
 
 #[derive(Debug)]
+pub enum CommitEvent {
+    // Emitted when commit process starts for Commit::Auto. Progress is Sending
+    AutoStart((Sender<CommitMessage>, QueryId)),
+    // emitted when commit process starts for custom. Progess is set to Sending
+    CustomStart((Sender<CommitMessage>, QueryId)),
+    // Emitted when commit process has rquests it wants to send. Send them.
+    SendRequests((Vec<CommitMessage>, QueryId)),
+    /// Commit Done
+    /// TODO add info about commit, like successful replies, timeouts, etc
+    Done,
+}
+#[derive(Debug)]
 pub enum CommitMessage {
     /// User emit this when they want to send a commit request.
     Send(CommitRequestParams),

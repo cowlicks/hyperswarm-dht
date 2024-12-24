@@ -1043,9 +1043,8 @@ impl Stream for RpcDht {
                 } else {
                     match pin.queries.poll(now) {
                         QueryPoolEvent::Commit((query, cev)) => {
-                            use commit::Commit::*;
-                            use commit::Progress::*;
-                            use query::CommitEvent::*;
+                            use commit::{Commit::*, CommitEvent::*, Progress::*};
+                            // TODO add all commit handlers
                             match cev {
                                 AutoStart((_, _)) => {
                                     let tids = pin.default_commit(query.clone());

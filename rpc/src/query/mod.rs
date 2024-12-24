@@ -7,18 +7,18 @@ use std::{
 use closest::ClosestPeersIter;
 use fnv::FnvHashMap;
 use futures::{
-    channel::mpsc::{self, Sender},
+    channel::mpsc::{self},
     task::Poll,
 };
 use wasm_timer::Instant;
 
 use crate::{
     cenc::validate_id,
-    commit::Commit,
+    commit::{Commit, CommitEvent},
     constants::DEFAULT_COMMIT_CHANNEL_SIZE,
     io::InResponse,
     kbucket::{ALPHA_VALUE, K_VALUE},
-    CommitMessage, IdBytes, PeerId,
+    IdBytes, PeerId,
 };
 
 mod closest;
@@ -479,18 +479,6 @@ impl QueryType {
     }
 }
 
-#[derive(Debug)]
-pub enum CommitEvent {
-    // Emitted when commit process starts for Commit::Auto. Progress is Sending
-    AutoStart((Sender<CommitMessage>, QueryId)),
-    // emitted when commit process starts for custom. Progess is set to Sending
-    CustomStart((Sender<CommitMessage>, QueryId)),
-    // Emitted when commit process has rquests it wants to send. Send them.
-    SendRequests((Vec<CommitMessage>, QueryId)),
-    /// Commit Done
-    /// TODO add info about commit, like successful replies, timeouts, etc
-    Done,
-}
 #[derive(Debug)]
 pub enum QueryEvent {
     // can be:
