@@ -9,18 +9,22 @@ use std::{
     fmt,
     net::{AddrParseError, IpAddr, SocketAddr, SocketAddrV4, ToSocketAddrs},
     pin::Pin,
+    sync::{Arc, RwLock},
     time::Duration,
 };
 
 use compact_encoding::EncodingError;
+use dht_rpc::{commit::CommitMessage, query::Query};
 use ed25519_dalek::{Keypair, PublicKey, Signature};
 use either::Either;
 use fnv::FnvHashMap;
 use futures::{
+    channel::mpsc::Sender,
     task::{Context, Poll},
     Stream,
 };
 use prost::Message as ProstMessage;
+use queries::QueryOpts as QueryOpts2;
 use sha2::digest::generic_array::{typenum::U32, GenericArray};
 use smallvec::alloc::collections::VecDeque;
 use tokio::sync::oneshot::error::RecvError;
@@ -55,6 +59,7 @@ mod dht_proto {
 }
 pub mod crypto;
 pub mod lru;
+mod queries;
 pub mod store;
 
 #[allow(dead_code)]
@@ -172,11 +177,6 @@ impl HyperDht {
     #[inline]
     pub fn local_addr(&self) -> Result<SocketAddr> {
         Ok(self.inner.local_addr()?)
-    }
-
-    #[allow(dead_code)]
-    fn tally(&mut self, _only_ip: bool) {
-        unimplemented!()
     }
 
     /// Handle an incoming requests for the registered commands and reply.
@@ -479,7 +479,7 @@ impl HyperDht {
     }
 
     /// Do a LOOKUP and send an UNANNOUNCE to each node that replies
-    fn lookup_and_unannounce(&mut self, target: IdBytes, keypair: Keypair) -> QueryId {
+    pub fn lookup_and_unannounce(&mut self, target: IdBytes, keypair: Keypair) -> QueryId {
         let query_id = self.inner.query(
             Command::External(ExternalCommand(commands::LOOKUP)),
             target,
@@ -494,27 +494,20 @@ impl HyperDht {
     /// Announce the topic to the closest peers
     ///
     /// Query result is a [`HyperDhtEvent::AnnounceResult`].
-    pub fn announce(&mut self, opts: impl Into<QueryOpts>) -> QueryId {
-        let opts = opts.into();
-
-        let peers = PeersInput {
-            port: opts.port,
-            local_address: opts.local_addr_encoded(),
-            unannounce: None,
+    pub fn announce(
+        &mut self,
+        target: IdBytes,
+        key_pair: Keypair,
+        relay_addresses: Vec<SocketAddr>,
+        opts: QueryOpts2,
+    ) -> QueryId {
+        let query_id = if opts.clear {
+            self.lookup_and_unannounce(target, key_pair);
+        } else {
+            self.lookup(target);
         };
-        let _buf = encode_input(&peers);
-
-        /*
-        let id = self.inner.query_and_update(
-            PEERS_CMD,
-            kbucket::Key::new(opts.topic.clone()),
-            Some(buf),
-        );
-        self.queries.insert(
-            todo!()
-            QueryStreamType::Announce(QueryStreamInner::new(opts.topic, opts.local_addr)),
-        );
-        */
+        // create Commit trait obj
+        // register it with the query id
         todo!()
     }
 
@@ -597,6 +590,10 @@ impl HyperDht {
             self.queued_events.push_back(query.finalize(id))
         }
     }
+
+    fn commit(&mut self, _query: Arc<RwLock<Query>>, _channel: Sender<CommitMessage>) {
+        todo!()
+    }
 }
 
 impl Stream for HyperDht {
@@ -630,6 +627,12 @@ impl Stream for HyperDht {
                         cmd: _,
                         stats: _,
                     } => pin.query_finished(id),
+                    RpcDhtEvent::ReadyToCommit {
+                        query,
+                        tx_commit_messages,
+                    } => {
+                        pin.commit(query, tx_commit_messages);
+                    }
                     _ => {}
                 }
             }

@@ -13,6 +13,7 @@ use crate::{constants::DEFAULT_COMMIT_CHANNEL_SIZE, io::Tid};
 
 use crate::{query::QueryId, Command, IdBytes};
 
+/// Emitted from a query's commit
 #[derive(Debug)]
 pub enum CommitEvent {
     // Emitted when commit process starts for Commit::Auto. Progress is Sending
@@ -25,6 +26,8 @@ pub enum CommitEvent {
     /// TODO add info about commit, like successful replies, timeouts, etc
     Done,
 }
+
+/// Sent by user with Commit::Custom to send commit requests
 #[derive(Debug)]
 pub enum CommitMessage {
     /// User emit this when they want to send a commit request.
@@ -44,6 +47,7 @@ pub struct CommitRequestParams {
     pub token: [u8; 32],
 }
 
+/// The kinds of [`Commit`] a [`Query`] can have.
 #[derive(Debug)]
 pub enum Commit {
     No,
