@@ -1,5 +1,6 @@
 use dht_rpc::PeerId;
 
+#[derive(Debug, Clone)]
 pub struct QueryOpts {
     pub clear: bool,
     pub closest_nodes: Vec<PeerId>,

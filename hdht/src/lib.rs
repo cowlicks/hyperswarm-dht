@@ -305,7 +305,7 @@ impl HyperDht {
     }
 
     /// Do a LOOKUP and send an UNANNOUNCE to each node that replies
-    pub fn lookup_and_unannounce(&mut self, target: IdBytes, _keypair: Keypair) -> QueryId {
+    pub fn lookup_and_unannounce(&mut self, target: IdBytes, _keypair: &Keypair) -> QueryId {
         let query_id = self.inner.query(
             Command::External(ExternalCommand(commands::LOOKUP)),
             target,
@@ -323,9 +323,9 @@ impl HyperDht {
     pub fn announce(
         &mut self,
         target: IdBytes,
-        key_pair: Keypair,
-        _relay_addresses: Vec<SocketAddr>,
-        opts: QueryOpts2,
+        key_pair: &Keypair,
+        _relay_addresses: &[SocketAddr],
+        opts: &QueryOpts2,
     ) -> QueryId {
         let _query_id = if opts.clear {
             self.lookup_and_unannounce(target, key_pair);
@@ -387,8 +387,25 @@ impl HyperDht {
         }
     }
 
-    fn commit(&mut self, _query: Arc<RwLock<Query>>, _channel: Sender<CommitMessage>) {
-        todo!()
+    fn commit(&mut self, query: Arc<RwLock<Query>>, _channel: Sender<CommitMessage>) {
+        let cmd = query.read().unwrap().cmd.clone();
+        match cmd {
+            Command::Internal(_) => todo!(),
+            Command::External(cmd_code) => match cmd_code {
+                ExternalCommand(commands::LOOKUP) => {
+                    todo!();
+                }
+                ExternalCommand(commands::ANNOUNCE) => {
+                    todo!();
+                }
+                ExternalCommand(commands::UNANNOUNCE) => {
+                    todo!();
+                }
+                _ => {
+                    todo!()
+                }
+            },
+        }
     }
 }
 
@@ -747,38 +764,11 @@ impl QueryStreamInner {
 
 #[cfg(test)]
 mod tests {
-    use futures::{FutureExt, SinkExt, StreamExt};
-
-    use crate::store::verify;
+    use crypto::keypair;
+    use dht_rpc::DEFAULT_BOOTSTRAP;
+    use futures::StreamExt;
 
     use super::*;
-
-    macro_rules! spawn_dhts {
-        ($num:expr, $bs:expr) => {
-            spawn_dhts!($num, $bs, false)
-        };
-        ($num:expr, $bs:expr, $eph:expr) => {{
-            for _ in 0usize..$num {
-                let mut dht = HyperDht::with_config(
-                    DhtConfig::default()
-                        .set_bootstrap_nodes($bs)
-                        .set_ephemeral($eph),
-                )
-                .await?;
-                // wait until this dht is bootstrapped
-                match dht.next().await {
-                    Some(HyperDhtEvent::Bootstrapped { .. }) => {}
-                    _ => panic!("expected bootstrap result first"),
-                }
-                tokio::task::spawn(async move {
-                    loop {
-                        // process each incoming message
-                        dht.next().await;
-                    }
-                });
-            }
-        }};
-    }
 
     macro_rules! bootstrap_dht {
         () => {
@@ -830,7 +820,18 @@ mod tests {
         let port = 12345;
         // announce options
         let opts = QueryOpts::new(IdBytes::random()).port(port);
+        let target = IdBytes::random();
+        let key_pair = keypair();
+        let relay_addresses: Vec<SocketAddr> = DEFAULT_BOOTSTRAP
+            .iter()
+            .map(|bs| bs.to_socket_addrs().unwrap().last().unwrap())
+            .collect();
 
+        let opts2 = QueryOpts2 {
+            clear: false,
+            closest_nodes: vec![],
+            only_closest_nodes: false,
+        };
         let mut node = HyperDht::with_config(
             DhtConfig::default()
                 .ephemeral()
@@ -847,7 +848,7 @@ mod tests {
                 match event {
                     HyperDhtEvent::Bootstrapped { .. } => {
                         // 1. announce topic and port
-                        node.announce(opts.clone());
+                        node.announce(target, &key_pair, &relay_addresses, &opts2);
                     }
                     HyperDhtEvent::AnnounceResult { .. } => {
                         // 2. look up the announced topic
