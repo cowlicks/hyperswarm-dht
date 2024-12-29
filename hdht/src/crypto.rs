@@ -162,3 +162,28 @@ mod tests {
         )
     }
 }
+
+/// taken from
+/// https://github.com/holepunchto/hyperdht/blob/0d4f4b65bf1c252487f7fd52ef9e21ac76a3ceba/lib/constants.js#L42-L54
+pub mod namespace {
+    macro_rules! const_hex_decode {
+        ($arg:expr) => {{
+            match const_hex::const_decode_to_array($arg) {
+                Ok(x) => x,
+                Err(_) => panic!("Failed to decode"),
+            }
+        }};
+    }
+
+    pub const ANNOUNCE: [u8; 32] =
+        const_hex_decode!(b"36386adddf9f6fd60db83a6f42fc159d1146aa8644037664230aaa1f0179d49e");
+    pub const UNANNOUNCE: [u8; 32] =
+        const_hex_decode!(b"ded293cd93fb395e756ecf5fff426529e72c36eacc22e5ed944d9099a2561e3e");
+    pub const MUTABLE_PUT: [u8; 32] =
+        const_hex_decode!(b"668e823edd5ce7f5338d68bf1161f4a3c28ce437ee2ab49efd30d99366039b1e");
+    pub const PEER_HANDSHAKE: [u8; 32] =
+        const_hex_decode!(b"14d6d4b49214ab1033ed204976caa258bae9e1e8543b9ad1fd996a910b0c4e3a");
+    pub const PEER_HOLEPUNCH: [u8; 32] =
+        const_hex_decode!(b"f1191cd5e67b10b54a507033280ed1ff0e12278268d5679c8f93d417210d168b");
+}
+
