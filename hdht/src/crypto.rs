@@ -137,32 +137,6 @@ pub fn signable_mutable(mutable: &Mutable) -> Result<Vec<u8>, ()> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn signable_test() {
-        let mutable = Mutable {
-            value: Some(b"value".to_vec()),
-            signature: None,
-            seq: None,
-            salt: None,
-        };
-        let sign = signable_mutable(&mutable).unwrap();
-
-        assert_eq!(
-            sign.as_slice(),
-            &[51, 58, 115, 101, 113, 105, 48, 101, 49, 58, 118, 53, 58, 118, 97, 108, 117, 101][..]
-        );
-
-        assert_eq!(
-            String::from_utf8(sign).unwrap().as_str(),
-            "3:seqi0e1:v5:value"
-        )
-    }
-}
-
 /// taken from
 /// https://github.com/holepunchto/hyperdht/blob/0d4f4b65bf1c252487f7fd52ef9e21ac76a3ceba/lib/constants.js#L42-L54
 pub mod namespace {
@@ -187,3 +161,70 @@ pub mod namespace {
         const_hex_decode!(b"f1191cd5e67b10b54a507033280ed1ff0e12278268d5679c8f93d417210d168b");
 }
 
+pub fn generic_hash_batch(inputs: &[&[u8]]) -> [u8; 32] {
+    let mut out = [0u8; libsodium_sys::crypto_generichash_BYTES as usize];
+    let mut st = vec![0u8; unsafe { libsodium_sys::crypto_generichash_statebytes() }];
+    let pst = unsafe {
+        std::mem::transmute::<*mut u8, *mut libsodium_sys::crypto_generichash_state>(
+            st.as_mut_ptr(),
+        )
+    };
+
+    if 0 != unsafe {
+        libsodium_sys::crypto_generichash_init(pst, std::ptr::null_mut(), 0, out.len())
+    } {
+        panic!("Should only error when out-of-memory OR when the input is invalid. Inputs here or checked");
+    }
+
+    for chunk in inputs {
+        if 0 != unsafe {
+            libsodium_sys::crypto_generichash_update(pst, chunk.as_ptr(), chunk.len() as u64)
+        } {
+            panic!("Should only error when out-of-memory OR when the input is invalid. Inputs here or checked");
+        }
+    }
+    if 0 != unsafe { libsodium_sys::crypto_generichash_final(pst, out.as_mut_ptr(), out.len()) } {
+        panic!("Should only error when out-of-memory OR when the input is invalid. Inputs here or checked");
+    }
+    out
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn compare_batch_hash_with_javascript_result() {
+        // value calculated from
+        // https://gist.github.com/cowlicks/901ee94ace3b881e0ef057f472d16a71
+        let expected: [u8; 32] = [
+            96, 83, 105, 30, 76, 247, 143, 215, 26, 251, 250, 184, 48, 122, 222, 187, 105, 4, 254,
+            251, 46, 29, 249, 66, 167, 216, 198, 209, 204, 167, 180, 62,
+        ];
+
+        let x: &[&[u8]] = &[b"yolo", b"wassup", b"howdy"];
+        let res = generic_hash_batch(x);
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn signable_test() {
+        let mutable = Mutable {
+            value: Some(b"value".to_vec()),
+            signature: None,
+            seq: None,
+            salt: None,
+        };
+        let sign = signable_mutable(&mutable).unwrap();
+
+        assert_eq!(
+            sign.as_slice(),
+            &[51, 58, 115, 101, 113, 105, 48, 101, 49, 58, 118, 53, 58, 118, 97, 108, 117, 101][..]
+        );
+
+        assert_eq!(
+            String::from_utf8(sign).unwrap().as_str(),
+            "3:seqi0e1:v5:value"
+        )
+    }
+}
