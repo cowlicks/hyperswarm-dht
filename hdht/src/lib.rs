@@ -18,7 +18,7 @@ use dht_rpc::{commit::CommitMessage, query::Query};
 use ed25519_dalek::{Keypair, PublicKey};
 use fnv::FnvHashMap;
 use futures::{
-    channel::mpsc::Sender,
+    channel::mpsc::{self},
     task::{Context, Poll},
     Stream,
 };
@@ -27,7 +27,7 @@ use queries::QueryOpts as QueryOpts2;
 use sha2::digest::generic_array::{typenum::U32, GenericArray};
 use smallvec::alloc::collections::VecDeque;
 use tokio::sync::oneshot::error::RecvError;
-use tracing::trace;
+use tracing::{error, trace};
 
 use crate::{
     dht_proto::{encode_input, PeersInput, PeersOutput},
@@ -56,10 +56,13 @@ mod dht_proto {
         buf
     }
 }
+mod cenc;
 pub mod crypto;
 pub mod lru;
 mod queries;
 pub mod store;
+#[cfg(test)]
+mod tests;
 
 #[allow(dead_code)]
 const EPH_AFTER: u64 = 1000 * 60 * 20;
