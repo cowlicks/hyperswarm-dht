@@ -1,12 +1,9 @@
-use blake2::{
-    crypto_mac::generic_array::{typenum::U64, GenericArray},
-    Blake2b, VarBlake2b,
-};
+use blake2::VarBlake2b;
 use ed25519_dalek::SignatureError;
 pub use ed25519_dalek::{ExpandedSecretKey, Keypair, PublicKey, SecretKey, Signature, Verifier};
 
 use crate::dht_proto::Mutable;
-use ::dht_rpc::{fill_random_bytes, IdBytes};
+use ::dht_rpc::IdBytes;
 
 /// VALUE_MAX_SIZE + packet overhead (i.e. the key etc.)
 /// should be less than the network MTU, normally 1400 bytes
@@ -15,35 +12,6 @@ pub const VALUE_MAX_SIZE: usize = 1000;
 const SALT_SEG: &[u8; 6] = b"4:salt";
 const SEQ_SEG: &[u8; 6] = b"3:seqi";
 const V_SEG: &[u8; 3] = b"1:v";
-
-/// Utility method for creating a random or hashed salt value.
-///
-/// # Panics
-///
-/// Size must be in range [16-64], panics otherwise
-#[inline]
-pub fn salt(val: &[u8], size: usize) -> Vec<u8> {
-    use blake2::digest::{Update, VariableOutput};
-    assert!((16..=64).contains(&size));
-    let mut salt = Vec::with_capacity(size);
-    let mut hasher = VarBlake2b::new(size).unwrap();
-    hasher.update(val);
-    hasher.finalize_variable(|res| salt.extend_from_slice(res));
-    salt
-}
-
-/// Fill a new `Vec` with `size` random bytes
-///
-/// # Panics
-///
-/// Size must be in range [16-64], panics otherwise
-#[inline]
-pub fn random_salt(size: usize) -> Vec<u8> {
-    assert!((16..=64).contains(&size));
-    let mut salt = vec![0; size];
-    fill_random_bytes(&mut salt);
-    salt
-}
 
 /// Sign the value as [`signable`] using the keypair.
 #[inline]
@@ -62,15 +30,6 @@ pub fn sign(
 #[inline]
 pub fn verify(public: &PublicKey, msg: &[u8], sig: &Signature) -> Result<(), SignatureError> {
     public.verify(msg, sig)
-}
-
-/// Create a 64B `blake2b` hash of `val`.
-#[inline]
-pub fn hash(val: &[u8]) -> GenericArray<u8, U64> {
-    use blake2::Digest;
-    let mut hasher = Blake2b::new();
-    hasher.update(val);
-    hasher.finalize()
 }
 
 /// hash the `val` with a key size of U32 and put it into [`IdBytes`]

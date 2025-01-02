@@ -519,7 +519,7 @@ impl QueryOpts {
 impl From<&PublicKey> for QueryOpts {
     fn from(key: &PublicKey) -> Self {
         Self {
-            topic: key.into(),
+            topic: IdBytes(*key.as_bytes()),
             port: None,
             local_addr: None,
         }
