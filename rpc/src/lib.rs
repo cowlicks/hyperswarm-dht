@@ -2,7 +2,7 @@
 #![warn(rust_2018_idioms)]
 #![allow(unreachable_code)]
 
-use ed25519_dalek::{PublicKey, PUBLIC_KEY_LENGTH};
+use constants::ID_BYTES_LENGTH;
 use futures::{channel::mpsc, Stream};
 use query::CommandQueryResponse;
 use std::{
@@ -1253,7 +1253,7 @@ impl Node {
 
 /// A 32 byte identifier for a node participating in the DHT.
 #[derive(Clone, Hash, PartialOrd, PartialEq, Eq, Copy)]
-pub struct IdBytes(pub [u8; PUBLIC_KEY_LENGTH]);
+pub struct IdBytes(pub [u8; ID_BYTES_LENGTH]);
 
 impl IdBytes {
     /// Create new 32 byte array with random bytes.
@@ -1292,12 +1292,6 @@ impl From<[u8; 32]> for IdBytes {
 impl AsRef<[u8]> for IdBytes {
     fn as_ref(&self) -> &[u8] {
         &self.0
-    }
-}
-
-impl From<&PublicKey> for IdBytes {
-    fn from(key: &PublicKey) -> Self {
-        Self(key.to_bytes())
     }
 }
 

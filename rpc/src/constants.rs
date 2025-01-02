@@ -11,3 +11,5 @@ pub(crate) const TICK_INTERVAL_MS: u64 = 5000;
 /// we normally send [`K_VALUE`] = 20 request message, and ?? book keeping messages. Add a good
 /// fudge factor.
 pub const DEFAULT_COMMIT_CHANNEL_SIZE: usize = 20 * 5;
+/// Size of an ID
+pub const ID_BYTES_LENGTH: usize = 32;
