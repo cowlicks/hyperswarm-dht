@@ -91,6 +91,6 @@ fn test_validate_id() -> Result<()> {
         referrer: None,
         addr: "188.166.28.20:60692".parse()?,
     };
-    assert!(validate_id(&id, &from).is_some());
+    assert!(validate_id(&Some(id), &from).is_some());
     Ok(())
 }
