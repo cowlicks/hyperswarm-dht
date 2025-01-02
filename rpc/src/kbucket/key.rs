@@ -24,19 +24,9 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use std::{
-    borrow::Borrow,
-    convert::TryInto,
-    hash::{Hash, Hasher},
-};
+use std::hash::Hash;
 
-use sha2::{
-    digest::generic_array::{typenum::U32, GenericArray},
-    Digest, Sha256,
-};
 use uint::construct_uint;
-
-use crate::{util::debug_vec, IdBytes, PeerId};
 
 construct_uint! {
     /// 256-bit unsigned integer.

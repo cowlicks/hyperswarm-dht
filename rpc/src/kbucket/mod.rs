@@ -66,7 +66,6 @@
 // accepted. See the `bucket` submodule for further details.
 //
 // [0]: https://pdos.csail.mit.edu/~petar/papers/maymounkov-kademlia-lncs.pdf
-#![allow(unused)]
 
 use std::{
     collections::VecDeque,
@@ -77,7 +76,6 @@ use std::{
 use arrayvec::{self, ArrayVec};
 
 use bucket::KBucket;
-use ed25519_dalek::ed25519::signature::Keypair;
 pub use entry::*;
 
 use crate::IdBytes;

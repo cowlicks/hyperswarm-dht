@@ -57,10 +57,6 @@ pub enum NodeStatus {
 }
 
 impl<TVal> PendingNode<TVal> {
-    pub fn key(&self) -> &IdBytes {
-        &self.node.key
-    }
-
     pub fn status(&self) -> NodeStatus {
         self.status
     }
@@ -71,10 +67,6 @@ impl<TVal> PendingNode<TVal> {
 
     pub fn is_ready(&self) -> bool {
         Instant::now() >= self.replace
-    }
-
-    pub fn set_ready_at(&mut self, t: Instant) {
-        self.replace = t;
     }
 
     pub fn into_node(self) -> Node<IdBytes, TVal> {
@@ -197,6 +189,7 @@ where
     }
 
     /// Returns a reference to a node in the bucket.
+    #[allow(unused)] // TODO FIXME
     pub fn get(&self, key: &IdBytes) -> Option<&Node<IdBytes, TVal>> {
         self.position(key).map(|p| &self.nodes[p.0])
     }
@@ -399,6 +392,7 @@ where
     }
 
     /// Checks whether the given position refers to a connected node.
+    #[allow(unused)] // TODO FIXME
     pub fn is_connected(&self, pos: Position) -> bool {
         self.status(pos) == NodeStatus::Connected
     }
@@ -409,12 +403,14 @@ where
     }
 
     /// Gets the number of entries in the bucket that are considered connected.
+    #[allow(unused)] // TODO FIXME
     pub fn num_connected(&self) -> usize {
         self.first_connected_pos.map_or(0, |i| self.nodes.len() - i)
     }
 
     /// Gets the number of entries in the bucket that are considered
     /// disconnected.
+    #[allow(unused)] // TODO FIXME
     pub fn num_disconnected(&self) -> usize {
         self.nodes.len() - self.num_connected()
     }
