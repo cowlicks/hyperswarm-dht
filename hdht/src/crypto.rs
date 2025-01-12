@@ -109,9 +109,9 @@ pub mod namespace {
     }
 
     pub const ANNOUNCE: [u8; 32] =
-        const_hex_decode!(b"36386adddf9f6fd60db83a6f42fc159d1146aa8644037664230aaa1f0179d49e");
+        const_hex_decode!(b"36386adddf9f6fd60db83a6f42fc159d1146aa8644037664230aaa1f0179d497");
     pub const UNANNOUNCE: [u8; 32] =
-        const_hex_decode!(b"ded293cd93fb395e756ecf5fff426529e72c36eacc22e5ed944d9099a2561e3e");
+        const_hex_decode!(b"ded293cd93fb395e756ecf5fff426529e72c36eacc22e5ed944d9099a2561e32");
     pub const MUTABLE_PUT: [u8; 32] =
         const_hex_decode!(b"668e823edd5ce7f5338d68bf1161f4a3c28ce437ee2ab49efd30d99366039b1e");
     pub const PEER_HANDSHAKE: [u8; 32] =
