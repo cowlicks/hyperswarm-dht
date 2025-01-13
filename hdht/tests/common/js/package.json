@@ -1,0 +1,14 @@
+{
+  "name": "gen_test_data",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "t": "node index.js"
+  },
+  "dependencies": {
+    "hyperdht": "^6.20.1",
+    "random-access-file": "^4.0.7",
+    "random-access-memory": "^6.2.1"
+  }
+}
