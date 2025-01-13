@@ -1,8 +1,16 @@
+use std::net::SocketAddr;
+
 use blake2::VarBlake2b;
+use compact_encoding::types::{write_array, CompactEncodable};
+use dht_rpc::PeerId;
 use ed25519_dalek::SignatureError;
 pub use ed25519_dalek::{ExpandedSecretKey, Keypair, PublicKey, SecretKey, Signature, Verifier};
+use libsodium_sys::{
+    crypto_sign_BYTES, crypto_sign_PUBLICKEYBYTES, crypto_sign_SECRETKEYBYTES,
+    crypto_sign_SEEDBYTES, crypto_sign_keypair, crypto_sign_seed_keypair,
+};
 
-use crate::dht_proto::Mutable;
+use crate::{cenc::Announce, dht_proto::Mutable};
 use ::dht_rpc::IdBytes;
 
 /// VALUE_MAX_SIZE + packet overhead (i.e. the key etc.)
@@ -42,6 +50,68 @@ pub fn hash_id(val: &[u8]) -> IdBytes {
     key.into()
 }
 
+#[derive(Debug)]
+pub struct Keypair2 {
+    /// The public half of this keypair.
+    pub public: [u8; crypto_sign_PUBLICKEYBYTES as usize],
+    /// The secret half of this keypair.
+    pub secret: [u8; crypto_sign_SECRETKEYBYTES as usize],
+}
+
+impl Keypair2 {
+    // TODO make this the sign function
+
+    fn new() -> Self {
+        let mut public = [0; crypto_sign_PUBLICKEYBYTES as usize];
+        let mut secret = [0; crypto_sign_SECRETKEYBYTES as usize];
+        let err = unsafe { crypto_sign_keypair(public.as_mut_ptr(), secret.as_mut_ptr()) };
+        if err != 0 {
+            todo!()
+        }
+        Self { public, secret }
+    }
+
+    pub fn from_seed(seed: [u8; crypto_sign_SEEDBYTES as usize]) -> Self {
+        let mut public = [0; crypto_sign_PUBLICKEYBYTES as usize];
+        let mut secret = [0; crypto_sign_SECRETKEYBYTES as usize];
+        let err = unsafe {
+            crypto_sign_seed_keypair(public.as_mut_ptr(), secret.as_mut_ptr(), seed.as_ptr())
+        };
+        if err != 0 {
+            todo!()
+        }
+        Self { public, secret }
+    }
+    pub fn sign(&self, value: &[u8]) -> Signature2 {
+        let mut signature: [u8; 64] = [0u8; crypto_sign_BYTES as usize];
+        let err = unsafe {
+            libsodium_sys::crypto_sign_detached(
+                signature.as_mut_ptr(),
+                std::ptr::null_mut(),
+                value.as_ptr(),
+                value.len() as _,
+                self.secret.as_ptr(),
+            )
+        };
+        if err != 0 {
+            todo!()
+        }
+        Signature2(signature)
+    }
+}
+
+#[derive(Debug)]
+pub struct Signature2(pub [u8; crypto_sign_BYTES as usize]);
+/*
+impl Default for Keypair2 {
+    fn default() -> Self {
+        Self {
+            secret: Default::default(),
+            public: Default::default(),
+        }
+    }
+}
+*/
 /// Generate a new `Ed25519` key pair.
 #[inline]
 pub fn keypair() -> Keypair {
@@ -97,7 +167,7 @@ pub fn signable_mutable(mutable: &Mutable) -> Result<Vec<u8>, ()> {
 }
 
 /// taken from
-/// https://github.com/holepunchto/hyperdht/blob/0d4f4b65bf1c252487f7fd52ef9e21ac76a3ceba/lib/constants.js#L42-L54
+/// https://github.com/cowlicks/hyperdht/blob/eecdf3669744e88ec2fceb851cedf5274a106c94/test/print_ns.js#L2
 pub mod namespace {
     macro_rules! const_hex_decode {
         ($arg:expr) => {{
@@ -148,8 +218,44 @@ pub fn generic_hash_batch(inputs: &[&[u8]]) -> [u8; 32] {
     out
 }
 
+pub fn sign_announce(
+    keypair: &Keypair2,
+    target: IdBytes,
+    token: &[u8; 32],
+    from_id: &[u8; 32],
+    relay_addresses: &[SocketAddr],
+) -> crate::Result<Announce> {
+    use crate::cenc::Peer;
+    let peer = Peer {
+        public_key: keypair.public,
+        relay_addresses: relay_addresses.to_vec(),
+    };
+    let mut encoded_peer = vec![0; peer.encoded_size()?];
+    peer.encoded_bytes(&mut encoded_peer)?;
+
+    let signable = {
+        let mut signable = [0; 64];
+        let rest = write_array::<32>(&crate::crypto::namespace::ANNOUNCE, &mut signable)?;
+        rest.copy_from_slice(&generic_hash_batch(&[
+            &target.0,
+            from_id,
+            token,
+            &encoded_peer,
+            &[],
+        ]));
+        signable
+    };
+    Ok(Announce {
+        peer,
+        refresh: None,
+        signature: keypair.sign(&signable),
+    })
+}
+
 #[cfg(test)]
 mod test {
+    use ed25519_dalek::ed25519::signature::Keypair;
+
     use super::*;
 
     #[test]
