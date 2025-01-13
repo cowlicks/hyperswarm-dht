@@ -13,7 +13,10 @@ use std::{
     time::Duration,
 };
 
-use compact_encoding::EncodingError;
+use compact_encoding::{
+    types::{write_array, CompactEncodable},
+    EncodingError,
+};
 use dht_rpc::{commit::CommitMessage, query::Query};
 use ed25519_dalek::{Keypair, PublicKey};
 use fnv::FnvHashMap;
@@ -22,6 +25,7 @@ use futures::{
     task::{Context, Poll},
     Stream,
 };
+use libsodium_sys::crypto_sign_PUBLICKEYBYTES;
 use prost::Message as ProstMessage;
 use queries::QueryOpts as QueryOpts2;
 use sha2::digest::generic_array::{typenum::U32, GenericArray};

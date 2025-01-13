@@ -1,4 +1,6 @@
 mod common;
+use std::net::SocketAddr;
+
 use hyperdht::crypto::{namespace, sign_announce, Keypair2};
 
 use common::{
@@ -129,6 +131,54 @@ write(stringify([...signature]))
     assert_eq!(announce.signature.0.as_slice(), &expected);
     Ok(())
 }
+#[tokio::test]
+async fn test_sign_announce_with_relays() -> Result<()> {
+    let one: SocketAddr = "192.168.1.2:1234".parse().unwrap();
+    let two: SocketAddr = "10.11.12.13:6547".parse().unwrap();
+    let three: SocketAddr = "127.0.0.1:80".parse().unwrap();
+    let relay_addresses = vec![one, two, three];
+    let target = [1; 32];
+    let token = [2; 32];
+    let from_id = [3; 32];
+
+    let mut repl = make_repl().await;
+    repl.run(KEYPAIR_JS).await?;
+    let expected: Vec<u8> = repl
+        .json_run(
+            "
+Persistent = require('hyperdht/lib/persistent')
+c = require('compact-encoding')
+m = require('hyperdht/lib/messages')
+
+relayAddresses = [
+    {host: '192.168.1.2', port: 1234},
+    {host: '10.11.12.13', port: 6547},
+    {host: '127.0.0.1', port: 80},
+];
+target = Buffer.alloc(32).fill(1);
+token = Buffer.alloc(32).fill(2);
+from_id = Buffer.alloc(32).fill(3);
+
+ann = {
+  peer: {
+    publicKey: keyPair.publicKey,
+    relayAddresses: relayAddresses || []
+  },
+  refresh: null,
+  signature: null
+}
+
+signature = await Persistent.signAnnounce(target, token, from_id, ann, keyPair)
+write(stringify([...signature]))
+",
+        )
+        .await?;
+
+    let kp = Keypair2::from_seed(DEFAULT_SEED);
+    let announce = sign_announce(&kp, target.into(), &token, &from_id, &relay_addresses)?;
+    assert_eq!(announce.signature.0.as_slice(), &expected);
+    Ok(())
+}
 
 /// Test encoding a signed Announce is correct.
 /// JS code taken from:
@@ -170,6 +220,58 @@ write(stringify([...c.encode(m.announce, ann)]))
 
     let kp = Keypair2::from_seed(DEFAULT_SEED);
     let announce = sign_announce(&kp, target.into(), &token, &from_id, &[])?;
+    use compact_encoding::types::CompactEncodable;
+    let mut buff: Vec<u8> = vec![0u8; CompactEncodable::encoded_size(&announce).unwrap()];
+    announce.encoded_bytes(&mut buff).unwrap();
+    assert_eq!(buff, expected);
+    Ok(())
+}
+#[tokio::test]
+async fn test_sign_and_encode_announce_with_relays() -> Result<()> {
+    let target = [1; 32];
+    let token = [2; 32];
+    let from_id = [3; 32];
+
+    let one: SocketAddr = "192.168.1.2:1234".parse().unwrap();
+    let two: SocketAddr = "10.11.12.13:6547".parse().unwrap();
+    let three: SocketAddr = "127.0.0.1:80".parse().unwrap();
+    let relay_addresses = vec![one, two, three];
+
+    let mut repl = make_repl().await;
+    repl.run(KEYPAIR_JS).await?;
+    let expected: Vec<u8> = repl
+        .json_run(
+            "
+Persistent = require('hyperdht/lib/persistent')
+c = require('compact-encoding')
+m = require('hyperdht/lib/messages')
+
+relayAddresses = [
+    {host: '192.168.1.2', port: 1234},
+    {host: '10.11.12.13', port: 6547},
+    {host: '127.0.0.1', port: 80},
+];
+target = Buffer.alloc(32).fill(1);
+token = Buffer.alloc(32).fill(2);
+from_id = Buffer.alloc(32).fill(3);
+
+ann = {
+  peer: {
+    publicKey: keyPair.publicKey,
+    relayAddresses: relayAddresses || []
+  },
+  refresh: null,
+  signature: null
+}
+
+ann.signature = await Persistent.signAnnounce(target, token, from_id, ann, keyPair)
+write(stringify([...c.encode(m.announce, ann)]))
+",
+        )
+        .await?;
+
+    let kp = Keypair2::from_seed(DEFAULT_SEED);
+    let announce = sign_announce(&kp, target.into(), &token, &from_id, &relay_addresses)?;
     use compact_encoding::types::CompactEncodable;
     let mut buff: Vec<u8> = vec![0u8; CompactEncodable::encoded_size(&announce).unwrap()];
     announce.encoded_bytes(&mut buff).unwrap();
