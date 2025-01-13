@@ -117,5 +117,3 @@ pub fn check_cmd_output(out: Output) -> Result<Output> {
     }
     Ok(out)
 }
-
-pub static LOOPBACK: &str = "127.0.0.1";
