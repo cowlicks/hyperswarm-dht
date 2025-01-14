@@ -86,7 +86,7 @@ async fn local_bootstrap() -> std::result::Result<(), Box<dyn std::error::Error>
                 }
                 HyperDhtEvent::AnnounceResult { .. } => {
                     // 2. look up the announced topic
-                    node.lookup(opts.topic.clone());
+                    node.lookup(opts.topic.clone(), Commit::No);
                 }
                 HyperDhtEvent::LookupResult { lookup, .. } => {
                     if unannounced {

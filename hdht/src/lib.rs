@@ -303,7 +303,7 @@ impl HyperDht {
     ///
     /// The result of the query is delivered in a
     /// [`HyperDhtEvent::LookupResult`].
-    pub fn lookup(&mut self, target: IdBytes) -> QueryId {
+    pub fn lookup(&mut self, target: IdBytes, commit: Commit) -> QueryId {
         self.inner.query(
             Command::External(ExternalCommand(commands::LOOKUP)),
             target,
@@ -338,7 +338,7 @@ impl HyperDht {
         let _query_id = if opts.clear {
             self.lookup_and_unannounce(target, key_pair);
         } else {
-            self.lookup(target);
+            self.lookup(target, Commit::No);
         };
         // create Commit trait obj
         // register it with the query id
