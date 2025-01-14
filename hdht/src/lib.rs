@@ -17,6 +17,7 @@ use compact_encoding::{
     types::{write_array, CompactEncodable},
     EncodingError,
 };
+use crypto::{sign_announce, Keypair2};
 use dht_rpc::{commit::CommitMessage, query::Query};
 use ed25519_dalek::{Keypair, PublicKey};
 use fnv::FnvHashMap;
@@ -394,25 +395,43 @@ impl HyperDht {
         }
     }
 
-    fn commit(&mut self, query: Arc<RwLock<Query>>, _channel: Sender<CommitMessage>) {
-        let cmd = query.read().unwrap().cmd.clone();
-        match cmd {
-            Command::Internal(_) => todo!(),
-            Command::External(cmd_code) => match cmd_code {
-                ExternalCommand(commands::LOOKUP) => {
-                    todo!();
-                }
-                ExternalCommand(commands::ANNOUNCE) => {
-                    todo!();
-                }
-                ExternalCommand(commands::UNANNOUNCE) => {
-                    todo!();
-                }
-                _ => {
-                    todo!()
-                }
-            },
-        }
+    fn commit(&mut self, query: Arc<RwLock<Query>>, channel: mpsc::Sender<CommitMessage>) {
+        let id = query.read().unwrap().id();
+        let Some(qst) = self.queries.get_mut(&id) else {
+            error!("Tried to commit with an unknown query id: [{id:?}]");
+            panic!("Tried to commit with an unknown query id: [{id:?}]");
+        };
+        qst.commit(query, channel);
+    }
+
+    #[allow(unused)] // TODO FIXME
+    fn request_announce(
+        &mut self,
+        keypair: &Keypair2,
+        target: IdBytes,
+        token: &[u8; 32],
+        from: PeerId,
+        relay_addresses: &[SocketAddr],
+    ) -> Result<u16> {
+        let announce = sign_announce(keypair, target, token, &from.id.0, relay_addresses)?;
+
+        let mut value: Vec<u8> = vec![0u8; CompactEncodable::encoded_size(&announce).unwrap()];
+        announce.encoded_bytes(&mut value).unwrap();
+        let from_peer = Peer {
+            id: Some(from.id.0),
+            addr: from.addr,
+            referrer: None,
+        };
+        Ok(self
+            .inner
+            .request(
+                Command::External(ExternalCommand(commands::ANNOUNCE)),
+                Some(target),
+                Some(value),
+                from_peer,
+                Some(*token),
+            )
+            .1)
     }
 }
 
@@ -442,17 +461,17 @@ impl Stream for HyperDht {
                     RpcDhtEvent::Bootstrapped { stats } => {
                         return Poll::Ready(Some(HyperDhtEvent::Bootstrapped { stats }))
                     }
-                    RpcDhtEvent::QueryResult {
-                        id,
-                        cmd: _,
-                        stats: _,
-                    } => pin.query_finished(id),
                     RpcDhtEvent::ReadyToCommit {
                         query,
                         tx_commit_messages,
                     } => {
                         pin.commit(query, tx_commit_messages);
                     }
+                    RpcDhtEvent::QueryResult {
+                        id,
+                        cmd: _,
+                        stats: _,
+                    } => pin.query_finished(id),
                     _ => {}
                 }
             }
@@ -694,6 +713,14 @@ enum QueryStreamType {
 }
 
 impl QueryStreamType {
+    fn commit(&mut self, _query: Arc<RwLock<Query>>, _channel: mpsc::Sender<CommitMessage>) {
+        match self {
+            QueryStreamType::LookupAndUnannounce(_) => todo!(),
+            QueryStreamType::LookUp(_) => todo!(),
+            QueryStreamType::UnAnnounce(_) => todo!(),
+            QueryStreamType::Announce(_inner) => todo!(),
+        }
+    }
     fn finalize(self, query_id: QueryId) -> HyperDhtEvent {
         match self {
             QueryStreamType::LookupAndUnannounce(_inner) => todo!(),
