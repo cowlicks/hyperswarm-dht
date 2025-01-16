@@ -401,6 +401,18 @@ impl RpcDht {
             .add_stream(cmd, peers, target, value, bootstrap_nodes, commit)
     }
 
+    pub fn request(
+        &mut self,
+        command: Command,
+        target: Option<IdBytes>,
+        value: Option<Vec<u8>>,
+        peer: Peer,
+        token: Option<[u8; 32]>,
+    ) -> QueryAndTid {
+        self.io
+            .queue_send_request(command, target, value, peer, None, token)
+    }
+
     pub fn ping(&mut self, peer: &Peer) -> QueryAndTid {
         self.io.queue_send_request(
             Command::Internal(InternalCommand::Ping),
