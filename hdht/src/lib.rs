@@ -17,7 +17,7 @@ use compact_encoding::{
     types::{write_array, CompactEncodable},
     EncodingError,
 };
-use crypto::{sign_announce, Keypair2};
+use crypto::{sign_announce_or_unannounce, Keypair2};
 use dht_rpc::{commit::CommitMessage, query::Query};
 use ed25519_dalek::{Keypair, PublicKey};
 use fnv::FnvHashMap;
@@ -405,15 +405,24 @@ impl HyperDht {
     }
 
     #[allow(unused)] // TODO FIXME
-    fn request_announce(
+    fn request_announce_or_unannounce(
         &mut self,
         keypair: &Keypair2,
         target: IdBytes,
         token: &[u8; 32],
         from: PeerId,
         relay_addresses: &[SocketAddr],
+        namespace: &[u8; 32],
+        cmd: ExternalCommand,
     ) -> Result<u16> {
-        let announce = sign_announce(keypair, target, token, &from.id.0, relay_addresses)?;
+        let announce = sign_announce_or_unannounce(
+            keypair,
+            target,
+            token,
+            &from.id.0,
+            relay_addresses,
+            namespace,
+        )?;
 
         let mut value: Vec<u8> = vec![0u8; CompactEncodable::encoded_size(&announce).unwrap()];
         announce.encoded_bytes(&mut value).unwrap();
@@ -425,13 +434,52 @@ impl HyperDht {
         Ok(self
             .inner
             .request(
-                Command::External(ExternalCommand(commands::ANNOUNCE)),
+                Command::External(cmd),
                 Some(target),
                 Some(value),
                 from_peer,
                 Some(*token),
             )
             .1)
+    }
+
+    #[allow(unused)] // TODO FIXME
+    fn request_announce(
+        &mut self,
+        keypair: &Keypair2,
+        target: IdBytes,
+        token: &[u8; 32],
+        from: PeerId,
+        relay_addresses: &[SocketAddr],
+    ) -> Result<u16> {
+        self.request_announce_or_unannounce(
+            keypair,
+            target,
+            token,
+            from,
+            relay_addresses,
+            &crate::crypto::namespace::ANNOUNCE,
+            ExternalCommand(commands::ANNOUNCE),
+        )
+    }
+
+    #[allow(unused)] // TODO FIXME
+    fn request_unannounce(
+        &mut self,
+        keypair: &Keypair2,
+        target: IdBytes,
+        token: &[u8; 32],
+        from: PeerId,
+    ) -> Result<u16> {
+        self.request_announce_or_unannounce(
+            keypair,
+            target,
+            token,
+            from,
+            &[],
+            &crate::crypto::namespace::UNANNOUNCE,
+            ExternalCommand(commands::UNANNOUNCE),
+        )
     }
 }
 

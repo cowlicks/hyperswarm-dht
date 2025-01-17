@@ -218,12 +218,13 @@ pub fn generic_hash_batch(inputs: &[&[u8]]) -> [u8; 32] {
     out
 }
 
-pub fn sign_announce(
+pub fn sign_announce_or_unannounce(
     keypair: &Keypair2,
     target: IdBytes,
     token: &[u8; 32],
     from_id: &[u8; 32],
     relay_addresses: &[SocketAddr],
+    namespace: &[u8; 32],
 ) -> crate::Result<Announce> {
     use crate::cenc::Peer;
     let peer = Peer {
@@ -235,7 +236,7 @@ pub fn sign_announce(
 
     let signable = {
         let mut signable = [0; 64];
-        let rest = write_array::<32>(&crate::crypto::namespace::ANNOUNCE, &mut signable)?;
+        let rest = write_array::<32>(namespace, &mut signable)?;
         rest.copy_from_slice(&generic_hash_batch(&[
             &target.0,
             from_id,
