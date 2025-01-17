@@ -308,7 +308,7 @@ impl HyperDht {
             Command::External(ExternalCommand(commands::LOOKUP)),
             target,
             None,
-            Commit::No,
+            commit,
         )
     }
 
@@ -338,7 +338,7 @@ impl HyperDht {
         let _query_id = if opts.clear {
             self.lookup_and_unannounce(target, key_pair);
         } else {
-            self.lookup(target, Commit::No);
+            self.lookup(target, Commit::Custom(Default::default()));
         };
         // create Commit trait obj
         // register it with the query id
