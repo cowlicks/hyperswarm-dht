@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 
 use blake2::VarBlake2b;
 use compact_encoding::types::{write_array, CompactEncodable};
-use dht_rpc::PeerId;
 use ed25519_dalek::SignatureError;
 pub use ed25519_dalek::{ExpandedSecretKey, Keypair, PublicKey, SecretKey, Signature, Verifier};
 use libsodium_sys::{
