@@ -2,3 +2,6 @@
 	path = js/dht-rpc
 	url = git@github.com:cowlicks/dht-rpc.git
 	branch = rust-changes
+[submodule "hdht/tests/common/js/hyperdht"]
+	path = hdht/tests/common/js/hyperdht
+	url = git@github.com:cowlicks/hyperdht.git
