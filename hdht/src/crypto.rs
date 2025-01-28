@@ -57,10 +57,8 @@ pub struct Keypair2 {
     pub secret: [u8; crypto_sign_SECRETKEYBYTES as usize],
 }
 
-impl Keypair2 {
-    // TODO make this the sign function
-
-    fn new() -> Self {
+impl Default for Keypair2 {
+    fn default() -> Self {
         let mut public = [0; crypto_sign_PUBLICKEYBYTES as usize];
         let mut secret = [0; crypto_sign_SECRETKEYBYTES as usize];
         let err = unsafe { crypto_sign_keypair(public.as_mut_ptr(), secret.as_mut_ptr()) };
@@ -69,7 +67,9 @@ impl Keypair2 {
         }
         Self { public, secret }
     }
+}
 
+impl Keypair2 {
     pub fn from_seed(seed: [u8; crypto_sign_SEEDBYTES as usize]) -> Self {
         let mut public = [0; crypto_sign_PUBLICKEYBYTES as usize];
         let mut secret = [0; crypto_sign_SECRETKEYBYTES as usize];
