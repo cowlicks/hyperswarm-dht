@@ -254,8 +254,6 @@ pub fn sign_announce_or_unannounce(
 
 #[cfg(test)]
 mod test {
-    use ed25519_dalek::ed25519::signature::Keypair;
-
     use super::*;
 
     #[test]
