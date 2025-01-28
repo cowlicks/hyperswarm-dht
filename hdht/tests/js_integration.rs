@@ -1,7 +1,13 @@
 mod common;
 use std::net::SocketAddr;
 
-use hyperdht::crypto::{namespace, sign_announce, Keypair2};
+use dht_rpc::{DhtConfig, IdBytes};
+use futures::StreamExt;
+use hyperdht::{
+    cenc::Announce,
+    crypto::{namespace, sign_announce_or_unannounce, Keypair2},
+    HyperDht, HyperDhtEvent,
+};
 
 use common::{
     js::{path_to_node_modules, require_js_data},
@@ -18,6 +24,23 @@ seed = new Uint8Array(32);
 seed[0] = 1;
 keyPair = createKeyPair(seed)
 ";
+
+fn sign_announce(
+    keypair: &Keypair2,
+    target: IdBytes,
+    token: &[u8; 32],
+    from_id: &[u8; 32],
+    relay_addresses: &[SocketAddr],
+) -> crate::Result<Announce> {
+    Ok(sign_announce_or_unannounce(
+        keypair,
+        target,
+        token,
+        from_id,
+        relay_addresses,
+        &namespace::ANNOUNCE,
+    )?)
+}
 
 fn buf_to_js_comparable_str(x: &[u8]) -> String {
     x.iter()
