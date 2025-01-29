@@ -30,7 +30,7 @@ macro_rules! opt_map_inner {
     ($debug_struct:tt, $name:expr, $name_s:tt, $func:tt) => {
         match &$name {
             Some(bytes) => $debug_struct.field($name_s, &format_args!("Some({})", $func(bytes))),
-            None => $debug_struct.field("id", &None::<String>),
+            None => $debug_struct.field($name_s, &None::<String>),
         };
     };
 }
@@ -80,6 +80,12 @@ impl From<ReplyMsgData> for MsgData {
 }
 
 impl MsgData {
+    pub fn tid(&self) -> u16 {
+        match self {
+            MsgData::Request(RequestMsgData { tid, .. }) => *tid,
+            MsgData::Reply(ReplyMsgData { tid, .. }) => *tid,
+        }
+    }
     pub fn to(&self) -> Peer {
         match self {
             MsgData::Request(x) => x.to.clone(),

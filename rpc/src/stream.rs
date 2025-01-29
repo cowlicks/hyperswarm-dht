@@ -52,9 +52,9 @@ impl Stream for MessageDataStream {
         // First check if we have any buffered messages
         if let Some((msg, addr)) = self.recv_queue.pop_front() {
             trace!(
-                "RX addr:
- addr:\t {addr}
- msg: \t {msg:#?}"
+                msg.tid = msg.tid(),
+                from =?addr,
+                "RX"
             );
             return Poll::Ready(Some(Ok((msg, addr))));
         }
@@ -67,9 +67,9 @@ impl Stream for MessageDataStream {
                 match MsgData::decode(&buff) {
                     Ok(msg) => {
                         trace!(
-                            "RX addr:
- addr:\t {addr}
- msg: \t {msg:#?}"
+                            msg.tid = msg.tid(),
+                            to =?addr,
+                            "RX"
                         );
                         Poll::Ready(Some(Ok((msg, addr))))
                     }
@@ -91,11 +91,10 @@ impl Sink<(MsgData, SocketAddr)> for MessageDataStream {
 
     fn start_send(self: Pin<&mut Self>, item: (MsgData, SocketAddr)) -> Result<()> {
         let (message, addr) = item;
-
         trace!(
-            "TX addr:
- addr:\t {addr}
- msg: \t {message:#?}"
+            message.tid = message.tid(),
+            from =?addr,
+            "TX"
         );
         let buff = MsgData::encode(&message)?;
         self.socket.send(addr, &buff);

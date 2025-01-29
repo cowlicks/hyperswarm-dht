@@ -268,6 +268,11 @@ impl IoHandler {
     }
     fn on_response(&mut self, recv: ReplyMsgData, peer: Peer) -> IoHandlerEvent {
         if let Some(req) = self.pending_recv.remove(&recv.tid) {
+            trace!(
+                msg.tid = recv.tid,
+                cmd = tracing::field::display(&req.message.command),
+                "RX:Response"
+            );
             return IoHandlerEvent::InResponse(InResponse::new(
                 Box::new(req.message),
                 recv,
@@ -362,7 +367,6 @@ impl Stream for IoHandler {
         match Stream::poll_next(Pin::new(&mut pin.message_stream), cx) {
             Poll::Ready(Some(Ok((msg, rinfo)))) => {
                 let out = pin.on_message(msg, rinfo);
-                trace!("{out:#?}");
                 return Poll::Ready(Some(out));
             }
             Poll::Ready(Some(Err(err))) => {

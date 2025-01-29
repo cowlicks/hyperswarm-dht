@@ -10,6 +10,7 @@ use futures::{
     channel::mpsc::{self},
     task::Poll,
 };
+use tracing::{info, instrument, trace};
 use wasm_timer::Instant;
 
 use crate::{
@@ -144,7 +145,9 @@ impl QueryPool {
     }
 
     /// Polls the pool to advance the queries.
+    #[instrument(skip_all)]
     pub fn poll(&mut self, now: Instant) -> QueryPoolEvent {
+        trace!("poll for QueryPoolEvent");
         let mut finished = None;
         let mut timeout = None;
         let mut waiting = None;
@@ -321,6 +324,7 @@ impl Query {
     }
 
     /// Received a response to a requested driven by this query.
+    #[instrument(skip(self, data))]
     pub(crate) fn inject_response(&mut self, data: &InResponse) -> Option<Response> {
         use crate::Progress::*;
         use Commit::*;
@@ -398,6 +402,7 @@ impl Query {
         }
     }
 
+    #[instrument(skip_all)]
     fn poll(&mut self, now: Instant) -> Poll<Option<QueryEvent>> {
         match self.peer_iter.next(now) {
             PeersIterState::Waiting(peer) => {
@@ -427,9 +432,11 @@ impl Query {
     }
 }
 
+#[instrument(skip_all)]
 fn poll(commit: &mut Commit, query_id: QueryId) -> Poll<Option<CommitEvent>> {
     use crate::Progress::*;
     use Commit::*;
+    trace!("polling commit: {commit:?}");
     match commit {
         No | Auto(Done) | Custom(Done) => Poll::Ready(None),
         Auto(BeforeStart) => {
@@ -563,6 +570,7 @@ impl From<CommandQuery> for CommandQueryResponse {
     }
 }
 /// The result of a `Query`.
+#[derive(Debug)]
 pub struct QueryResult<TInner, TPeers> {
     /// The opaque inner query state.
     pub inner: TInner,

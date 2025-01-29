@@ -30,6 +30,7 @@ use std::{
     num::NonZeroUsize,
     time::Duration,
 };
+use tracing::{instrument, trace};
 use wasm_timer::Instant;
 
 use super::peers::PeersIterState;
@@ -300,8 +301,10 @@ impl ClosestPeersIter {
     }
 
     /// Advances the state of the iterator, potentially getting a new peer to contact.
+    #[instrument(skip_all)]
     pub fn next(&mut self, now: Instant) -> PeersIterState {
         if let State::Finished = self.state {
+            trace!("Finished ClosestPeersIter");
             return PeersIterState::Finished;
         }
 
@@ -315,6 +318,7 @@ impl ClosestPeersIter {
         // Check if the iterator is at capacity w.r.t. the allowed parallelism.
         let at_capacity = self.at_capacity();
 
+        trace!("Iterating over closest peers");
         for peer in self.closest_peers.values_mut() {
             match peer.state {
                 PeerState::Waiting(timeout) => {
@@ -345,6 +349,7 @@ impl ClosestPeersIter {
                         // closest peers, the iterator is done.
                         if *cnt >= self.config.num_results.get() {
                             self.state = State::Finished;
+                            trace!("PeerState::Succeeded so PeersIterState::Finished");
                             return PeersIterState::Finished;
                         }
                     }
@@ -377,6 +382,7 @@ impl ClosestPeersIter {
             // The iterator is finished because all available peers have been contacted
             // and the iterator is not waiting for any more results.
             self.state = State::Finished;
+            trace!("No more peers waiting PeersIterState::Finished");
             PeersIterState::Finished
         }
     }

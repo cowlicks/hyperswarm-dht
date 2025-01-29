@@ -19,7 +19,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use tracing::{debug, trace, warn};
+use tracing::{debug, instrument, trace, warn};
 use wasm_timer::Instant;
 
 use rand::{
@@ -155,6 +155,15 @@ pub struct ExternalCommand(pub usize);
 pub enum Command {
     Internal(InternalCommand),
     External(ExternalCommand),
+}
+
+impl Display for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Command::Internal(c) => write!(f, "Internal({})", c),
+            Command::External(ExternalCommand(x)) => write!(f, "External({x})"),
+        }
+    }
 }
 
 impl Command {
@@ -877,6 +886,7 @@ impl RpcDht {
     }
 
     /// Handles a finished query.
+    #[instrument(skip_all)]
     fn query_finished(&mut self, query: Arc<RwLock<Query>>) -> RpcDhtEvent {
         let is_find_node = matches!(
             query.read().unwrap().command(),
@@ -889,20 +899,25 @@ impl RpcDht {
         for (peer, state) in result.peers {
             match state {
                 PeerState::Failed => {
+                    debug!("peer.id = [{:?}] Failed - removing", peer.id);
                     self.remove_peer(&peer.id);
                 }
                 PeerState::Succeeded {
                     roundtrip_token,
                     to,
                 } => {
+                    debug!("peer.id = [{:?}] Succeeded", peer.id);
                     self.add_node(peer.id, Peer::from(peer.addr), Some(roundtrip_token), to);
                 }
-                _ => {}
+                PeerState::NotContacted => {
+                    trace!("peer.id = [{:?}] NotContacted", peer.id);
+                }
             }
         }
 
         // first `find_node` query is issued as bootstrap
         if is_find_node && !self.bootstrapped {
+            debug!("Bootstrap process's FindNode query finished");
             self.bootstrapped = true;
             RpcDhtEvent::Bootstrapped {
                 stats: result.stats,
@@ -1023,6 +1038,7 @@ pub enum ResponseError {
 impl Stream for RpcDht {
     type Item = RpcDhtEvent;
 
+    #[instrument(skip_all)]
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let pin = self.get_mut();
 
@@ -1030,6 +1046,7 @@ impl Stream for RpcDht {
 
         if let Poll::Ready(()) = pin.bootstrap_job.poll(cx, now) {
             if pin.kbuckets.iter().count() < 20 {
+                debug!("next bootstrap_job running");
                 pin.bootstrap();
             }
         }
@@ -1047,9 +1064,10 @@ impl Stream for RpcDht {
             // Look for a sent/received message
             loop {
                 if let Poll::Ready(Some(event)) = Stream::poll_next(Pin::new(&mut pin.io), cx) {
+                    debug!("New IoHandler event: {event:?}");
                     pin.inject_event(event);
                     if let Some(event) = pin.queued_events.pop_front() {
-                        trace!("{event:#?}");
+                        trace!("Emitting event {event:?}");
                         return Poll::Ready(Some(event));
                     }
                 } else {
@@ -1119,8 +1137,11 @@ impl Stream for RpcDht {
                             pin.inject_query_event(id, event);
                         }
                         QueryPoolEvent::Finished(q) => {
+                            trace!(
+                                "QueryPoolEvent::Finished. Query::id = {:?}",
+                                q.try_read().map(|x| x.id)
+                            );
                             let event = pin.query_finished(q);
-                            trace!("{event:#?}");
                             return Poll::Ready(Some(event));
                         }
                         QueryPoolEvent::Timeout(q) => {
