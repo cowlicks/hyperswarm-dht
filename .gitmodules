@@ -5,3 +5,6 @@
 [submodule "hdht/tests/common/js/hyperdht"]
 	path = hdht/tests/common/js/hyperdht
 	url = git@github.com:cowlicks/hyperdht.git
+[submodule "hdht/tests/common/js/rpc"]
+	path = hdht/tests/common/js/rpc
+	url = git@github.com:cowlicks/dht-rpc.git
