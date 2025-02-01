@@ -86,7 +86,15 @@ async fn local_bootstrap() -> std::result::Result<(), Box<dyn std::error::Error>
                 }
                 HyperDhtEvent::AnnounceResult { .. } => {
                     // 2. look up the announced topic
-                    node.lookup(opts.topic.clone(), Commit::No);
+                    node.lookup(opts.topic, Commit::No);
+                }
+                HyperDhtEvent::UnAnnounceResult { .. } => {
+                    // 4. another lookup that now comes up empty
+                    unannounced = true;
+                    node.lookup(
+                        opts.topic,
+                        Commit::No, /* TODO is this the correct commit */
+                    );
                 }
                 HyperDhtEvent::LookupResult { lookup, .. } => {
                     if unannounced {
@@ -107,12 +115,9 @@ async fn local_bootstrap() -> std::result::Result<(), Box<dyn std::error::Error>
                     // 3. un announce the port
                     node.unannounce(opts.clone());
                 }
-                HyperDhtEvent::UnAnnounceResult { .. } => {
-                    // 4. another lookup that now comes up empty
-                    unannounced = true;
-                    node.lookup(opts.topic.clone());
+                HyperDhtEvent::CustomCommandQuery { .. } => {
+                    todo!()
                 }
-                _ => {}
             }
         }
     }
