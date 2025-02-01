@@ -28,7 +28,7 @@ use queries::QueryOpts as QueryOpts2;
 use sha2::digest::generic_array::{typenum::U32, GenericArray};
 use smallvec::alloc::collections::VecDeque;
 use tokio::sync::oneshot::error::RecvError;
-use tracing::{error, trace};
+use tracing::{error, trace, warn};
 
 use crate::{
     dht_proto::{encode_input, PeersInput, PeersOutput},
@@ -300,15 +300,21 @@ impl HyperDht {
     /// The result of the query is delivered in a
     /// [`HyperDhtEvent::LookupResult`].
     pub fn lookup(&mut self, target: IdBytes, commit: Commit) -> QueryId {
-        self.inner.query(
+        let query_id = self.inner.query(
             Command::External(ExternalCommand(commands::LOOKUP)),
             target,
             None,
             commit,
-        )
+        );
+        self.queries.insert(
+            query_id,
+            QueryStreamType::LookUp(QueryStreamInner::new(target, None)),
+        );
+        query_id
     }
 
     /// Do a LOOKUP and send an UNANNOUNCE to each node that replies
+    /// Wait for all unnanounces to complete before doing custom commit. if ther is one.
     pub fn lookup_and_unannounce(&mut self, target: IdBytes, _keypair: &Keypair) -> QueryId {
         let query_id = self.inner.query(
             Command::External(ExternalCommand(commands::LOOKUP)),
@@ -388,6 +394,11 @@ impl HyperDht {
     fn query_finished(&mut self, id: QueryId) {
         if let Some(query) = self.queries.remove(&id) {
             self.queued_events.push_back(query.finalize(id))
+        } else {
+            warn!(
+                id = ?id,
+                "Query with unknown id finished"
+            );
         }
     }
 
