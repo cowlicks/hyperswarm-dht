@@ -381,6 +381,7 @@ impl RpcDht {
         self.bootstrapped
     }
 
+    #[instrument(skip(self, value))]
     pub fn query(
         &mut self,
         cmd: Command,
@@ -391,6 +392,7 @@ impl RpcDht {
         self.run_command(cmd, target, value, commit)
     }
 
+    #[instrument(skip(self))]
     fn run_command(
         &mut self,
         cmd: Command,
@@ -923,6 +925,10 @@ impl RpcDht {
                 stats: result.stats,
             }
         } else {
+            debug!(
+                cmd = tracing::field::display(result.cmd),
+                "Query result ready"
+            );
             RpcDhtEvent::QueryResult {
                 id: result.inner,
                 cmd: result.cmd,
@@ -1064,16 +1070,20 @@ impl Stream for RpcDht {
             // Look for a sent/received message
             loop {
                 if let Poll::Ready(Some(event)) = Stream::poll_next(Pin::new(&mut pin.io), cx) {
-                    debug!("New IoHandler event: {event:?}");
+                    debug!("RpcDht got IoHandlerEvent::{event}");
                     pin.inject_event(event);
                     if let Some(event) = pin.queued_events.pop_front() {
-                        trace!("Emitting event {event:?}");
+                        trace!("emit queue event: {event:?}");
                         return Poll::Ready(Some(event));
                     }
                 } else {
                     match pin.queries.poll(now) {
                         QueryPoolEvent::Commit((query, cev)) => {
-                            use commit::{Commit::*, CommitEvent::*, Progress::*};
+                            use commit::{
+                                Commit::*,
+                                CommitEvent::{self, *},
+                                Progress::*,
+                            };
                             // TODO add all commit handlers
                             match cev {
                                 AutoStart((_, _)) => {

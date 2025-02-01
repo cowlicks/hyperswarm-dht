@@ -10,7 +10,7 @@ use futures::{
     channel::mpsc::{self},
     task::Poll,
 };
-use tracing::{info, instrument, trace};
+use tracing::{debug, info, instrument, trace, warn};
 use wasm_timer::Instant;
 
 use crate::{
@@ -118,6 +118,13 @@ impl QueryPool {
         commit: Commit,
     ) -> QueryId {
         let id = self.next_query_id();
+        debug!(
+            id = id.0,
+            cmd = tracing::field::display(cmd),
+            n_peers = peers.len(),
+            n_bootstrap = bootstrap.len(),
+            "new Query"
+        );
         let query = Query::new(
             id,
             cmd,
@@ -341,6 +348,7 @@ impl Query {
                     .map(|id| PeerId::new(data.peer.addr, IdBytes::from(id)));
 
                 if data.response.is_error() {
+                    warn!(error = data.response.error, "Error in peer response");
                     self.stats.failure += 1;
                     self.peer_iter.on_failure(&data.peer);
                     if let Some(ref remote) = remote {
@@ -404,7 +412,9 @@ impl Query {
 
     #[instrument(skip_all)]
     fn poll(&mut self, now: Instant) -> Poll<Option<QueryEvent>> {
-        match self.peer_iter.next(now) {
+        let pis = self.peer_iter.next(now);
+        info!("next peer iter state: {pis:?}");
+        match pis {
             PeersIterState::Waiting(peer) => {
                 return if let Some(peer) = peer {
                     Poll::Ready(Some(self.send(peer, false)))
@@ -415,10 +425,12 @@ impl Query {
             PeersIterState::WaitingAtCapacity => return Poll::Pending,
             PeersIterState::Finished => {}
         };
-        match poll(&mut self.commit, self.id) {
+        let out = match poll(&mut self.commit, self.id) {
             Poll::Ready(op) => Poll::Ready(op.map(QueryEvent::Commit)),
             Poll::Pending => Poll::Pending,
-        }
+        };
+        trace!("Query::poll result {out:?}");
+        out
     }
 
     /// Consumes the query, producing the final `QueryResult`.

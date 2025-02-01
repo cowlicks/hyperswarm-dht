@@ -348,7 +348,6 @@ impl Stream for IoHandler {
                             },
                         );
                         let out = IoHandlerEvent::OutRequest { tid };
-                        trace!("{out:#?}");
                         return Poll::Ready(Some(out));
                     }
                     OutMessage::Reply(message) => {
@@ -413,6 +412,38 @@ pub enum IoHandlerEvent {
     /// Received a response with a request id that was doesn't match any pending
     /// responses.
     InResponseBadRequestId { message: ReplyMsgData, peer: Peer },
+}
+
+impl IoHandlerEvent {
+    fn kind(&self) -> String {
+        use IoHandlerEvent::*;
+        match self {
+            OutResponse { .. } => "OutResponse",
+            OutRequest { .. } => "OutRequest",
+            InResponse(_) => "InResponse",
+            InRequest { .. } => "InRequest",
+            OutSocketErr { .. } => "OutSocketErr",
+            RequestTimeout { .. } => "RequestTimeout",
+            InMessageErr { .. } => "InMessageErr",
+            InSocketErr { .. } => "InSocketErr",
+            InResponseBadRequestId { .. } => "InResponseBadRequestId",
+        }
+        .to_string()
+    }
+}
+
+impl std::fmt::Display for IoHandlerEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use IoHandlerEvent::*;
+        match self {
+            InResponse(x) => write!(
+                f,
+                "InRespInResponse(tid={}, cmd={})",
+                x.request.tid, x.request.command
+            ),
+            _ => write!(f, "{}()", self.kind()),
+        }
+    }
 }
 
 #[cfg(test)]

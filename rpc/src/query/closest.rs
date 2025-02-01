@@ -30,7 +30,7 @@ use std::{
     num::NonZeroUsize,
     time::Duration,
 };
-use tracing::{instrument, trace};
+use tracing::{debug, instrument, trace, warn};
 use wasm_timer::Instant;
 
 use super::peers::PeersIterState;
@@ -93,6 +93,7 @@ impl Default for ClosestPeersIterConfig {
 
 impl ClosestPeersIter {
     /// Creates a new iterator with a default configuration.
+    #[instrument(skip_all)]
     pub fn new<I>(target: IdBytes, known_closest_peers: I) -> Self
     where
         I: IntoIterator<Item = Peer>,
@@ -105,6 +106,7 @@ impl ClosestPeersIter {
     }
 
     /// Creates a new iterator with the given configuration.
+    #[instrument(skip_all)]
     pub fn with_config<I>(
         config: ClosestPeersIterConfig,
         target: IdBytes,
@@ -131,10 +133,15 @@ impl ClosestPeersIter {
                 })
                 .take(K_VALUE.into()),
         );
+        debug!(
+            n_closest_peers = closest_peers.len(),
+            "ClosestPeersIter new"
+        );
 
         // The iterator initially makes progress by iterating towards the target.
         let state = State::Iterating { no_progress: 0 };
 
+        trace!("Creating new ClosestPeersIter");
         ClosestPeersIter {
             config,
             target,
@@ -160,27 +167,43 @@ impl ClosestPeersIter {
     /// If the iterator is finished, it is not currently waiting for a
     /// result from `peer`, or a result for `peer` has already been reported,
     /// calling this function has no effect and `false` is returned.
-    pub fn on_success(&mut self, peer: &Peer, closer_peers: &[Peer]) -> bool {
+    #[instrument(skip_all)]
+    pub fn on_success(
+        &mut self,
+        peer: &Peer,           /* peer that sent the response */
+        closer_peers: &[Peer], /* closer peers sent in the response */
+    ) -> bool {
         if let State::Finished = self.state {
             return false;
         }
 
         let id = calculate_peer_id(peer);
-        let distance = distance(&id, &self.target.as_ref());
+        let distance = distance(&id, self.target.as_ref());
 
         // Mark the peer as succeeded.
         match self.closest_peers.entry(distance) {
-            Entry::Vacant(..) => return false,
+            Entry::Vacant(..) => {
+                debug!(
+                    "Responding Peer's distance [{:?}] is not in  self.closest_peers",
+                    distance
+                );
+                return false;
+            }
             Entry::Occupied(mut e) => match e.get().state {
                 PeerState::Waiting(..) => {
                     debug_assert!(self.num_waiting > 0);
                     self.num_waiting -= 1;
+                    trace!(num_waiting = self.num_waiting, "Good response from peer!");
                     e.get_mut().state = PeerState::Succeeded;
                 }
                 PeerState::Unresponsive => {
+                    trace!("Response from unresponsive peer");
                     e.get_mut().state = PeerState::Succeeded;
                 }
-                PeerState::NotContacted | PeerState::Failed | PeerState::Succeeded => return false,
+                state @ (PeerState::NotContacted | PeerState::Failed | PeerState::Succeeded) => {
+                    warn!("Got response from Peer in strange state [{:?}]", state);
+                    return false;
+                }
             },
         }
 
@@ -206,6 +229,11 @@ impl ClosestPeersIter {
         //     2, any of the new peers is closer to the target than any peer seen so far
         //        (i.e. is the first entry after being incorporated)
         let mut progress = self.closest_peers.len() < self.config.num_results.get();
+        debug!(
+            iter_progress = progress,
+            n_closest_peers = closer_peers.len(),
+            "incorperate peers"
+        );
         for peer in closer_peers {
             let peer = IterPeer::from(peer.clone());
             let distance = peer.distance(self.target.as_ref());
@@ -318,22 +346,30 @@ impl ClosestPeersIter {
         // Check if the iterator is at capacity w.r.t. the allowed parallelism.
         let at_capacity = self.at_capacity();
 
-        trace!("Iterating over closest peers");
+        trace!(
+            "Iterating over closest N=[{}] peers",
+            self.closest_peers.len()
+        );
         for peer in self.closest_peers.values_mut() {
             match peer.state {
                 PeerState::Waiting(timeout) => {
+                    trace!(id = ?peer.id, "Peer Waing");
                     if now >= timeout {
                         // Unresponsive peers no longer count towards the limit for the
                         // bounded parallelism, though they might still be ongoing and
                         // their results can still be delivered to the iterator.
                         debug_assert!(self.num_waiting > 0);
                         self.num_waiting -= 1;
+                        trace!(peer_id = ?peer.id, num_waiting = self.num_waiting, "waiting peer timed out");
                         peer.state = PeerState::Unresponsive
                     } else if at_capacity {
+                        trace!(peer_id = ?peer.id, "waiting peer but iterator at capacity");
+
                         // The iterator is still waiting for a result from a peer and is
                         // at capacity w.r.t. the maximum number of peers being waited on.
                         return PeersIterState::WaitingAtCapacity;
                     } else {
+                        trace!(peer_id = ?peer.id, "waiting peer but ...? TODO what is this block");
                         // The iterator is still waiting for a result from a peer and the
                         // `result_counter` did not yet reach `num_results`. Therefore
                         // the iterator is not yet done, regardless of already successful
@@ -345,9 +381,11 @@ impl ClosestPeersIter {
                 PeerState::Succeeded => {
                     if let Some(ref mut cnt) = result_counter {
                         *cnt += 1;
+                        trace!(peer_id = ? peer.id, result_count = cnt, "Succeded peer. Increment result counter");
                         // If `num_results` successful results have been delivered for the
                         // closest peers, the iterator is done.
                         if *cnt >= self.config.num_results.get() {
+                            trace!("Got enough results to finish iterating!!!");
                             self.state = State::Finished;
                             trace!("PeerState::Succeeded so PeersIterState::Finished");
                             return PeersIterState::Finished;
@@ -360,14 +398,17 @@ impl ClosestPeersIter {
                         let timeout = now + self.config.peer_timeout;
                         peer.state = PeerState::Waiting(timeout);
                         self.num_waiting += 1;
+                        trace!(peer_id = ? peer.id, num_waiting = self.num_waiting, "uncontacte peer, start wating on it");
                         //return PeersIterState::Waiting(Some(peer.key.preimage()));
                         return PeersIterState::Waiting(Some(Peer::from(peer.clone())));
                     } else {
+                        trace!(peer_id = ? peer.id, "uncontacte peer, but iterator at capacity");
                         return PeersIterState::WaitingAtCapacity;
                     }
                 }
 
-                PeerState::Unresponsive | PeerState::Failed => {
+                state @ (PeerState::Unresponsive | PeerState::Failed) => {
+                    trace!(peer_id = ? peer.id, state = tracing::field::debug(state), "Skip this peer");
                     // Skip over unresponsive or failed peers.
                 }
             }
@@ -382,7 +423,10 @@ impl ClosestPeersIter {
             // The iterator is finished because all available peers have been contacted
             // and the iterator is not waiting for any more results.
             self.state = State::Finished;
-            trace!("No more peers waiting PeersIterState::Finished");
+            trace!(
+                num_waiting = self.num_waiting,
+                "No more peers waiting PeersIterState::Finished"
+            );
             PeersIterState::Finished
         }
     }
