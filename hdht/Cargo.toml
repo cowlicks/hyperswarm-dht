@@ -41,6 +41,7 @@ async-process = "2.2.1"
 serde = "1.0.217"
 serde_json = "1.0.135"
 tempfile = "3.10.1"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 #rusty_nodejs_repl = "0.2.1"
 
 [dev-dependencies.rusty_nodejs_repl]
