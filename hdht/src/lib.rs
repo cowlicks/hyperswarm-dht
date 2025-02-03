@@ -519,7 +519,6 @@ impl Stream for HyperDht {
             }
 
             while let Poll::Ready(Some(ev)) = Stream::poll_next(Pin::new(&mut pin.inner), cx) {
-                trace!("DHT event {:?}", ev);
                 match ev {
                     RpcDhtEvent::RequestResult(Ok(RequestOk::CustomCommandRequest {
                         query,
@@ -800,18 +799,18 @@ impl QueryStreamType {
             QueryStreamType::LookupAndUnannounce(_inner) => todo!(),
             QueryStreamType::LookUp(inner) => HyperDhtEvent::LookupResult {
                 lookup: Lookup {
-                    peers: inner.responses,
+                    peers: inner.peers,
                     topic: inner.topic,
                 },
                 query_id,
             },
             QueryStreamType::Announce(inner) => HyperDhtEvent::AnnounceResult {
-                peers: inner.responses,
+                peers: inner.peers,
                 topic: inner.topic,
                 query_id,
             },
             QueryStreamType::UnAnnounce(inner) => HyperDhtEvent::UnAnnounceResult {
-                peers: inner.responses,
+                peers: inner.peers,
                 topic: inner.topic,
                 query_id,
             },
@@ -822,7 +821,7 @@ impl QueryStreamType {
 #[derive(Debug)]
 struct QueryStreamInner {
     topic: IdBytes,
-    responses: Vec<Peers>,
+    peers: Vec<Peers>,
     local_address: Option<SocketAddr>,
 }
 
@@ -831,7 +830,7 @@ impl QueryStreamInner {
     fn new(topic: IdBytes, local_address: Option<SocketAddr>) -> Self {
         Self {
             topic,
-            responses: Vec::new(),
+            peers: Vec::new(),
             local_address,
         }
     }
@@ -863,7 +862,7 @@ impl QueryStreamInner {
                     trace!("value.peers && value.local_peers are empty");
                     return;
                 }
-                self.responses.push(Peers {
+                self.peers.push(Peers {
                     node: resp.peer,
                     peer_id: resp.peer_id,
                     peers,

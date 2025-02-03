@@ -1,5 +1,5 @@
 mod common;
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
 
 use dht_rpc::{DhtConfig, IdBytes};
 use futures::StreamExt;
@@ -352,7 +352,6 @@ testnet = await createTestnet();
     )
     .await?;
 
-    //let bs_addr = other_node_socketadd(&mut repl).await?;
     let bs_addr = other_node_socketadd(&mut repl).await?;
 
     let mut hdht = HyperDht::with_config(DhtConfig::default().add_bootstrap_node(bs_addr)).await?;
@@ -389,7 +388,7 @@ testnet = await createTestnet();
     let mut public_key = None;
     loop {
         match hdht.next().await {
-            Some(HyperDhtEvent::LookupResult { lookup, query_id }) => {
+            Some(HyperDhtEvent::LookupResult { query_id, .. }) => {
                 if query_id == _qid {
                     break;
                 }
