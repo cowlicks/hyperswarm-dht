@@ -388,8 +388,8 @@ testnet = await createTestnet();
     let mut public_key = None;
     loop {
         match hdht.next().await {
-            Some(HyperDhtEvent::LookupResult { query_id, .. }) => {
-                if query_id == _qid {
+            Some(HyperDhtEvent::LookupResult(res)) => {
+                if res.query_id == _qid {
                     break;
                 }
             }

@@ -308,7 +308,7 @@ impl HyperDht {
         );
         self.queries.insert(
             query_id,
-            QueryStreamType::LookUp(QueryStreamInner::new(target, None)),
+            QueryStreamType::Lookup(QueryStreamInner::new(target, None)),
         );
         query_id
     }
@@ -391,7 +391,7 @@ impl HyperDht {
                     // store request id to wait for request to finish
                     todo!()
                 }
-                QueryStreamType::LookUp(inner) => {
+                QueryStreamType::Lookup(inner) => {
                     match LookupResponse::from_response(&resp) {
                         Ok(Some(evt)) => {
                             trace!("Decoded valid lookup response");
@@ -664,32 +664,13 @@ pub enum HyperDhtEvent {
         stats: QueryStats,
     },
     /// The result of [`HyperDht::announce`].
-    AnnounceResult {
-        /// The peers that successfully received the announcement
-        peers: Vec<Peers>,
-        /// The announced topic.
-        topic: IdBytes,
-        /// Tracking id of the query
-        query_id: QueryId,
-    },
+    AnnounceResult(QueryResult),
     /// A response to part of a lookup query
     LookupResponse(LookupResponse),
     /// The result of [`HyperDht::lookup`].
-    LookupResult {
-        /// All responses
-        lookup: Lookup,
-        /// /// Tracking id of the query
-        query_id: QueryId,
-    },
+    LookupResult(QueryResult),
     /// The result of [`HyperDht::unannounce`].
-    UnAnnounceResult {
-        /// The peers that received the un announce message
-        peers: Vec<Peers>,
-        /// The topic that was un announced
-        topic: IdBytes,
-        /// Tracking id of the query
-        query_id: QueryId,
-    },
+    UnAnnounceResult(QueryResult),
     /// Received a query with a custom command that is not automatically handled
     /// by the DHT
     CustomCommandQuery {
@@ -722,42 +703,20 @@ pub struct Lookup {
     pub peers: Vec<Peers>,
 }
 
-impl Lookup {
-    /// Returns an iterator over all the nodes that sent data for this look
-    pub fn origins(&self) -> impl Iterator<Item = (&SocketAddr, Option<&IdBytes>)> {
-        self.peers
-            .iter()
-            .map(|peer| (&peer.node, peer.peer_id.as_ref()))
-    }
+#[derive(Debug)]
+pub struct QueryResult {
+    pub topic: IdBytes,
+    pub responses: Vec<Response>,
+    pub query_id: QueryId,
+}
 
-    /// Returns an iterator over all remote peers that announced the topic hash
-    pub fn remotes(&self) -> impl Iterator<Item = &SocketAddr> {
-        self.peers.iter().flat_map(|peer| peer.peers.iter())
-    }
-
-    /// Returns an iterator over all LAN peers that announced the topic hash
-    pub fn locals(&self) -> impl Iterator<Item = &SocketAddr> {
-        self.peers.iter().flat_map(|peer| peer.local_peers.iter())
-    }
-
-    /// Returns an iterator over all peers (remote and LAN) that announced the
-    /// topic hash.
-    pub fn all_peers(&self) -> impl Iterator<Item = &SocketAddr> {
-        self.peers
-            .iter()
-            .flat_map(|peer| peer.peers.iter().chain(peer.local_peers.iter()))
-    }
-
-    /// Amount peers matched the lookup
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.peers.len()
-    }
-
-    /// Returns `true` if the lookup contains no elements.
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.peers.is_empty()
+impl QueryResult {
+    fn new(query_id: &QueryId, qsi: QueryStreamInner) -> Self {
+        Self {
+            topic: qsi.topic,
+            responses: qsi.peers,
+            query_id: *query_id,
+        }
     }
 }
 
@@ -779,7 +738,7 @@ pub struct Peers {
 #[allow(unused)]
 enum QueryStreamType {
     LookupAndUnannounce(QueryStreamInner),
-    LookUp(QueryStreamInner),
+    Lookup(QueryStreamInner),
     Announce(QueryStreamInner),
     UnAnnounce(QueryStreamInner),
 }
@@ -788,7 +747,7 @@ impl QueryStreamType {
     fn commit(&mut self, _query: Arc<RwLock<Query>>, _channel: mpsc::Sender<CommitMessage>) {
         match self {
             QueryStreamType::LookupAndUnannounce(_) => todo!(),
-            QueryStreamType::LookUp(_) => todo!(),
+            QueryStreamType::Lookup(_) => todo!(),
             QueryStreamType::UnAnnounce(_) => todo!(),
             QueryStreamType::Announce(_inner) => todo!(),
         }
@@ -797,23 +756,15 @@ impl QueryStreamType {
     fn finalize(self, query_id: QueryId) -> HyperDhtEvent {
         match self {
             QueryStreamType::LookupAndUnannounce(_inner) => todo!(),
-            QueryStreamType::LookUp(inner) => HyperDhtEvent::LookupResult {
-                lookup: Lookup {
-                    peers: inner.peers,
-                    topic: inner.topic,
-                },
-                query_id,
-            },
-            QueryStreamType::Announce(inner) => HyperDhtEvent::AnnounceResult {
-                peers: inner.peers,
-                topic: inner.topic,
-                query_id,
-            },
-            QueryStreamType::UnAnnounce(inner) => HyperDhtEvent::UnAnnounceResult {
-                peers: inner.peers,
-                topic: inner.topic,
-                query_id,
-            },
+            QueryStreamType::Lookup(inner) => {
+                HyperDhtEvent::LookupResult(QueryResult::new(&query_id, inner))
+            }
+            QueryStreamType::Announce(inner) => {
+                HyperDhtEvent::AnnounceResult(QueryResult::new(&query_id, inner))
+            }
+            QueryStreamType::UnAnnounce(inner) => {
+                HyperDhtEvent::UnAnnounceResult(QueryResult::new(&query_id, inner))
+            }
         }
     }
 }
@@ -821,7 +772,7 @@ impl QueryStreamType {
 #[derive(Debug)]
 struct QueryStreamInner {
     topic: IdBytes,
-    peers: Vec<Peers>,
+    peers: Vec<Response>,
     local_address: Option<SocketAddr>,
 }
 
@@ -838,45 +789,6 @@ impl QueryStreamInner {
     /// Store the decoded peers from the `Response` value
     #[instrument(skip_all)]
     fn inject_response(&mut self, resp: Response) {
-        match resp
-            .value
-            .as_ref()
-            .map(|v| PeersOutput::decode(v.as_slice()))
-        {
-            Some(Ok(val)) => {
-                let peers = val.peers.as_ref().map(decode_peers).unwrap_or_default();
-
-                let local_peers = val
-                    .local_peers
-                    .as_ref()
-                    .and_then(|buf| {
-                        if let Some(SocketAddr::V4(addr)) = self.local_address {
-                            Some(decode_local_peers(&addr, buf))
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_default();
-
-                if peers.is_empty() && local_peers.is_empty() {
-                    trace!("value.peers && value.local_peers are empty");
-                    return;
-                }
-                self.peers.push(Peers {
-                    node: resp.peer,
-                    peer_id: resp.peer_id,
-                    peers,
-                    local_peers,
-                })
-            }
-            Some(Err(e)) => {
-                warn!(
-                    decode_error = ?e,
-                    cmd = display(resp.cmd),
-                    "Error decoding response value",
-                );
-            }
-            None => trace!(cmd = display(resp.cmd), "Response value is empty"),
-        }
+        self.peers.push(resp);
     }
 }
