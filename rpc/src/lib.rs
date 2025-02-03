@@ -1139,7 +1139,9 @@ impl Stream for RpcDht {
                                         }
                                     }
                                 }
-                                _ => todo!(),
+                                CommitEvent::Done => {
+                                    todo!("Commit Done!")
+                                }
                             }
                         }
                         QueryPoolEvent::Waiting(Some((query, event))) => {
@@ -1190,6 +1192,10 @@ pub struct Response {
     pub peer: SocketAddr,
     /// Included identifier of the peer.
     pub peer_id: Option<IdBytes>,
+    /// Error code in the Reply,` 0` is no error.
+    pub error: usize,
+    /// Round trip token
+    pub token: Option<[u8; 32]>,
     /// response payload
     pub value: Option<Vec<u8>>,
 }

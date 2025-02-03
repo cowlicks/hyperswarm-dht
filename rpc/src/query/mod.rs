@@ -381,6 +381,8 @@ impl Query {
             to: Some(data.response.to.addr),
             peer: data.peer.addr,
             peer_id: validate_id(&data.response.id, &data.peer),
+            error: data.response.error,
+            token: data.response.token,
             value: data.response.value.clone(),
         })
     }
