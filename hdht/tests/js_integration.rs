@@ -6,7 +6,7 @@ use futures::StreamExt;
 use hyperdht::{
     cenc::Announce,
     crypto::{namespace, sign_announce_or_unannounce, Keypair2},
-    HyperDht,
+    HyperDht, HyperDhtEvent,
 };
 
 use common::{
@@ -384,18 +384,27 @@ testnet = await createTestnet();
         )
         .await?;
 
-    println!("Do lookup!!!!!!!! for {:?}", topic);
     let _qid = hdht.lookup(topic.into(), hyperdht::Commit::No);
-    println!("Sleep");
-    tokio::time::sleep(Duration::from_millis(1000)).await;
-    println!("poll hdht");
 
-    while let Some(x) = hdht.next().await {
-        dbg!(&x);
-        let what = repl.drain_stdout().await?;
-        let what_str = String::from_utf8(what).unwrap();
-        println!("ooooooooooo{what_str}");
+    let mut public_key = None;
+    loop {
+        match hdht.next().await {
+            Some(HyperDhtEvent::LookupResult { lookup, query_id }) => {
+                if query_id == _qid {
+                    break;
+                }
+            }
+            Some(HyperDhtEvent::LookupResponse(resp)) => {
+                if let Some(x) = resp.peers.last() {
+                    let pk = public_key.get_or_insert(x.public_key);
+                    assert_eq!(*pk, x.public_key);
+                }
+            }
+            Some(_) => {}
+            None => panic!("when would this end?"),
+        }
     }
 
+    assert!(public_key.is_some());
     Ok(())
 }
