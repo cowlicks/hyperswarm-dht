@@ -23,12 +23,13 @@ use futures::{
     task::{Context, Poll},
     Stream,
 };
+use lookup::LookupResponse;
 use prost::Message as ProstMessage;
 use queries::QueryOpts as QueryOpts2;
 use sha2::digest::generic_array::{typenum::U32, GenericArray};
 use smallvec::alloc::collections::VecDeque;
 use tokio::sync::oneshot::error::RecvError;
-use tracing::{error, trace, warn};
+use tracing::{error, instrument, trace, warn};
 
 use crate::{
     dht_proto::{encode_input, PeersInput, PeersOutput},
@@ -57,8 +58,9 @@ mod dht_proto {
         buf
     }
 }
-mod cenc;
+pub mod cenc;
 pub mod crypto;
+mod lookup;
 pub mod lru;
 mod queries;
 pub mod store;
@@ -375,16 +377,32 @@ impl HyperDht {
         todo!()
     }
 
+    #[instrument(skip_all)]
     fn inject_response(&mut self, resp: Response) {
+        trace!(
+            cmd = display(resp.cmd),
+            "Handle Response for custom command"
+        );
         if let Some(query) = self.queries.get_mut(&resp.query) {
             match query {
-                QueryStreamType::LookUp(inner)
-                | QueryStreamType::Announce(inner)
-                | QueryStreamType::UnAnnounce(inner) => inner.inject_response(resp),
+                QueryStreamType::Announce(inner) | QueryStreamType::UnAnnounce(inner) => {
+                    inner.inject_response(resp)
+                }
                 QueryStreamType::LookupAndUnannounce(_inner) => {
                     // do unannnounce request
                     // store request id to wait for request to finish
                     todo!()
+                }
+                QueryStreamType::LookUp(inner) => {
+                    match LookupResponse::from_response(&resp) {
+                        Ok(Some(evt)) => {
+                            trace!("Decoded valid lookup response");
+                            self.queued_events.push_back(evt.into());
+                        }
+                        Ok(None) => trace!("Lookup respones missing value field"),
+                        Err(e) => error!(error = display(e), "Error decoding lookup response"),
+                    }
+                    inner.inject_response(resp)
                 }
             }
         }
@@ -657,6 +675,8 @@ pub enum HyperDhtEvent {
         /// Tracking id of the query
         query_id: QueryId,
     },
+    /// A response to part of a lookup query
+    LookupResponse(LookupResponse),
     /// The result of [`HyperDht::lookup`].
     LookupResult {
         /// All responses
@@ -776,6 +796,7 @@ impl QueryStreamType {
             QueryStreamType::Announce(_inner) => todo!(),
         }
     }
+
     fn finalize(self, query_id: QueryId) -> HyperDhtEvent {
         match self {
             QueryStreamType::LookupAndUnannounce(_inner) => todo!(),
@@ -818,35 +839,47 @@ impl QueryStreamInner {
     }
 
     /// Store the decoded peers from the `Response` value
+    #[instrument(skip_all)]
     fn inject_response(&mut self, resp: Response) {
-        if let Some(val) = resp
+        match resp
             .value
             .as_ref()
-            .and_then(|val| PeersOutput::decode(val.as_slice()).ok())
+            .map(|v| PeersOutput::decode(v.as_slice()))
         {
-            let peers = val.peers.as_ref().map(decode_peers).unwrap_or_default();
+            Some(Ok(val)) => {
+                let peers = val.peers.as_ref().map(decode_peers).unwrap_or_default();
 
-            let local_peers = val
-                .local_peers
-                .as_ref()
-                .and_then(|buf| {
-                    if let Some(SocketAddr::V4(addr)) = self.local_address {
-                        Some(decode_local_peers(&addr, buf))
-                    } else {
-                        None
-                    }
+                let local_peers = val
+                    .local_peers
+                    .as_ref()
+                    .and_then(|buf| {
+                        if let Some(SocketAddr::V4(addr)) = self.local_address {
+                            Some(decode_local_peers(&addr, buf))
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
+
+                if peers.is_empty() && local_peers.is_empty() {
+                    trace!("value.peers && value.local_peers are empty");
+                    return;
+                }
+                self.responses.push(Peers {
+                    node: resp.peer,
+                    peer_id: resp.peer_id,
+                    peers,
+                    local_peers,
                 })
-                .unwrap_or_default();
-
-            if peers.is_empty() && local_peers.is_empty() {
-                return;
             }
-            self.responses.push(Peers {
-                node: resp.peer,
-                peer_id: resp.peer_id,
-                peers,
-                local_peers,
-            })
+            Some(Err(e)) => {
+                warn!(
+                    decode_error = ?e,
+                    cmd = display(resp.cmd),
+                    "Error decoding response value",
+                );
+            }
+            None => trace!(cmd = display(resp.cmd), "Response value is empty"),
         }
     }
 }

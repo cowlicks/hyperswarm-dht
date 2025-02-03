@@ -118,6 +118,9 @@ async fn local_bootstrap() -> std::result::Result<(), Box<dyn std::error::Error>
                 HyperDhtEvent::CustomCommandQuery { .. } => {
                     todo!()
                 }
+                HyperDhtEvent::LookupResponse(_) => {
+                    todo!()
+                }
             }
         }
     }
