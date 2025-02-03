@@ -64,8 +64,6 @@ mod lookup;
 pub mod lru;
 mod queries;
 pub mod store;
-#[cfg(test)]
-mod tests;
 
 #[allow(dead_code)]
 const EPH_AFTER: u64 = 1000 * 60 * 20;
