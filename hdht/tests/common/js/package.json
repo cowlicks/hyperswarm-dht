@@ -10,6 +10,7 @@
     "dht-rpc": "file:./rpc",
     "hyperdht": "file:./hyperdht",
     "random-access-file": "^4.0.7",
-    "random-access-memory": "^6.2.1"
+    "random-access-memory": "^6.2.1",
+    "sodium-native": "file:./sodium-native"
   }
 }
