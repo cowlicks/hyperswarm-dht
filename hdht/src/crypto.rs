@@ -49,7 +49,7 @@ pub fn hash_id(val: &[u8]) -> IdBytes {
     key.into()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Keypair2 {
     /// The public half of this keypair.
     pub public: [u8; crypto_sign_PUBLICKEYBYTES as usize],
