@@ -8,3 +8,6 @@
 [submodule "hdht/tests/common/js/rpc"]
 	path = hdht/tests/common/js/rpc
 	url = git@github.com:cowlicks/dht-rpc.git
+[submodule "hdht/tests/common/js/sodium-native"]
+	path = hdht/tests/common/js/sodium-native
+	url = git@github.com:cowlicks/sodium-native.git
