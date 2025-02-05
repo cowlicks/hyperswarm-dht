@@ -25,14 +25,13 @@ use futures::{
 };
 use lookup::LookupResponse;
 use prost::Message as ProstMessage;
-use queries::QueryOpts as QueryOpts2;
-use sha2::digest::generic_array::{typenum::U32, GenericArray};
+pub use queries::QueryOpts;
 use smallvec::alloc::collections::VecDeque;
 use tokio::sync::oneshot::error::RecvError;
 use tracing::{error, instrument, trace, warn};
 
 use crate::{
-    dht_proto::{encode_input, PeersInput, PeersOutput},
+    dht_proto::{PeersInput, PeersOutput},
     lru::{CacheKey, PeerCache},
     store::Store,
 };
@@ -313,20 +312,6 @@ impl HyperDht {
         query_id
     }
 
-    /// Do a LOOKUP and send an UNANNOUNCE to each node that replies
-    /// Wait for all unnanounces to complete before doing custom commit. if ther is one.
-    pub fn lookup_and_unannounce(&mut self, target: IdBytes, _keypair: &Keypair) -> QueryId {
-        let query_id = self.inner.query(
-            Command::External(ExternalCommand(commands::LOOKUP)),
-            target,
-            None,
-            Commit::Custom(Default::default()),
-        );
-        self.queries
-            .insert(query_id, QueryStreamType::LookupAndUnannounce(todo!()));
-        query_id
-    }
-
     /// Announce the topic to the closest peers
     ///
     /// Query result is a [`HyperDhtEvent::AnnounceResult`].
@@ -352,26 +337,7 @@ impl HyperDht {
     ///
     /// The result of the query is delivered in a
     /// [`HyperDhtEvent::UnAnnounceResult`].
-    pub fn unannounce(&mut self, opts: impl Into<QueryOpts>) -> QueryId {
-        let opts = opts.into();
-
-        let peers = PeersInput {
-            port: opts.port,
-            local_address: opts.local_addr_encoded(),
-            unannounce: Some(true),
-        };
-        let _buf = encode_input(&peers);
-
-        /*
-        let id = self
-            .inner
-            .update(PEERS_CMD, kbucket::Key::new(opts.topic.clone()), Some(buf));
-        self.queries.insert(
-            id,
-            QueryStreamType::UnAnnounce(QueryStreamInner::new(opts.topic, opts.local_addr)),
-        );
-        id
-            */
+    pub fn unannounce(&mut self, opts: &QueryOpts) -> QueryId {
         todo!()
     }
 
@@ -553,101 +519,6 @@ impl Stream for HyperDht {
                 return Poll::Pending;
             }
         }
-    }
-}
-
-/// Determines what to announce or query from the DHT
-#[derive(Debug, Clone, PartialEq)]
-pub struct QueryOpts {
-    /// The topic to announce
-    pub topic: IdBytes,
-    /// Explicitly set the port you want to announce. Per default the UDP socket
-    /// port is announced.
-    pub port: Option<u32>,
-    /// Optionally announce a LAN address as well. Only people with the same
-    /// public IP as you will get these when doing a lookup
-    pub local_addr: Option<SocketAddr>,
-}
-
-impl QueryOpts {
-    /// Create a opts with only a topic
-    pub fn new(topic: impl Into<IdBytes>) -> Self {
-        Self {
-            topic: topic.into(),
-            port: None,
-            local_addr: None,
-        }
-    }
-
-    /// Create new opts with a topic and a port
-    pub fn with_port(topic: impl Into<IdBytes>, port: u32) -> Self {
-        Self {
-            topic: topic.into(),
-            port: Some(port),
-            local_addr: None,
-        }
-    }
-
-    /// Set the port to announce
-    pub fn port(mut self, port: u32) -> Self {
-        self.port = Some(port);
-        self
-    }
-
-    /// The local addresses as encoded payload
-    fn local_addr_encoded(&self) -> Option<Vec<u8>> {
-        self.local_addr.as_ref().map(|addr| addr.encode())
-    }
-
-    /// Set Local addresses to announce
-    pub fn local_addr(mut self, local_addr: impl ToSocketAddrs) -> Self {
-        self.local_addr = local_addr
-            .to_socket_addrs()
-            .ok()
-            .and_then(|mut iter| iter.next());
-        self
-    }
-}
-
-impl From<&PublicKey> for QueryOpts {
-    fn from(key: &PublicKey) -> Self {
-        Self {
-            topic: IdBytes(*key.as_bytes()),
-            port: None,
-            local_addr: None,
-        }
-    }
-}
-
-impl From<&GenericArray<u8, U32>> for QueryOpts {
-    fn from(digest: &GenericArray<u8, U32>) -> Self {
-        Self {
-            topic: digest.as_slice().try_into().expect("Wrong length"),
-            port: None,
-            local_addr: None,
-        }
-    }
-}
-
-impl From<IdBytes> for QueryOpts {
-    fn from(topic: IdBytes) -> Self {
-        Self {
-            topic,
-            port: None,
-            local_addr: None,
-        }
-    }
-}
-
-impl TryFrom<&[u8]> for QueryOpts {
-    type Error = std::array::TryFromSliceError;
-
-    fn try_from(value: &[u8]) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
-            topic: value.try_into()?,
-            port: None,
-            local_addr: None,
-        })
     }
 }
 
