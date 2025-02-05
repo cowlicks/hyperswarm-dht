@@ -4,9 +4,12 @@ HYPERDHT_DIR := hyperdht
 HDHT_SOURCES = $(shell test -d $(HYPERDHT_DIR) && find $(HYPERDHT_DIR) -type f -name "*.js")
 
 node_modules: package.json $(HYPERDHT_DIR) $(HDHT_SOURCES)
-	yarn install
+	npm install
 
 # pull in the submodule if it doesn't exist
 $(HYPERDHT_DIR):
 	git submodule update --init --recursive
 
+
+clean:
+	rm -rf package-lock.json node_modules yarn.lock
