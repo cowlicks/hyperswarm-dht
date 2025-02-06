@@ -48,14 +48,6 @@ mod dht_proto {
     use prost::Message;
 
     include!(concat!(env!("OUT_DIR"), "/dht_pb.rs"));
-
-    #[inline]
-    pub fn encode_input(peers: &PeersInput) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(peers.encoded_len());
-        // vec has sufficient capacity up to usize::MAX
-        peers.encode(&mut buf).unwrap();
-        buf
-    }
 }
 pub mod cenc;
 pub mod crypto;
@@ -307,7 +299,7 @@ impl HyperDht {
         );
         self.queries.insert(
             query_id,
-            QueryStreamType::Lookup(QueryStreamInner::new(target, None)),
+            QueryStreamType::Lookup(QueryStreamInner::new(target)),
         );
         query_id
     }
@@ -337,7 +329,7 @@ impl HyperDht {
     ///
     /// The result of the query is delivered in a
     /// [`HyperDhtEvent::UnAnnounceResult`].
-    pub fn unannounce(&mut self, opts: &QueryOpts) -> QueryId {
+    pub fn unannounce(&mut self, _opts: &QueryOpts) -> QueryId {
         todo!()
     }
 
@@ -393,7 +385,6 @@ impl HyperDht {
         qst.commit(query, channel);
     }
 
-    #[allow(unused)] // TODO FIXME
     fn request_announce_or_unannounce(
         &mut self,
         keypair: &Keypair2,
@@ -644,16 +635,14 @@ impl QueryStreamType {
 struct QueryStreamInner {
     topic: IdBytes,
     peers: Vec<Response>,
-    local_address: Option<SocketAddr>,
 }
 
 impl QueryStreamInner {
     #[allow(unused)] // TODO FIXME
-    fn new(topic: IdBytes, local_address: Option<SocketAddr>) -> Self {
+    fn new(topic: IdBytes) -> Self {
         Self {
             topic,
             peers: Vec::new(),
-            local_address,
         }
     }
 
