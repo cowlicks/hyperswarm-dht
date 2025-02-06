@@ -45,8 +45,6 @@ pub use ::dht_rpc::{
 };
 
 mod dht_proto {
-    use prost::Message;
-
     include!(concat!(env!("OUT_DIR"), "/dht_pb.rs"));
 }
 pub mod cenc;
