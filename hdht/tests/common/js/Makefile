@@ -1,15 +1,23 @@
-# path to the js submodule
+# git submodule directories
 HYPERDHT_DIR := hyperdht
+SODIUM_NATIVE_DIR := sodium-native
+DHT_RPC_DIR := rpc
 
+# I update these in development so we want to rebuild if they change
 HDHT_SOURCES = $(shell test -d $(HYPERDHT_DIR) && find $(HYPERDHT_DIR) -type f -name "*.js")
 
-node_modules: package.json $(HYPERDHT_DIR) $(HDHT_SOURCES)
+node_modules: package.json $(HYPERDHT_DIR) $(HDHT_SOURCES) $(SODIUM_NATIVE_DIR)/prebuilds
 	npm install
 
-# pull in the submodule if it doesn't exist
-$(HYPERDHT_DIR):
-	git submodule update --init --recursive
+$(SODIUM_NATIVE_DIR)/prebuilds: $(SODIUM_NATIVE_DIR)
+	$(MAKE) -C sodium-native prebuilds
 
+# pull in the submodule if it doesn't exist
+$(HYPERDHT_DIR) $(SODIUM_NATIVE_DIR) $(DHT_RPC_DIR):
+	git submodule update --init --recursive
 
 clean:
 	rm -rf package-lock.json node_modules yarn.lock
+	$(MAKE) -c sodium-native clean || true # fails if sodium native git submodule not pulled in
+
+.PHONY: clean
