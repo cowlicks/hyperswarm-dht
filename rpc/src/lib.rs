@@ -197,7 +197,7 @@ fn thirty_two_random_bytes() -> [u8; 32] {
     buff
 }
 
-pub(crate) type QueryAndTid = (Option<QueryId>, u16);
+pub(crate) type QueryAndTid = (Option<QueryId>, Tid);
 
 #[derive(Debug, derive_builder::Builder)]
 #[builder(pattern = "owned")]
@@ -419,9 +419,10 @@ impl RpcDht {
         value: Option<Vec<u8>>,
         peer: Peer,
         token: Option<[u8; 32]>,
-    ) -> QueryAndTid {
+    ) -> Tid {
         self.io
             .queue_send_request(command, target, value, peer, None, token)
+            .1
     }
 
     pub fn ping(&mut self, peer: &Peer) -> QueryAndTid {
