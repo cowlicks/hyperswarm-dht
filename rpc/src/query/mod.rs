@@ -282,10 +282,15 @@ impl Query {
 
     // TODO in theory, new elements distances get smaller. So maybe reverse the list.
     // if that does not really hold true use a binary search
+    #[instrument(skip_all)]
     fn maybe_insert(&mut self, data: &InResponse) -> Option<usize> {
         let reply_distance = self.peer_iter.target.distance(data.response.id?);
         let replace = self.closest_replies.len() >= K_VALUE.into();
 
+        if self.closest_replies.is_empty() {
+            self.closest_replies.insert(0, data.clone());
+            return Some(0);
+        }
         for (i, cur) in self.closest_replies.iter().enumerate() {
             if reply_distance
                 < self
