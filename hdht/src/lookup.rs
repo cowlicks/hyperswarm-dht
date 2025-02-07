@@ -6,9 +6,7 @@ use dht_rpc::Response;
 
 #[derive(Debug)]
 pub struct LookupResponse {
-    _token: Option<[u8; 32]>,
-    _from: SocketAddr,
-    _to: Option<SocketAddr>,
+    pub response: Response,
     pub peers: Vec<crate::cenc::Peer>,
 }
 
@@ -21,9 +19,7 @@ impl LookupResponse {
         let (peers, _rest): (Vec<crate::cenc::Peer>, &[u8]) =
             <Vec<crate::cenc::Peer> as CompactEncodable>::decode(value)?;
         Ok(Some(LookupResponse {
-            _token: resp.token,
-            _from: resp.peer,
-            _to: resp.to,
+            response: resp.clone(),
             peers,
         }))
     }
