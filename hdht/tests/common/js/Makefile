@@ -18,6 +18,6 @@ $(HYPERDHT_DIR) $(SODIUM_NATIVE_DIR) $(DHT_RPC_DIR):
 
 clean:
 	rm -rf package-lock.json node_modules yarn.lock
-	$(MAKE) -c sodium-native clean || true # fails if sodium native git submodule not pulled in
+	$(MAKE) -C sodium-native clean || true # fails if sodium native git submodule not pulled in
 
 .PHONY: clean
