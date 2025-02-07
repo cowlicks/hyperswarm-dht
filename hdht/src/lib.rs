@@ -429,7 +429,7 @@ impl HyperDht {
         token: &[u8; 32],
         from: PeerId,
         relay_addresses: &[SocketAddr],
-    ) -> Result<u16> {
+    ) -> Result<Tid> {
         self.request_announce_or_unannounce(
             keypair,
             target,
@@ -448,7 +448,7 @@ impl HyperDht {
         target: IdBytes,
         token: &[u8; 32],
         from: PeerId,
-    ) -> Result<u16> {
+    ) -> Result<Tid> {
         self.request_announce_or_unannounce(
             keypair,
             target,
