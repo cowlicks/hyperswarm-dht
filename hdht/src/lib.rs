@@ -392,33 +392,28 @@ impl HyperDht {
         relay_addresses: &[SocketAddr],
         namespace: &[u8; 32],
         cmd: ExternalCommand,
-    ) -> Result<u16> {
-        let announce = sign_announce_or_unannounce(
+    ) -> Result<Tid> {
+        let value = request_announce_or_unannounce_value(
             keypair,
             target,
             token,
-            &from.id.0,
+            from.id,
             relay_addresses,
             namespace,
         )?;
 
-        let mut value: Vec<u8> = vec![0u8; CompactEncodable::encoded_size(&announce).unwrap()];
-        announce.encoded_bytes(&mut value).unwrap();
         let from_peer = Peer {
             id: Some(from.id.0),
             addr: from.addr,
             referrer: None,
         };
-        Ok(self
-            .inner
-            .request(
-                Command::External(cmd),
-                Some(target),
-                Some(value),
-                from_peer,
-                Some(*token),
-            )
-            .1)
+        Ok(self.inner.request(
+            Command::External(cmd),
+            Some(target),
+            Some(value),
+            from_peer,
+            Some(*token),
+        ))
     }
 
     #[allow(unused)] // TODO FIXME
@@ -649,4 +644,20 @@ impl QueryStreamInner {
     fn inject_response(&mut self, resp: Response) {
         self.peers.push(resp);
     }
+}
+
+pub fn request_announce_or_unannounce_value(
+    keypair: &Keypair2,
+    target: IdBytes,
+    token: &[u8; 32],
+    from: IdBytes,
+    relay_addresses: &[SocketAddr],
+    namespace: &[u8; 32],
+) -> Result<Vec<u8>> {
+    let announce =
+        sign_announce_or_unannounce(keypair, target, token, &from.0, relay_addresses, namespace)?;
+
+    let mut value: Vec<u8> = vec![0u8; CompactEncodable::encoded_size(&announce).unwrap()];
+    announce.encoded_bytes(&mut value).unwrap();
+    Ok(value)
 }
