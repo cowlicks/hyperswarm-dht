@@ -13,10 +13,14 @@ use std::{
     time::Duration,
 };
 
+use commands::ANNOUNCE;
 use compact_encoding::{types::CompactEncodable, EncodingError};
-use crypto::{sign_announce_or_unannounce, Keypair2};
-use dht_rpc::{commit::CommitMessage, query::Query};
-use ed25519_dalek::{Keypair, PublicKey};
+use crypto::{sign_announce_or_unannounce, Keypair2, PublicKey2};
+use dht_rpc::{
+    commit::{CommitMessage, CommitRequestParams, Progress},
+    query::Query,
+    Tid,
+};
 use fnv::FnvHashMap;
 use futures::{
     channel::mpsc::{self},
@@ -189,8 +193,8 @@ impl HyperDht {
         }
     }
 
-    pub fn find_peer(&mut self, pub_key: PublicKey) -> QueryId {
-        let target = IdBytes(generic_hash(pub_key.as_bytes()));
+    pub fn find_peer(&mut self, pub_key: PublicKey2) -> QueryId {
+        let target = IdBytes(generic_hash(&*pub_key));
 
         self.inner.query(
             Command::External(ExternalCommand(commands::FIND_PEER)),

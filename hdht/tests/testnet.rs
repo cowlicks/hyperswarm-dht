@@ -89,7 +89,7 @@ testnet = await createTestnet();
             }
             Some(HyperDhtEvent::LookupResponse(resp)) => {
                 if let Some(x) = resp.peers.last() {
-                    let pk = public_key.get_or_insert(x.public_key);
+                    let pk = public_key.get_or_insert(x.public_key.clone());
                     assert_eq!(*pk, x.public_key);
                 }
             }

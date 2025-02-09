@@ -5,10 +5,9 @@ use compact_encoding::{
     },
     EncodingError,
 };
-use libsodium_sys::crypto_sign_PUBLICKEYBYTES;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-use crate::crypto::Signature2;
+use crate::crypto::{PublicKey2, Signature2};
 
 #[derive(Debug)]
 struct SocketAddr2(pub SocketAddr);
@@ -53,7 +52,7 @@ impl CompactEncodable for SocketAddr2 {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Peer {
-    pub public_key: [u8; crypto_sign_PUBLICKEYBYTES as usize],
+    pub public_key: PublicKey2,
     pub relay_addresses: Vec<SocketAddr>,
 }
 
@@ -68,7 +67,7 @@ impl CompactEncodable for Peer {
         let Some((dest, mut rest)) = buffer.split_first_chunk_mut::<32>() else {
             todo!()
         };
-        dest.copy_from_slice(&self.public_key);
+        dest.copy_from_slice(&*self.public_key);
         rest = self
             .relay_addresses
             .iter()
@@ -90,7 +89,7 @@ impl CompactEncodable for Peer {
         let relay_addresses = res.0.into_iter().map(SocketAddr::from).collect();
         Ok((
             Peer {
-                public_key: *public_key,
+                public_key: (*public_key).into(),
                 relay_addresses,
             },
             res.1,
@@ -189,7 +188,7 @@ mod test {
         //let public_key = PublicKey::from_bytes(&pub_key_bytes).unwrap();
 
         let peer = Peer {
-            public_key: pub_key_bytes,
+            public_key: pub_key_bytes.into(),
             relay_addresses: vec![one, two, three],
         };
 

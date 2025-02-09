@@ -51,7 +51,7 @@ pub fn hash_id(val: &[u8]) -> IdBytes {
 
 type PublicKey2Bytes = [u8; crypto_sign_PUBLICKEYBYTES as usize];
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PublicKey2(PublicKey2Bytes);
 impl From<PublicKey2Bytes> for PublicKey2 {
     fn from(value: PublicKey2Bytes) -> Self {
@@ -122,8 +122,15 @@ impl Keypair2 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Signature2(pub [u8; crypto_sign_BYTES as usize]);
+impl Deref for Signature2 {
+    type Target = [u8; crypto_sign_BYTES as usize];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 /*
 impl Default for Keypair2 {
     fn default() -> Self {
@@ -250,7 +257,7 @@ pub fn sign_announce_or_unannounce(
 ) -> crate::Result<Announce> {
     use crate::cenc::Peer;
     let peer = Peer {
-        public_key: *keypair.public,
+        public_key: keypair.public.clone(),
         relay_addresses: relay_addresses.to_vec(),
     };
     let mut encoded_peer = vec![0; peer.encoded_size()?];

@@ -1,6 +1,7 @@
 mod common;
 use std::net::SocketAddr;
 
+use compact_encoding::types::CompactEncodable;
 use dht_rpc::IdBytes;
 use hyperdht::{
     cenc::Announce,
@@ -35,6 +36,14 @@ fn sign_announce(
     )?)
 }
 
+async fn cmp_buf(repl: &mut Repl, rs_buf: &[u8], js_name: &str) -> Result<bool> {
+    let res_vec = repl
+        .run(format!("write([...{js_name}].toString())"))
+        .await?;
+    let resjs_buf_str = String::from_utf8_lossy(&res_vec);
+    let rs_buf_str = buf_to_js_comparable_str(rs_buf);
+    Ok(rs_buf_str == resjs_buf_str)
+}
 fn buf_to_js_comparable_str(x: &[u8]) -> String {
     x.iter()
         .map(|x| x.to_string())
