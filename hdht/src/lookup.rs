@@ -1,5 +1,4 @@
 use crate::{HyperDhtEvent, Result};
-use std::net::SocketAddr;
 
 use compact_encoding::types::CompactEncodable;
 use dht_rpc::Response;
