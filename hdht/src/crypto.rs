@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, ops::Deref};
 
 use blake2::VarBlake2b;
 use compact_encoding::types::{write_array, CompactEncodable};
@@ -49,10 +49,27 @@ pub fn hash_id(val: &[u8]) -> IdBytes {
     key.into()
 }
 
+type PublicKey2Bytes = [u8; crypto_sign_PUBLICKEYBYTES as usize];
+
+#[derive(Debug, Clone)]
+pub struct PublicKey2(PublicKey2Bytes);
+impl From<PublicKey2Bytes> for PublicKey2 {
+    fn from(value: PublicKey2Bytes) -> Self {
+        Self(value)
+    }
+}
+impl Deref for PublicKey2 {
+    type Target = PublicKey2Bytes;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Keypair2 {
     /// The public half of this keypair.
-    pub public: [u8; crypto_sign_PUBLICKEYBYTES as usize],
+    pub public: PublicKey2,
     /// The secret half of this keypair.
     pub secret: [u8; crypto_sign_SECRETKEYBYTES as usize],
 }
@@ -65,7 +82,10 @@ impl Default for Keypair2 {
         if err != 0 {
             todo!()
         }
-        Self { public, secret }
+        Self {
+            public: public.into(),
+            secret,
+        }
     }
 }
 
@@ -79,7 +99,10 @@ impl Keypair2 {
         if err != 0 {
             todo!()
         }
-        Self { public, secret }
+        Self {
+            public: public.into(),
+            secret,
+        }
     }
     pub fn sign(&self, value: &[u8]) -> Signature2 {
         let mut signature: [u8; 64] = [0u8; crypto_sign_BYTES as usize];
@@ -227,7 +250,7 @@ pub fn sign_announce_or_unannounce(
 ) -> crate::Result<Announce> {
     use crate::cenc::Peer;
     let peer = Peer {
-        public_key: keypair.public,
+        public_key: *keypair.public,
         relay_addresses: relay_addresses.to_vec(),
     };
     let mut encoded_peer = vec![0; peer.encoded_size()?];
