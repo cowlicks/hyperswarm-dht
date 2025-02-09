@@ -57,6 +57,7 @@ async fn make_repl() -> Repl {
         "
 stringify = JSON.stringify;
 write = process.stdout.write.bind(process.stdout);
+writeJson = x => write(stringify(x))
 "
         .into(),
     );
@@ -111,17 +112,28 @@ write(stringify([[...keyPair.publicKey], [...keyPair.secretKey]]))
     assert_eq!(k2.secret.as_slice(), &result[1]);
     Ok(())
 }
+
+async fn make_array<const C: usize>(repl: &mut Repl, name: &str, def: &str) -> Result<[u8; C]> {
+    let js_str = format!(
+        "
+{name} = {def};
+writeJson([...{name}])"
+    );
+    let vec: Vec<u8> = repl.json_run(js_str).await?;
+    Ok(vec
+        .try_into()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{e:?}")))?)
+}
 /// Test creating a signature for an Announce is correct.
 /// JS code taken from:
 /// https://github.com/holepunchto/hyperdht/blob/0d4f4b65bf1c252487f7fd52ef9e21ac76a3ceba/index.js#L424-L434
 #[tokio::test]
 async fn test_sign_announce() -> Result<()> {
-    let target = [1; 32];
-    let token = [2; 32];
-    let from_id = [3; 32];
-
     let mut repl = make_repl().await;
     repl.run(KEYPAIR_JS).await?;
+    let target: [u8; 32] = make_array(&mut repl, "target", "Buffer.alloc(32).fill(1)").await?;
+    let token: [u8; 32] = make_array(&mut repl, "token", "Buffer.alloc(32).fill(2)").await?;
+    let from_id: [u8; 32] = make_array(&mut repl, "from_id", "Buffer.alloc(32).fill(3)").await?;
     let expected: Vec<u8> = repl
         .json_run(
             "
@@ -130,9 +142,6 @@ c = require('compact-encoding')
 m = require('hyperdht/lib/messages')
 
 relayAddresses = [];
-target = Buffer.alloc(32).fill(1);
-token = Buffer.alloc(32).fill(2);
-from_id = Buffer.alloc(32).fill(3);
 
 ann = {
   peer: {
@@ -161,12 +170,12 @@ async fn test_sign_announce_with_relays() -> Result<()> {
     let two: SocketAddr = "10.11.12.13:6547".parse().unwrap();
     let three: SocketAddr = "127.0.0.1:80".parse().unwrap();
     let relay_addresses = vec![one, two, three];
-    let target = [1; 32];
-    let token = [2; 32];
-    let from_id = [3; 32];
 
     let mut repl = make_repl().await;
     repl.run(KEYPAIR_JS).await?;
+    let target: [u8; 32] = make_array(&mut repl, "target", "Buffer.alloc(32).fill(1)").await?;
+    let token: [u8; 32] = make_array(&mut repl, "token", "Buffer.alloc(32).fill(2)").await?;
+    let from_id: [u8; 32] = make_array(&mut repl, "from_id", "Buffer.alloc(32).fill(3)").await?;
     let expected: Vec<u8> = repl
         .json_run(
             "
@@ -179,9 +188,6 @@ relayAddresses = [
     {host: '10.11.12.13', port: 6547},
     {host: '127.0.0.1', port: 80},
 ];
-target = Buffer.alloc(32).fill(1);
-token = Buffer.alloc(32).fill(2);
-from_id = Buffer.alloc(32).fill(3);
 
 ann = {
   peer: {
@@ -209,12 +215,11 @@ write(stringify([...signature]))
 /// https://github.com/holepunchto/hyperdht/blob/0d4f4b65bf1c252487f7fd52ef9e21ac76a3ceba/index.js#L424-L436
 #[tokio::test]
 async fn test_sign_and_encode_announce() -> Result<()> {
-    let target = [1; 32];
-    let token = [2; 32];
-    let from_id = [3; 32];
-
     let mut repl = make_repl().await;
     repl.run(KEYPAIR_JS).await?;
+    let target: [u8; 32] = make_array(&mut repl, "target", "Buffer.alloc(32).fill(1)").await?;
+    let token: [u8; 32] = make_array(&mut repl, "token", "Buffer.alloc(32).fill(2)").await?;
+    let from_id: [u8; 32] = make_array(&mut repl, "from_id", "Buffer.alloc(32).fill(3)").await?;
     let expected: Vec<u8> = repl
         .json_run(
             "
@@ -223,9 +228,6 @@ c = require('compact-encoding')
 m = require('hyperdht/lib/messages')
 
 relayAddresses = [];
-target = Buffer.alloc(32).fill(1);
-token = Buffer.alloc(32).fill(2);
-from_id = Buffer.alloc(32).fill(3);
 
 ann = {
   peer: {
@@ -252,10 +254,6 @@ write(stringify([...c.encode(m.announce, ann)]))
 }
 #[tokio::test]
 async fn test_sign_and_encode_announce_with_relays() -> Result<()> {
-    let target = [1; 32];
-    let token = [2; 32];
-    let from_id = [3; 32];
-
     let one: SocketAddr = "192.168.1.2:1234".parse().unwrap();
     let two: SocketAddr = "10.11.12.13:6547".parse().unwrap();
     let three: SocketAddr = "127.0.0.1:80".parse().unwrap();
@@ -263,6 +261,9 @@ async fn test_sign_and_encode_announce_with_relays() -> Result<()> {
 
     let mut repl = make_repl().await;
     repl.run(KEYPAIR_JS).await?;
+    let target: [u8; 32] = make_array(&mut repl, "target", "Buffer.alloc(32).fill(1)").await?;
+    let token: [u8; 32] = make_array(&mut repl, "token", "Buffer.alloc(32).fill(2)").await?;
+    let from_id: [u8; 32] = make_array(&mut repl, "from_id", "Buffer.alloc(32).fill(3)").await?;
     let expected: Vec<u8> = repl
         .json_run(
             "
@@ -275,9 +276,6 @@ relayAddresses = [
     {host: '10.11.12.13', port: 6547},
     {host: '127.0.0.1', port: 80},
 ];
-target = Buffer.alloc(32).fill(1);
-token = Buffer.alloc(32).fill(2);
-from_id = Buffer.alloc(32).fill(3);
 
 ann = {
   peer: {
@@ -314,18 +312,6 @@ pub fn log() {
         .with_env_filter(EnvFilter::from_default_env()) // Reads `RUST_LOG` environment variable
         .without_time()
         .init();
-}
-
-async fn _boot_strap_socketadd(repl: &mut Repl) -> Result<SocketAddr> {
-    Ok(repl
-        .json_run::<String, _>(
-            "
-bs_node = testnet.bootstrap[0]
-write(stringify(`${bs_node.host}:${bs_node.port}`))
-",
-        )
-        .await?
-        .parse()?)
 }
 
 async fn other_node_socketadd(repl: &mut Repl) -> Result<SocketAddr> {
