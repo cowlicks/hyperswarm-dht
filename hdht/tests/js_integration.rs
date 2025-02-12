@@ -5,7 +5,9 @@ use compact_encoding::types::CompactEncodable;
 use dht_rpc::IdBytes;
 use hyperdht::{
     cenc::Announce,
-    crypto::{namespace, sign_announce_or_unannounce, Keypair2},
+    crypto::{
+        make_signable_announce_or_unannounce, namespace, sign_announce_or_unannounce, Keypair2,
+    },
     request_announce_or_unannounce_value,
 };
 
@@ -292,5 +294,147 @@ write(stringify([...c.encode(m.announce, ann)]))
         &hyperdht::crypto::namespace::ANNOUNCE,
     )?;
     assert_eq!(buff, expected);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_decode_announce() -> Result<()> {
+    let mut repl = make_repl().await;
+    repl.run(KEYPAIR_JS).await?;
+    let target: [u8; 32] = make_array(&mut repl, "target", "Buffer.alloc(32).fill(1)").await?;
+    let token: [u8; 32] = make_array(&mut repl, "token", "Buffer.alloc(32).fill(2)").await?;
+    let from_id: [u8; 32] = make_array(&mut repl, "from_id", "Buffer.alloc(32).fill(3)").await?;
+    let _js_ann: Vec<u8> = repl
+        .json_run(
+            "
+Persistent = require('hyperdht/lib/persistent')
+c = require('compact-encoding')
+m = require('hyperdht/lib/messages')
+
+relayAddresses = [];
+
+ann = {
+  peer: {
+    publicKey: keyPair.publicKey,
+    relayAddresses: relayAddresses || []
+  },
+  refresh: null,
+  signature: null
+}
+
+ann.signature = await Persistent.signAnnounce(target, token, from_id, ann, keyPair)
+encoded_announce = c.encode(m.announce, ann);
+write(stringify([...encoded_announce]))
+",
+        )
+        .await?;
+
+    let kp = Keypair2::from_seed(DEFAULT_SEED);
+    let rs_ann_enc = request_announce_or_unannounce_value(
+        &kp,
+        target.into(),
+        &token,
+        from_id.into(),
+        &[],
+        &hyperdht::crypto::namespace::ANNOUNCE,
+    )?;
+
+    let (ann, rest): (Announce, _) = CompactEncodable::decode(&rs_ann_enc)?;
+    assert!(rest.is_empty());
+
+    repl.run(
+        "
+    foo = Buffer.from([3, 3, 3]);
+    decoded_announce = c.decode(m.announce, encoded_announce);
+    ",
+    )
+    .await?;
+
+    let foo = [3; 3];
+    assert!(cmp_buf(&mut repl, &foo, "foo").await?);
+
+    let _x = repl
+        .run("write([...decoded_announce.signature].toString())")
+        .await?;
+
+    assert!(cmp_buf(&mut repl, &*ann.signature, "decoded_announce.signature").await?);
+    assert!(
+        cmp_buf(
+            &mut repl,
+            &*ann.peer.public_key,
+            "decoded_announce.peer.publicKey"
+        )
+        .await?
+    );
+
+    let verified: bool = repl
+        .json_run(
+            "
+verified = Persistent.prototype.verifyAnnounce({ value: encoded_announce, target, token }, from_id);
+writeJson(verified);
+",
+        )
+        .await?;
+    assert!(verified);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_verify_announce() -> Result<()> {
+    let mut repl = make_repl().await;
+    repl.run(KEYPAIR_JS).await?;
+    let target: [u8; 32] = make_array(&mut repl, "target", "Buffer.alloc(32).fill(1)").await?;
+    let token: [u8; 32] = make_array(&mut repl, "token", "Buffer.alloc(32).fill(2)").await?;
+    let from_id: [u8; 32] = make_array(&mut repl, "from_id", "Buffer.alloc(32).fill(3)").await?;
+    let _js_ann: Vec<u8> = repl
+        .json_run(
+            "
+Persistent = require('hyperdht/lib/persistent')
+c = require('compact-encoding')
+m = require('hyperdht/lib/messages')
+
+relayAddresses = [];
+
+ann = {
+  peer: {
+    publicKey: keyPair.publicKey,
+    relayAddresses: relayAddresses || []
+  },
+  refresh: null,
+  signature: null
+}
+
+ann.signature = await Persistent.signAnnounce(target, token, from_id, ann, keyPair)
+encoded_announce = c.encode(m.announce, ann);
+write(stringify([...encoded_announce]))
+",
+        )
+        .await?;
+
+    let kp = Keypair2::from_seed(DEFAULT_SEED);
+    let rs_ann_enc = request_announce_or_unannounce_value(
+        &kp,
+        target.into(),
+        &token,
+        from_id.into(),
+        &[],
+        &hyperdht::crypto::namespace::ANNOUNCE,
+    )?;
+
+    let (ann, rest): (Announce, _) = CompactEncodable::decode(&rs_ann_enc)?;
+    assert!(rest.is_empty());
+
+    let verified: bool = repl
+        .json_run(
+            "
+verified = Persistent.prototype.verifyAnnounce({ value: encoded_announce, target, token }, from_id);
+writeJson(verified);
+",
+        )
+        .await?;
+    dbg!(&verified);
+    assert!(verified);
+
     Ok(())
 }
