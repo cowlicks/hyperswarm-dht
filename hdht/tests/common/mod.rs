@@ -33,6 +33,7 @@ macro_rules! join_paths {
     }};
 }
 pub(crate) use join_paths;
+use tracing_subscriber::EnvFilter;
 
 #[allow(dead_code)]
 pub fn run_command(cmd: &str) -> Result<Output> {
@@ -116,4 +117,17 @@ pub fn check_cmd_output(out: Output) -> Result<Output> {
         ))));
     }
     Ok(out)
+}
+
+#[allow(unused)]
+pub fn log() {
+    tracing_subscriber::fmt()
+        .with_target(true)
+        .with_line_number(true)
+        // print when instrumented funtion enters
+        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::ENTER)
+        .with_file(true)
+        .with_env_filter(EnvFilter::from_default_env()) // Reads `RUST_LOG` environment variable
+        .without_time()
+        .init();
 }
