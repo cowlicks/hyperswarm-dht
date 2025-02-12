@@ -53,16 +53,36 @@ type PublicKey2Bytes = [u8; crypto_sign_PUBLICKEYBYTES as usize];
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PublicKey2(PublicKey2Bytes);
+
 impl From<PublicKey2Bytes> for PublicKey2 {
     fn from(value: PublicKey2Bytes) -> Self {
         Self(value)
     }
 }
+
 impl Deref for PublicKey2 {
     type Target = PublicKey2Bytes;
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl PublicKey2 {
+    pub fn verify(&self, signature: Signature2, message: &[u8]) -> crate::Result<()> {
+        let res = unsafe {
+            libsodium_sys::crypto_sign_verify_detached(
+                signature.0.as_ptr(),
+                message.as_ptr(),
+                message.len() as _,
+                self.0.as_ptr(),
+            )
+        };
+        if res == 0 {
+            Ok(())
+        } else {
+            Err(crate::Error::InvalidSignature(res))
+        }
     }
 }
 
@@ -247,6 +267,28 @@ pub fn generic_hash_batch(inputs: &[&[u8]]) -> [u8; 32] {
     out
 }
 
+const NAMESPACE_SIZE: usize = 32;
+const ANN_OR_UNANN_SIGNABLE_SIZE: usize = 64;
+
+pub fn make_signable_announce_or_unannounce(
+    target: IdBytes,
+    token: &[u8; 32],
+    id: &[u8; 32],
+    encoded_peer: &[u8],
+    namespace: &[u8; NAMESPACE_SIZE],
+) -> crate::Result<[u8; ANN_OR_UNANN_SIGNABLE_SIZE]> {
+    let mut signable = [0; ANN_OR_UNANN_SIGNABLE_SIZE];
+    let rest = write_array::<32>(namespace, &mut signable)?;
+    rest.copy_from_slice(&generic_hash_batch(&[
+        &target.0,
+        id,
+        token,
+        encoded_peer,
+        &[],
+    ]));
+    Ok(signable)
+}
+
 pub fn sign_announce_or_unannounce(
     keypair: &Keypair2,
     target: IdBytes,
@@ -263,18 +305,9 @@ pub fn sign_announce_or_unannounce(
     let mut encoded_peer = vec![0; peer.encoded_size()?];
     peer.encoded_bytes(&mut encoded_peer)?;
 
-    let signable = {
-        let mut signable = [0; 64];
-        let rest = write_array::<32>(namespace, &mut signable)?;
-        rest.copy_from_slice(&generic_hash_batch(&[
-            &target.0,
-            from_id,
-            token,
-            &encoded_peer,
-            &[],
-        ]));
-        signable
-    };
+    let signable =
+        make_signable_announce_or_unannounce(target, token, from_id, &encoded_peer, namespace)?;
+
     Ok(Announce {
         peer,
         refresh: None,
