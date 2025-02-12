@@ -312,18 +312,23 @@ impl HyperDht {
     pub fn announce(
         &mut self,
         target: IdBytes,
-        key_pair: &Keypair,
+        key_pair: &Keypair2,
         _relay_addresses: &[SocketAddr],
-        opts: &QueryOpts2,
+        opts: &QueryOpts,
     ) -> QueryId {
-        let _query_id = if opts.clear {
-            self.lookup_and_unannounce(target, key_pair);
-        } else {
-            self.lookup(target, Commit::Custom(Default::default()));
-        };
-        // create Commit trait obj
-        // register it with the query id
-        todo!()
+        if opts.clear {
+            todo!()
+        }
+        let qid = self.lookup(target, Commit::Custom(Progress::default()));
+        self.queries.insert(
+            qid,
+            QueryStreamType::Announce(AnnounceInner {
+                topic: target,
+                responses: vec![],
+                keypair: key_pair.clone(),
+            }),
+        );
+        qid
     }
 
     /// Initiates an iterative query to unannounce the topic to the closest
@@ -343,9 +348,8 @@ impl HyperDht {
         );
         if let Some(query) = self.queries.get_mut(&resp.query) {
             match query {
-                QueryStreamType::Announce(inner) | QueryStreamType::UnAnnounce(inner) => {
-                    inner.inject_response(resp)
-                }
+                QueryStreamType::Announce(inner) => inner.inject_response(resp),
+                QueryStreamType::UnAnnounce(inner) => inner.inject_response(resp),
                 QueryStreamType::LookupAndUnannounce(_inner) => {
                     // do unannnounce request
                     // store request id to wait for request to finish
@@ -598,17 +602,53 @@ pub struct Peers {
 enum QueryStreamType {
     LookupAndUnannounce(QueryStreamInner),
     Lookup(QueryStreamInner),
-    Announce(QueryStreamInner),
+    Announce(AnnounceInner),
     UnAnnounce(QueryStreamInner),
 }
 
 impl QueryStreamType {
-    fn commit(&mut self, _query: Arc<RwLock<Query>>, _channel: mpsc::Sender<CommitMessage>) {
+    fn commit(&mut self, query: Arc<RwLock<Query>>, mut channel: mpsc::Sender<CommitMessage>) {
         match self {
             QueryStreamType::LookupAndUnannounce(_) => todo!(),
             QueryStreamType::Lookup(_) => todo!(),
             QueryStreamType::UnAnnounce(_) => todo!(),
-            QueryStreamType::Announce(_inner) => todo!(),
+            QueryStreamType::Announce(inner) => {
+                let q = query.read().unwrap();
+                // TODO UGLY
+                warn!("# closest replies = [{}]", q.closest_replies.len());
+                for cr in q.closest_replies.iter() {
+                    let Some(pid) = cr.request.to.id else {
+                        dbg!(cr);
+                        warn!("closent reply peer without id");
+                        continue;
+                    };
+                    warn!(
+                        "Sending commit to peer.id = [{:?}]",
+                        Into::<IdBytes>::into(pid)
+                    );
+                    channel
+                        .try_send(CommitMessage::Send(CommitRequestParams {
+                            command: Command::External(ExternalCommand(ANNOUNCE)),
+                            target: Some(inner.topic),
+                            value: Some(
+                                request_announce_or_unannounce_value(
+                                    &inner.keypair,
+                                    inner.topic,
+                                    &cr.response.token.expect("todo"),
+                                    pid.into(),
+                                    &[],
+                                    &crate::crypto::namespace::ANNOUNCE,
+                                )
+                                .expect("TODO"),
+                            ),
+                            peer: cr.peer.addr,
+                            query_id: q.id,
+                            token: cr.response.token.expect("TODO"),
+                        }))
+                        .expect("TODO");
+                }
+                channel.try_send(CommitMessage::Done).unwrap();
+            }
         }
     }
 
@@ -618,13 +658,30 @@ impl QueryStreamType {
             QueryStreamType::Lookup(inner) => {
                 HyperDhtEvent::LookupResult(QueryResult::new(&query_id, inner))
             }
-            QueryStreamType::Announce(inner) => {
-                HyperDhtEvent::AnnounceResult(QueryResult::new(&query_id, inner))
-            }
+            QueryStreamType::Announce(inner) => HyperDhtEvent::AnnounceResult(QueryResult {
+                topic: inner.topic,
+                responses: inner.responses,
+                query_id,
+            }),
             QueryStreamType::UnAnnounce(inner) => {
                 HyperDhtEvent::UnAnnounceResult(QueryResult::new(&query_id, inner))
             }
         }
+    }
+}
+
+#[derive(Debug)]
+struct AnnounceInner {
+    topic: IdBytes,
+    responses: Vec<Response>,
+    keypair: Keypair2,
+}
+
+impl AnnounceInner {
+    /// Store the decoded peers from the `Response` value
+    #[instrument(skip_all)]
+    fn inject_response(&mut self, resp: Response) {
+        self.responses.push(resp);
     }
 }
 
