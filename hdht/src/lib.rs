@@ -32,7 +32,7 @@ use prost::Message as ProstMessage;
 pub use queries::QueryOpts;
 use smallvec::alloc::collections::VecDeque;
 use tokio::sync::oneshot::error::RecvError;
-use tracing::{error, instrument, trace, warn};
+use tracing::{debug, error, instrument, trace, warn};
 
 use crate::{
     dht_proto::{PeersInput, PeersOutput},
@@ -111,6 +111,8 @@ pub enum Error {
     RequestRequiresToField,
     #[error("Ipv6 not supported")]
     Ipv6NotSupported,
+    #[error("Invalid Signature")]
+    InvalidSignature(i32),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -546,6 +548,19 @@ pub enum HyperDhtEvent {
     },
 }
 
+impl HyperDhtEvent {
+    pub fn kind(&self) -> &'static str {
+        match &self {
+            HyperDhtEvent::Bootstrapped { .. } => "Bootstrapped",
+            HyperDhtEvent::AnnounceResult(_) => "AnnounceResult",
+            HyperDhtEvent::LookupResponse(_) => "LookupResponse",
+            HyperDhtEvent::LookupResult(_) => "LookupResult",
+            HyperDhtEvent::UnAnnounceResult(_) => "UnAnnounceResult",
+            HyperDhtEvent::CustomCommandQuery { .. } => "CustomCommandQuery",
+        }
+    }
+}
+
 /// Represents the response received from a peer
 #[derive(Debug)]
 pub struct PeerResponseItem<T: fmt::Debug> {
@@ -618,11 +633,11 @@ impl QueryStreamType {
                 warn!("# closest replies = [{}]", q.closest_replies.len());
                 for cr in q.closest_replies.iter() {
                     let Some(pid) = cr.request.to.id else {
-                        dbg!(cr);
-                        warn!("closent reply peer without id");
+                        // refactor this to be handled in the type system
+                        warn!("closest_replies peer without id.. Should not happen");
                         continue;
                     };
-                    warn!(
+                    trace!(
                         "Sending commit to peer.id = [{:?}]",
                         Into::<IdBytes>::into(pid)
                     );
@@ -647,6 +662,8 @@ impl QueryStreamType {
                         }))
                         .expect("TODO");
                 }
+
+                debug!("Emit CommitMessage::Done for query.id = {}", q.id);
                 channel.try_send(CommitMessage::Done).unwrap();
             }
         }
