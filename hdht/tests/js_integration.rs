@@ -5,9 +5,7 @@ use compact_encoding::types::CompactEncodable;
 use dht_rpc::IdBytes;
 use hyperdht::{
     cenc::Announce,
-    crypto::{
-        make_signable_announce_or_unannounce, namespace, sign_announce_or_unannounce, Keypair2,
-    },
+    crypto::{namespace, sign_announce_or_unannounce, Keypair2},
     request_announce_or_unannounce_value,
 };
 
@@ -54,7 +52,7 @@ fn buf_to_js_comparable_str(x: &[u8]) -> String {
 }
 
 #[tokio::test]
-async fn check_namespace() -> crate::Result<()> {
+async fn compare_rs_namespace_values_to_js() -> crate::Result<()> {
     let mut repl = make_repl().await;
     let result = repl
         .run(
@@ -81,7 +79,7 @@ process.stdout.write([...namespace.ANNOUNCE].toString());
 }
 
 #[tokio::test]
-async fn keygen() -> Result<()> {
+async fn same_seed_generates_same_keypair_values() -> Result<()> {
     let mut repl = make_repl().await;
     let result: Vec<Vec<u8>> = repl
         .json_run(
@@ -116,7 +114,7 @@ writeJson([...{name}])"
 /// JS code taken from:
 /// https://github.com/holepunchto/hyperdht/blob/0d4f4b65bf1c252487f7fd52ef9e21ac76a3ceba/index.js#L424-L434
 #[tokio::test]
-async fn test_sign_announce() -> Result<()> {
+async fn announce_signature_is_same() -> Result<()> {
     let mut repl = make_repl().await;
     repl.run(KEYPAIR_JS).await?;
     let target: [u8; 32] = make_array(&mut repl, "target", "Buffer.alloc(32).fill(1)").await?;
@@ -153,7 +151,7 @@ write(stringify([...signature]))
 }
 // TOOD DRY these tests, deduplicate signing part, relay part, etc
 #[tokio::test]
-async fn test_sign_announce_with_relays() -> Result<()> {
+async fn announce_signature_with_relays_is_same() -> Result<()> {
     let one: SocketAddr = "192.168.1.2:1234".parse().unwrap();
     let two: SocketAddr = "10.11.12.13:6547".parse().unwrap();
     let three: SocketAddr = "127.0.0.1:80".parse().unwrap();
@@ -298,7 +296,7 @@ write(stringify([...c.encode(m.announce, ann)]))
 }
 
 #[tokio::test]
-async fn test_decode_announce() -> Result<()> {
+async fn announce_decod_is_same() -> Result<()> {
     let mut repl = make_repl().await;
     repl.run(KEYPAIR_JS).await?;
     let target: [u8; 32] = make_array(&mut repl, "target", "Buffer.alloc(32).fill(1)").await?;
@@ -344,14 +342,10 @@ write(stringify([...encoded_announce]))
 
     repl.run(
         "
-    foo = Buffer.from([3, 3, 3]);
     decoded_announce = c.decode(m.announce, encoded_announce);
     ",
     )
     .await?;
-
-    let foo = [3; 3];
-    assert!(cmp_buf(&mut repl, &foo, "foo").await?);
 
     let _x = repl
         .run("write([...decoded_announce.signature].toString())")
@@ -375,65 +369,6 @@ writeJson(verified);
 ",
         )
         .await?;
-    assert!(verified);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_verify_announce() -> Result<()> {
-    let mut repl = make_repl().await;
-    repl.run(KEYPAIR_JS).await?;
-    let target: [u8; 32] = make_array(&mut repl, "target", "Buffer.alloc(32).fill(1)").await?;
-    let token: [u8; 32] = make_array(&mut repl, "token", "Buffer.alloc(32).fill(2)").await?;
-    let from_id: [u8; 32] = make_array(&mut repl, "from_id", "Buffer.alloc(32).fill(3)").await?;
-    let _js_ann: Vec<u8> = repl
-        .json_run(
-            "
-Persistent = require('hyperdht/lib/persistent')
-c = require('compact-encoding')
-m = require('hyperdht/lib/messages')
-
-relayAddresses = [];
-
-ann = {
-  peer: {
-    publicKey: keyPair.publicKey,
-    relayAddresses: relayAddresses || []
-  },
-  refresh: null,
-  signature: null
-}
-
-ann.signature = await Persistent.signAnnounce(target, token, from_id, ann, keyPair)
-encoded_announce = c.encode(m.announce, ann);
-write(stringify([...encoded_announce]))
-",
-        )
-        .await?;
-
-    let kp = Keypair2::from_seed(DEFAULT_SEED);
-    let rs_ann_enc = request_announce_or_unannounce_value(
-        &kp,
-        target.into(),
-        &token,
-        from_id.into(),
-        &[],
-        &hyperdht::crypto::namespace::ANNOUNCE,
-    )?;
-
-    let (ann, rest): (Announce, _) = CompactEncodable::decode(&rs_ann_enc)?;
-    assert!(rest.is_empty());
-
-    let verified: bool = repl
-        .json_run(
-            "
-verified = Persistent.prototype.verifyAnnounce({ value: encoded_announce, target, token }, from_id);
-writeJson(verified);
-",
-        )
-        .await?;
-    dbg!(&verified);
     assert!(verified);
 
     Ok(())
