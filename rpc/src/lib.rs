@@ -19,7 +19,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
-use tracing::{debug, instrument, trace, warn};
+use tracing::{debug, error, instrument, trace, warn};
 use wasm_timer::Instant;
 
 use rand::{
