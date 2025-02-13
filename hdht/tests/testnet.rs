@@ -8,7 +8,7 @@ use common::{
 };
 use dht_rpc::DhtConfig;
 use futures::StreamExt;
-use hyperdht::{crypto::Keypair2, HyperDht, HyperDhtEvent, QueryOpts};
+use hyperdht::{crypto::Keypair2, HyperDht, HyperDhtEvent};
 use rusty_nodejs_repl::Repl;
 use tracing_subscriber::EnvFilter;
 
@@ -124,8 +124,7 @@ testnet = await createTestnet();
 
     let topic = make_topic(&mut repl, "hello").await?;
     let kp = Keypair2::default();
-    let opts = QueryOpts::default();
-    let qid = hdht.announce(topic.into(), &kp, &[], &opts);
+    let qid = hdht.announce(topic.into(), &kp, &[]);
 
     /// Run announce to completion
     let res = loop {

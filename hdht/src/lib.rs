@@ -29,7 +29,6 @@ use futures::{
 };
 use lookup::LookupResponse;
 use prost::Message as ProstMessage;
-pub use queries::QueryOpts;
 use smallvec::alloc::collections::VecDeque;
 use tokio::sync::oneshot::error::RecvError;
 use tracing::{debug, error, instrument, trace, warn};
@@ -316,11 +315,7 @@ impl HyperDht {
         target: IdBytes,
         key_pair: &Keypair2,
         _relay_addresses: &[SocketAddr],
-        opts: &QueryOpts,
     ) -> QueryId {
-        if opts.clear {
-            todo!()
-        }
         let qid = self.lookup(target, Commit::Custom(Progress::default()));
         self.queries.insert(
             qid,
@@ -338,7 +333,7 @@ impl HyperDht {
     ///
     /// The result of the query is delivered in a
     /// [`HyperDhtEvent::UnAnnounceResult`].
-    pub fn unannounce(&mut self, _opts: &QueryOpts) -> QueryId {
+    pub fn unannounce(&mut self) -> QueryId {
         todo!()
     }
 
