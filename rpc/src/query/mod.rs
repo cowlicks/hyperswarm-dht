@@ -489,7 +489,14 @@ fn poll(commit: &mut Commit, query_id: QueryId) -> Poll<Option<CommitEvent>> {
             }
             Poll::Pending
         }
-        _ => todo!(),
+        Custom(AwaitingReplies(ids_waiting_on)) => {
+            debug!("Custom still waiting on [{}] replies", ids_waiting_on.len());
+            Poll::Pending
+        }
+        Auto(AwaitingReplies(ids_waiting_on)) => {
+            debug!("Auto still waiting on [{}] replies", ids_waiting_on.len());
+            Poll::Pending
+        }
     }
 }
 
