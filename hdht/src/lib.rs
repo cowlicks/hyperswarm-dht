@@ -27,8 +27,8 @@ use futures::{
     task::{Context, Poll},
     Stream,
 };
-use lookup::LookupResponse;
 use prost::Message as ProstMessage;
+use queries::LookupResponse;
 use smallvec::alloc::collections::VecDeque;
 use tokio::sync::oneshot::error::RecvError;
 use tracing::{debug, error, instrument, trace, warn};
@@ -52,7 +52,6 @@ mod dht_proto {
 }
 pub mod cenc;
 pub mod crypto;
-mod lookup;
 pub mod lru;
 mod queries;
 pub mod store;
