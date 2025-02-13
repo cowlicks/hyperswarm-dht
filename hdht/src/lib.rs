@@ -521,6 +521,17 @@ impl Stream for HyperDht {
 /// The events produced by the `HyperDht` behaviour.
 ///
 /// See [`HyperDht::poll`].
+// TODO should this be refactored into...
+// - enum {
+//   Response(ResponseKind) / Ann, Look, etc
+//   Result(ResultKind) / Ann, Look, etc
+//   ...
+// }
+// - enum {
+//   Announce(Ann/Result/Resp)
+//   Lookup(Ann/Result/Resp)
+// }
+// ... maybe for now just make it flat
 #[derive(Debug)]
 pub enum HyperDhtEvent {
     /// The dht is now bootstrapped
