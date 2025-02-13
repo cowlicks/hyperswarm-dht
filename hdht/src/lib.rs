@@ -332,8 +332,22 @@ impl HyperDht {
     ///
     /// The result of the query is delivered in a
     /// [`HyperDhtEvent::UnAnnounceResult`].
-    pub fn unannounce(&mut self) -> QueryId {
-        todo!()
+    pub fn unannounce(
+        &mut self,
+        target: IdBytes,
+        key_pair: &Keypair2,
+        _relay_addresses: &[SocketAddr],
+    ) -> QueryId {
+        let qid = self.lookup(target, Commit::Custom(Progress::default()));
+        self.queries.insert(
+            qid,
+            QueryStreamType::UnAnnounce(UnannounceInner {
+                topic: target,
+                responses: vec![],
+                keypair: key_pair.clone(),
+            }),
+        );
+        qid
     }
 
     #[instrument(skip_all)]
@@ -345,7 +359,13 @@ impl HyperDht {
         if let Some(query) = self.queries.get_mut(&resp.query) {
             match query {
                 QueryStreamType::Announce(inner) => inner.inject_response(resp),
-                QueryStreamType::UnAnnounce(inner) => inner.inject_response(resp),
+                QueryStreamType::UnAnnounce(inner) => {
+
+                    self.request_unannounce(&inner.keypair, inner.topic, token, from)
+                    // TODO we need to be able to send an unannounce msg here
+                    // then record the TID so we can handle the responses
+                    inner.inject_response(resp)
+                }
                 QueryStreamType::LookupAndUnannounce(_inner) => {
                     // do unannnounce request
                     // store request id to wait for request to finish
@@ -392,7 +412,7 @@ impl HyperDht {
         keypair: &Keypair2,
         target: IdBytes,
         token: &[u8; 32],
-        from: PeerId,
+        destination: PeerId,
         relay_addresses: &[SocketAddr],
         namespace: &[u8; 32],
         cmd: ExternalCommand,
@@ -401,14 +421,14 @@ impl HyperDht {
             keypair,
             target,
             token,
-            from.id,
+            destination.id,
             relay_addresses,
             namespace,
         )?;
 
         let from_peer = Peer {
-            id: Some(from.id.0),
-            addr: from.addr,
+            id: Some(destination.id.0),
+            addr: destination.addr,
             referrer: None,
         };
         Ok(self.inner.request(
@@ -426,14 +446,14 @@ impl HyperDht {
         keypair: &Keypair2,
         target: IdBytes,
         token: &[u8; 32],
-        from: PeerId,
+        destination: PeerId,
         relay_addresses: &[SocketAddr],
     ) -> Result<Tid> {
         self.request_announce_or_unannounce(
             keypair,
             target,
             token,
-            from,
+            destination,
             relay_addresses,
             &crate::crypto::namespace::ANNOUNCE,
             ExternalCommand(commands::ANNOUNCE),
@@ -446,13 +466,13 @@ impl HyperDht {
         keypair: &Keypair2,
         target: IdBytes,
         token: &[u8; 32],
-        from: PeerId,
+        destination: PeerId,
     ) -> Result<Tid> {
         self.request_announce_or_unannounce(
             keypair,
             target,
             token,
-            from,
+            destination,
             &[],
             &crate::crypto::namespace::UNANNOUNCE,
             ExternalCommand(commands::UNANNOUNCE),
@@ -540,7 +560,7 @@ pub enum HyperDhtEvent {
     /// The result of [`HyperDht::lookup`].
     LookupResult(QueryResult),
     /// The result of [`HyperDht::unannounce`].
-    UnAnnounceResult(QueryResult),
+    UnAnnounceResult(UnannounceResult),
     /// Received a query with a custom command that is not automatically handled
     /// by the DHT
     CustomCommandQuery {
@@ -623,7 +643,7 @@ enum QueryStreamType {
     LookupAndUnannounce(QueryStreamInner),
     Lookup(QueryStreamInner),
     Announce(AnnounceInner),
-    UnAnnounce(QueryStreamInner),
+    UnAnnounce(UnannounceInner),
 }
 
 impl QueryStreamType {
@@ -685,25 +705,10 @@ impl QueryStreamType {
                 responses: inner.responses,
                 query_id,
             }),
-            QueryStreamType::UnAnnounce(inner) => {
-                HyperDhtEvent::UnAnnounceResult(QueryResult::new(&query_id, inner))
+            QueryStreamType::UnAnnounce(_inner) => {
+                HyperDhtEvent::UnAnnounceResult(UnannounceResult {})
             }
         }
-    }
-}
-
-#[derive(Debug)]
-struct AnnounceInner {
-    topic: IdBytes,
-    responses: Vec<Response>,
-    keypair: Keypair2,
-}
-
-impl AnnounceInner {
-    /// Store the decoded peers from the `Response` value
-    #[instrument(skip_all)]
-    fn inject_response(&mut self, resp: Response) {
-        self.responses.push(resp);
     }
 }
 

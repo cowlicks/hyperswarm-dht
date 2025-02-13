@@ -418,11 +418,11 @@ impl RpcDht {
         command: Command,
         target: Option<IdBytes>,
         value: Option<Vec<u8>>,
-        peer: Peer,
+        destination: Peer,
         token: Option<[u8; 32]>,
     ) -> Tid {
         self.io
-            .queue_send_request(command, target, value, peer, None, token)
+            .queue_send_request(command, target, value, destination, None, token)
             .1
     }
 
