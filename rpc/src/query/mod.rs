@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     num::NonZeroUsize,
     sync::{Arc, RwLock},
     time::Duration,
@@ -340,9 +341,11 @@ impl Query {
     pub(crate) fn inject_response(&mut self, data: &InResponse) -> Option<Response> {
         use crate::Progress::*;
         use Commit::*;
+
         match &mut self.commit {
             Auto(prog @ (AwaitingReplies(_) | Sending(_)))
             | Custom(prog @ (AwaitingReplies(_) | Sending(_))) => {
+                warn!("recieved a response! for tid {}", data.response.tid);
                 prog.recieved_tid(data.response.tid);
             }
             _ => {
@@ -686,3 +689,9 @@ impl QueryStats {
 /// Unique identifier for an active query.
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct QueryId(pub usize);
+
+impl Display for QueryId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "QueryId({})", self.0)
+    }
+}

@@ -92,7 +92,7 @@ impl Sink<(MsgData, SocketAddr)> for MessageDataStream {
     fn start_send(self: Pin<&mut Self>, item: (MsgData, SocketAddr)) -> Result<()> {
         let (message, addr) = item;
         trace!(
-            message.tid = message.tid(),
+            msg.tid = message.tid(),
             from =?addr,
             "TX"
         );
