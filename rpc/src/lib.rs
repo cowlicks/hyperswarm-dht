@@ -30,7 +30,7 @@ use rand::{
 use crate::{
     cenc::{generic_hash, validate_id},
     commit::{Commit, CommitMessage, Progress},
-    io::{InResponse, Tid},
+    io::InResponse,
     jobs::PeriodicJob,
     kbucket::{distance, Distance},
     kbucket::{Entry, EntryView, InsertResult, KBucketsTable, NodeStatus, K_VALUE},
@@ -50,6 +50,7 @@ use self::{
     },
     stream::MessageDataStream,
 };
+pub use crate::io::Tid;
 
 pub mod cenc;
 pub mod commit;
