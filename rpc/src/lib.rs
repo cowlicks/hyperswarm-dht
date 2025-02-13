@@ -514,7 +514,7 @@ impl RpcDht {
                     Command::Internal(InternalCommand::Ping)
                 ) {
                     if resp_data.query_id.is_some() {
-                        panic!("Pings should not have a QueryId");
+                        error!("Ping has a QueryId?");
                     }
                     self.on_pong(resp_data.response, resp_data.peer);
                     return;

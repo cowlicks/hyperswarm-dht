@@ -281,8 +281,8 @@ impl Query {
         }
     }
 
+    // TODO use binary search ot insert
     // TODO in theory, new elements distances get smaller. So maybe reverse the list.
-    // if that does not really hold true use a binary search
     #[instrument(skip_all)]
     fn maybe_insert(&mut self, data: &InResponse) -> Option<usize> {
         let reply_distance = self.peer_iter.target.distance(data.response.id?);
@@ -304,9 +304,14 @@ impl Query {
                 } else {
                     self.closest_replies.insert(i, data.clone());
                 }
+                trace!(
+                    closest_replies.len = self.closest_replies.len(),
+                    "Inerted response at [{i}]"
+                );
                 return Some(i);
             }
         }
+        trace!("Response farther than all current replies");
         None
     }
     pub fn command(&self) -> Command {
