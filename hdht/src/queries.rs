@@ -1,7 +1,8 @@
-use crate::{HyperDhtEvent, Result};
+use crate::{crypto::Keypair2, HyperDhtEvent, Result};
 
 use compact_encoding::types::CompactEncodable;
-use dht_rpc::Response;
+use dht_rpc::{IdBytes, Response};
+use tracing::instrument;
 
 #[derive(Debug)]
 pub struct LookupResponse {
@@ -29,3 +30,37 @@ impl From<LookupResponse> for HyperDhtEvent {
         HyperDhtEvent::LookupResponse(value)
     }
 }
+
+#[derive(Debug)]
+pub struct AnnounceInner {
+    pub topic: IdBytes,
+    pub responses: Vec<Response>,
+    pub keypair: Keypair2,
+}
+
+impl AnnounceInner {
+    /// Store the decoded peers from the `Response` value
+    #[instrument(skip_all)]
+    pub fn inject_response(&mut self, resp: Response) {
+        self.responses.push(resp);
+    }
+}
+
+// this should store info about the unannounce requests and
+#[derive(Debug)]
+pub struct UnannounceInner {
+    pub topic: IdBytes,
+    pub responses: Vec<Response>,
+    pub keypair: Keypair2,
+}
+
+impl UnannounceInner {
+    /// Store the decoded peers from the `Response` value
+    #[instrument(skip_all)]
+    pub fn inject_response(&mut self, resp: Response, _tid: u16) {
+        self.responses.push(resp);
+    }
+}
+
+#[derive(Debug)]
+pub struct UnannounceResult {}
