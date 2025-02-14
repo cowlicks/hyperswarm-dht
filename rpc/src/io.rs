@@ -169,12 +169,20 @@ impl IoHandler {
         self.ephemeral
     }
 
+    pub fn id(&self) -> IdBytes {
+        *self.id.get()
+    }
+
     pub fn local_addr(&self) -> crate::Result<SocketAddr> {
         self.message_stream.local_addr()
     }
     /// TODO check this is correct.
     pub fn token(&self, peer: &Peer, secret_index: usize) -> crate::Result<[u8; 32]> {
         self.secrets.token(peer, secret_index)
+    }
+
+    pub fn new_tid(&self) -> Tid {
+        self.tid.fetch_add(1, Ordering::Relaxed)
     }
 
     pub fn queue_send_request(
@@ -192,8 +200,8 @@ impl IoHandler {
             None
         };
 
-        let tid = self.tid.fetch_add(1, Ordering::Relaxed);
-        self.pending_send.push_back(OutMessage::Request((
+        let tid = self.new_tid();
+        self.queue_send_msg_data((
             query_id,
             RequestMsgData {
                 tid,
@@ -204,7 +212,7 @@ impl IoHandler {
                 target: target.map(|x| x.0),
                 value,
             },
-        )));
+        ));
         (query_id, tid)
     }
     pub fn error(

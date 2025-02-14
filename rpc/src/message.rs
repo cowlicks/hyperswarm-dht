@@ -14,8 +14,9 @@ pub struct ReplyMsgData {
     pub error: usize,
     pub value: Option<Vec<u8>>,
 }
-/// RequestMsgData is the  Request data structure that is encoded to/from bytes
-#[derive(Clone, PartialEq)]
+
+/// RequestMsgData is the Request data structure that is encoded to/from bytes
+#[derive(Clone, PartialEq, derive_builder::Builder)]
 pub struct RequestMsgData {
     pub tid: u16,
     pub to: Peer,

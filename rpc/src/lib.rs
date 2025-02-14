@@ -942,6 +942,13 @@ impl RpcDht {
     fn query_timeout(&mut self, query: Arc<RwLock<Query>>) -> RpcDhtEvent {
         self.query_finished(query)
     }
+
+    pub fn new_tid(&self) -> Tid {
+        self.io.new_tid()
+    }
+    pub fn id(&self) -> IdBytes {
+        self.io.id()
+    }
 }
 #[derive(Debug)]
 pub enum RpcDhtEvent {
