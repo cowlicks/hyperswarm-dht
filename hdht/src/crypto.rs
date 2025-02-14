@@ -269,16 +269,17 @@ pub fn generic_hash_batch(inputs: &[&[u8]]) -> [u8; 32] {
 
 const NAMESPACE_SIZE: usize = 32;
 const ANN_OR_UNANN_SIGNABLE_SIZE: usize = 64;
-
+/// NB: the constraint NAMESPACE_SIZE < ANN_OR_UNANN_SIGNABLE_SIZE ensures this will not panic
 pub fn make_signable_announce_or_unannounce(
     target: IdBytes,
     token: &[u8; 32],
     id: &[u8; 32],
     encoded_peer: &[u8],
     namespace: &[u8; NAMESPACE_SIZE],
-) -> crate::Result<[u8; ANN_OR_UNANN_SIGNABLE_SIZE]> {
+) -> [u8; ANN_OR_UNANN_SIGNABLE_SIZE] {
     let mut signable = [0; ANN_OR_UNANN_SIGNABLE_SIZE];
-    let rest = write_array::<32>(namespace, &mut signable)?;
+    let rest = write_array::<32>(namespace, &mut signable)
+        .expect("NAMESPACE_SIZE < ANN_OR_UNANN_SIGNABLE_SIZE so this does not fail");
     rest.copy_from_slice(&generic_hash_batch(&[
         &target.0,
         id,
@@ -286,7 +287,7 @@ pub fn make_signable_announce_or_unannounce(
         encoded_peer,
         &[],
     ]));
-    Ok(signable)
+    signable
 }
 
 pub fn sign_announce_or_unannounce(
@@ -296,23 +297,24 @@ pub fn sign_announce_or_unannounce(
     from_id: &[u8; 32],
     relay_addresses: &[SocketAddr],
     namespace: &[u8; 32],
-) -> crate::Result<Announce> {
+) -> Announce {
     use crate::cenc::Peer;
     let peer = Peer {
         public_key: keypair.public.clone(),
         relay_addresses: relay_addresses.to_vec(),
     };
-    let mut encoded_peer = vec![0; peer.encoded_size()?];
-    peer.encoded_bytes(&mut encoded_peer)?;
+    let encoded = peer
+        .to_bytes()
+        .expect("Known to succeed for all values of `Peer`");
 
     let signable =
-        make_signable_announce_or_unannounce(target, token, from_id, &encoded_peer, namespace)?;
+        make_signable_announce_or_unannounce(target, token, from_id, &encoded, namespace);
 
-    Ok(Announce {
+    Announce {
         peer,
         refresh: None,
         signature: keypair.sign(&signable),
-    })
+    }
 }
 
 #[cfg(test)]

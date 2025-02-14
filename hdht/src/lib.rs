@@ -416,7 +416,7 @@ impl HyperDht {
         relay_addresses: &[SocketAddr],
         namespace: &[u8; 32],
         cmd: ExternalCommand,
-    ) -> Result<Tid> {
+    ) -> Tid {
         let value = request_announce_or_unannounce_value(
             keypair,
             target,
@@ -424,20 +424,20 @@ impl HyperDht {
             destination.id,
             relay_addresses,
             namespace,
-        )?;
+        );
 
         let from_peer = Peer {
             id: Some(destination.id.0),
             addr: destination.addr,
             referrer: None,
         };
-        Ok(self.inner.request(
+        self.inner.request(
             Command::External(cmd),
             Some(target),
             Some(value),
             from_peer,
             Some(*token),
-        ))
+        )
     }
 
     #[allow(unused)] // TODO FIXME
@@ -448,7 +448,7 @@ impl HyperDht {
         token: &[u8; 32],
         destination: PeerId,
         relay_addresses: &[SocketAddr],
-    ) -> Result<Tid> {
+    ) -> Tid {
         self.request_announce_or_unannounce(
             keypair,
             target,
@@ -467,7 +467,7 @@ impl HyperDht {
         target: IdBytes,
         token: &[u8; 32],
         destination: PeerId,
-    ) -> Result<Tid> {
+    ) -> Tid {
         self.request_announce_or_unannounce(
             keypair,
             target,
@@ -670,17 +670,14 @@ impl QueryStreamType {
                         .try_send(CommitMessage::Send(CommitRequestParams {
                             command: Command::External(ExternalCommand(ANNOUNCE)),
                             target: Some(inner.topic),
-                            value: Some(
-                                request_announce_or_unannounce_value(
-                                    &inner.keypair,
-                                    inner.topic,
-                                    &cr.response.token.expect("todo"),
-                                    pid.into(),
-                                    &[],
-                                    &crate::crypto::namespace::ANNOUNCE,
-                                )
-                                .expect("TODO"),
-                            ),
+                            value: Some(request_announce_or_unannounce_value(
+                                &inner.keypair,
+                                inner.topic,
+                                &cr.response.token.expect("todo"),
+                                pid.into(),
+                                &[],
+                                &crate::crypto::namespace::ANNOUNCE,
+                            )),
                             peer: cr.peer.addr,
                             query_id: q.id,
                             token: cr.response.token.expect("TODO"),
@@ -741,11 +738,10 @@ pub fn request_announce_or_unannounce_value(
     from: IdBytes,
     relay_addresses: &[SocketAddr],
     namespace: &[u8; 32],
-) -> Result<Vec<u8>> {
+) -> Vec<u8> {
     let announce =
-        sign_announce_or_unannounce(keypair, target, token, &from.0, relay_addresses, namespace)?;
-
-    let mut value: Vec<u8> = vec![0u8; CompactEncodable::encoded_size(&announce).unwrap()];
-    announce.encoded_bytes(&mut value).unwrap();
-    Ok(value)
+        sign_announce_or_unannounce(keypair, target, token, &from.0, relay_addresses, namespace);
+    announce
+        .to_bytes()
+        .expect("known to succeed for all `Announce` values")
 }

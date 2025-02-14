@@ -116,6 +116,10 @@ impl CompactEncodable for Announce {
         let flags = (1 << 0) | self.refresh.map(|_| (1 << 1)).unwrap_or(0) | (1 << 2);
         let rest = usize_encoded_bytes(flags, buffer)?;
         let rest = self.peer.encoded_bytes(rest)?;
+        let rest = match self.refresh {
+            Some(x) => write_array(&x, rest)?,
+            None => rest,
+        };
         write_array(&self.signature.0, rest)
     }
 
