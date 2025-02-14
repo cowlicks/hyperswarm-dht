@@ -422,12 +422,12 @@ impl RpcDht {
         token: Option<[u8; 32]>,
     ) -> Tid {
         self.io
-            .queue_send_request(command, target, value, destination, None, token)
+            .request(command, target, value, destination, None, token)
             .1
     }
 
     pub fn ping(&mut self, peer: &Peer) -> QueryAndTid {
-        self.io.queue_send_request(
+        self.io.request(
             Command::Internal(InternalCommand::Ping),
             None,
             None,
@@ -808,7 +808,7 @@ impl RpcDht {
             .iter()
             .map(|rep| {
                 self.io
-                    .queue_send_request(
+                    .request(
                         q.cmd,
                         Some(q.peer_iter.target),
                         q.value.clone(),
@@ -831,7 +831,7 @@ impl RpcDht {
                 value,
             } => {
                 self.io
-                    .queue_send_request(command, Some(target), value, peer, Some(id), None);
+                    .request(command, Some(target), value, peer, Some(id), None);
             }
             QueryEvent::RemoveNode { id } => {
                 self.remove_peer(&id);
@@ -1110,7 +1110,7 @@ impl Stream for RpcDht {
                                     for msg in commits {
                                         match msg {
                                             CommitMessage::Send(cr) => {
-                                                let (_, tid) = pin.io.queue_send_request(
+                                                let (_, tid) = pin.io.request(
                                                     cr.command,
                                                     cr.target,
                                                     cr.value,

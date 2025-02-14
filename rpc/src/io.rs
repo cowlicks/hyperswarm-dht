@@ -185,7 +185,11 @@ impl IoHandler {
         self.tid.fetch_add(1, Ordering::Relaxed)
     }
 
-    pub fn queue_send_request(
+    pub fn queue_send_msg_data(&mut self, msg: (Option<QueryId>, RequestMsgData)) {
+        self.pending_send.push_back(OutMessage::Request(msg));
+    }
+
+    pub fn request(
         &mut self,
         command: Command,
         target: Option<IdBytes>,
