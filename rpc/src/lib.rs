@@ -949,6 +949,9 @@ impl RpcDht {
     pub fn id(&self) -> IdBytes {
         self.io.id()
     }
+    pub fn send_request(&mut self, msg: (Option<QueryId>, RequestMsgData)) {
+        self.io.enqueue_request(msg)
+    }
 }
 #[derive(Debug)]
 pub enum RpcDhtEvent {

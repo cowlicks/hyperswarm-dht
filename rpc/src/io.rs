@@ -185,8 +185,11 @@ impl IoHandler {
         self.tid.fetch_add(1, Ordering::Relaxed)
     }
 
-    pub fn queue_send_msg_data(&mut self, msg: (Option<QueryId>, RequestMsgData)) {
+    pub fn enqueue_request(&mut self, msg: (Option<QueryId>, RequestMsgData)) {
         self.pending_send.push_back(OutMessage::Request(msg));
+    }
+    pub fn enqueue_reply(&mut self, msg: ReplyMsgData) {
+        self.pending_send.push_back(OutMessage::Reply(msg));
     }
 
     pub fn request(
@@ -205,7 +208,7 @@ impl IoHandler {
         };
 
         let tid = self.new_tid();
-        self.queue_send_msg_data((
+        self.enqueue_request((
             query_id,
             RequestMsgData {
                 tid,
@@ -235,7 +238,7 @@ impl IoHandler {
 
         let token = Some(self.token(peer, 1)?);
 
-        self.pending_send.push_back(OutMessage::Reply(ReplyMsgData {
+        self.enqueue_reply(ReplyMsgData {
             tid: request.tid,
             to: peer.clone(),
             id,
@@ -243,7 +246,7 @@ impl IoHandler {
             closer_nodes: closer_nodes.unwrap_or_default(),
             error,
             value,
-        }));
+        });
         Ok(())
     }
 
@@ -251,7 +254,7 @@ impl IoHandler {
         if msg.token.is_none() {
             msg.token = self.token(&msg.to, 1).ok();
         }
-        self.pending_send.push_back(OutMessage::Reply(msg))
+        self.enqueue_reply(msg)
     }
 
     pub fn response(
@@ -267,7 +270,7 @@ impl IoHandler {
             None
         };
         let token = Some(self.token(&peer, 1)?);
-        self.pending_send.push_back(OutMessage::Reply(ReplyMsgData {
+        self.enqueue_reply(ReplyMsgData {
             tid: request.tid,
             to: peer.clone(),
             id,
@@ -275,7 +278,7 @@ impl IoHandler {
             closer_nodes: closer_nodes.unwrap_or_default(),
             error: 0,
             value,
-        }));
+        });
         Ok(())
     }
     fn on_response(&mut self, recv: ReplyMsgData, peer: Peer) -> IoHandlerEvent {
@@ -487,8 +490,7 @@ mod test {
             value: None,
         };
         let query_id = Some(QueryId(42));
-        a.pending_send
-            .push_back(OutMessage::Request((query_id, msg.clone())));
+        a.enqueue_request((query_id, msg.clone()));
         a.next().await;
         let IoHandlerEvent::InRequest { message: res, .. } = b.next().await.unwrap() else {
             panic!()
