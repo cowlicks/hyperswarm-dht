@@ -46,8 +46,7 @@ async fn check_in_rs_known_good_sig_created_in_js() -> Result<()> {
         &ID,
         &peer_buff,
         &hyperdht::crypto::namespace::ANNOUNCE,
-    )
-    .unwrap();
+    );
     announce
         .peer
         .public_key

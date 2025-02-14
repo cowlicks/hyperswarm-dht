@@ -33,7 +33,7 @@ fn sign_announce(
         from_id,
         relay_addresses,
         &namespace::ANNOUNCE,
-    )?)
+    ))
 }
 
 async fn cmp_buf(repl: &mut Repl, rs_buf: &[u8], js_name: &str) -> Result<bool> {
@@ -238,7 +238,7 @@ write(stringify([...c.encode(m.announce, ann)]))
         from_id.into(),
         &[],
         &hyperdht::crypto::namespace::ANNOUNCE,
-    )?;
+    );
     assert_eq!(buff, expected);
     Ok(())
 }
@@ -290,7 +290,7 @@ write(stringify([...c.encode(m.announce, ann)]))
         from_id.into(),
         &relay_addresses,
         &hyperdht::crypto::namespace::ANNOUNCE,
-    )?;
+    );
     assert_eq!(buff, expected);
     Ok(())
 }
@@ -335,7 +335,7 @@ write(stringify([...encoded_announce]))
         from_id.into(),
         &[],
         &hyperdht::crypto::namespace::ANNOUNCE,
-    )?;
+    );
 
     let (ann, rest): (Announce, _) = CompactEncodable::decode(&rs_ann_enc)?;
     assert!(rest.is_empty());
