@@ -1,7 +1,13 @@
-use crate::{crypto::Keypair2, HyperDhtEvent, Result};
+use crate::{
+    commands,
+    crypto::{namespace, Keypair2},
+    request_announce_or_unannounce_value, HyperDhtEvent, Result,
+};
 
 use compact_encoding::types::CompactEncodable;
-use dht_rpc::{IdBytes, Response};
+use dht_rpc::{
+    query::QueryId, Command, ExternalCommand, IdBytes, Peer, PeerId, RequestMsgData, Response, Tid,
+};
 use tracing::instrument;
 
 #[derive(Debug)]
@@ -64,3 +70,53 @@ impl UnannounceInner {
 
 #[derive(Debug)]
 pub struct UnannounceResult {}
+
+#[derive(Debug)]
+pub struct UnannounceRequest {
+    pub tid: Tid,
+    pub query_id: QueryId,
+    pub keypair: Keypair2,
+    pub topic: IdBytes,
+    pub token: [u8; 32],
+    pub destination: PeerId,
+}
+
+impl From<UnannounceRequest> for RequestMsgData {
+    fn from(
+        UnannounceRequest {
+            tid,
+            query_id,
+            keypair,
+            topic,
+            token,
+            destination,
+        }: UnannounceRequest,
+    ) -> Self {
+        let value = request_announce_or_unannounce_value(
+            &keypair,
+            topic,
+            &token,
+            destination.id,
+            &[],
+            &namespace::UNANNOUNCE,
+        );
+
+        let destination = Peer {
+            id: Some(destination.id.0),
+            addr: destination.addr,
+            referrer: None,
+        };
+        RequestMsgData {
+            tid,
+            to: destination,
+            //id: todo!(),
+            // TODO... should this be in UnannounceRequest? Maybe it should just be added by
+            // rpc::IoHandler
+            id: None,
+            token: Some(token),
+            command: Command::External(ExternalCommand(commands::UNANNOUNCE)),
+            target: Some(topic.0),
+            value: Some(value),
+        }
+    }
+}

@@ -28,7 +28,9 @@ use futures::{
     Stream,
 };
 use prost::Message as ProstMessage;
-use queries::LookupResponse;
+use queries::{
+    AnnounceInner, LookupResponse, UnannounceInner, UnannounceRequest, UnannounceResult,
+};
 use smallvec::alloc::collections::VecDeque;
 use tokio::sync::oneshot::error::RecvError;
 use tracing::{debug, error, instrument, trace, warn};
@@ -356,33 +358,65 @@ impl HyperDht {
             cmd = display(resp.cmd),
             "Handle Response for custom command"
         );
-        if let Some(query) = self.queries.get_mut(&resp.query) {
-            match query {
-                QueryStreamType::Announce(inner) => inner.inject_response(resp),
-                QueryStreamType::UnAnnounce(inner) => {
-
-                    self.request_unannounce(&inner.keypair, inner.topic, token, from)
-                    // TODO we need to be able to send an unannounce msg here
-                    // then record the TID so we can handle the responses
-                    inner.inject_response(resp)
-                }
-                QueryStreamType::LookupAndUnannounce(_inner) => {
-                    // do unannnounce request
-                    // store request id to wait for request to finish
-                    todo!()
-                }
-                QueryStreamType::Lookup(inner) => {
-                    match LookupResponse::from_response(&resp) {
-                        Ok(Some(evt)) => {
-                            trace!("Decoded valid lookup response");
-                            self.queued_events.push_back(evt.into());
-                        }
-                        Ok(None) => trace!("Lookup respones missing value field"),
-                        Err(e) => error!(error = display(e), "Error decoding lookup response"),
+        // Holding `&mut query` here prevents us from calling self.request_unannounce
+        // maybe instead we return something from the block to do the msg that we want?
+        // however I want to pass in an id from the request.
+        // I really just want a mut ref to the query, but
+        let request = {
+            if let Some(query) = self.queries.get_mut(&resp.query) {
+                match query {
+                    QueryStreamType::Announce(inner) => {
+                        inner.inject_response(resp);
+                        None
                     }
-                    inner.inject_response(resp)
+                    QueryStreamType::UnAnnounce(inner) => {
+                        #[allow(unused)]
+                        if let (Some(token), Some(id)) = (&resp.token, &resp.peer_id) {
+                            let destination = PeerId {
+                                addr: resp.peer,
+                                id: *id,
+                            };
+
+                            let req = UnannounceRequest {
+                                tid: self.inner.new_tid(),
+                                query_id: resp.query,
+                                keypair: inner.keypair.clone(),
+                                topic: inner.topic,
+                                token: *token,
+                                destination,
+                            };
+
+                            inner.inject_response(resp, req.tid);
+                            Some(req)
+                        } else {
+                            None
+                        }
+                    }
+                    QueryStreamType::LookupAndUnannounce(_inner) => {
+                        // do unannnounce request
+                        // store request id to wait for request to finish
+                        todo!()
+                    }
+                    QueryStreamType::Lookup(inner) => {
+                        match LookupResponse::from_response(&resp) {
+                            Ok(Some(evt)) => {
+                                trace!("Decoded valid lookup response");
+                                self.queued_events.push_back(evt.into());
+                            }
+                            Ok(None) => trace!("Lookup respones missing value field"),
+                            Err(e) => error!(error = display(e), "Error decoding lookup response"),
+                        }
+                        inner.inject_response(resp);
+                        None
+                    }
                 }
+            } else {
+                None
             }
+        };
+        if let Some(req) = request {
+            let qid = req.query_id;
+            self.inner.send_request((Some(qid), req.into()))
         }
     }
 
@@ -431,6 +465,7 @@ impl HyperDht {
             addr: destination.addr,
             referrer: None,
         };
+
         self.inner.request(
             Command::External(cmd),
             Some(target),
