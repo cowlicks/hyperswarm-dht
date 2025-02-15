@@ -334,13 +334,8 @@ impl HyperDht {
     ///
     /// The result of the query is delivered in a
     /// [`HyperDhtEvent::UnAnnounceResult`].
-    pub fn unannounce(
-        &mut self,
-        target: IdBytes,
-        key_pair: &Keypair2,
-        _relay_addresses: &[SocketAddr],
-    ) -> QueryId {
-        let qid = self.lookup(target, Commit::Custom(Progress::default()));
+    pub fn unannounce(&mut self, target: IdBytes, key_pair: &Keypair2) -> QueryId {
+        let qid = self.lookup(target, Commit::No);
         self.queries.insert(
             qid,
             QueryStreamType::UnAnnounce(UnannounceInner {
