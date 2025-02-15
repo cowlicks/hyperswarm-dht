@@ -16,21 +16,23 @@ fn show_bytes<T: AsRef<[u8]>>(x: T) {
     println!("{}", String::from_utf8(x.as_ref().to_vec()).unwrap())
 }
 
+macro_rules! poll_until {
+    ($hdht:tt, $variant:path) => {{
+        let res = loop {
+            match $hdht.next().await {
+                Some($variant(x)) => break x,
+                _ => {}
+            }
+        };
+        res
+    }};
+}
+
 struct Testnet {
-    repl: Repl,
+    pub repl: Repl,
 }
 
 impl Testnet {
-    pub async fn run<S: AsRef<str>>(&mut self, code: S) -> Result<Vec<u8>> {
-        Ok(self.repl.run(code).await?)
-    }
-    pub async fn json_run<T: serde::de::DeserializeOwned, S: AsRef<str>>(
-        &mut self,
-        code: S,
-    ) -> Result<T> {
-        Ok(self.repl.json_run(code).await?)
-    }
-
     async fn new() -> Result<Self> {
         let mut repl = make_repl().await;
         repl.run(
@@ -86,6 +88,7 @@ async fn js_announces_rs_looksup() -> Result<()> {
     let topic = tn.make_topic("hello").await?;
 
     let _res = tn
+        .repl
         .run(
             "
 ann_node = testnet.nodes[testnet.nodes.length - 1];
@@ -119,6 +122,7 @@ await query.finished();
         panic!();
     };
     let js_pk: Vec<u8> = tn
+        .repl
         .json_run("writeJson([...ann_node.defaultKeyPair.publicKey])")
         .await?;
     assert_eq!(peers[0].public_key.as_slice(), js_pk);
@@ -140,22 +144,15 @@ async fn rs_announces_js_looksup() -> Result<()> {
     let qid = hdht.announce(topic.into(), &kp, &[]);
 
     /// Run announce to completion
-    let res = loop {
-        match hdht.next().await {
-            Some(HyperDhtEvent::AnnounceResult(res)) => {
-                break res;
-            }
-            Some(_) => {}
-            None => panic!(),
-        }
-    };
+    let _res = poll_until!(hdht, HyperDhtEvent::AnnounceResult);
     /// do lookup in js.
     /// get result for js and show it matches the RS keypair above
     let found_pk_js: Vec<u8> = tn
+        .repl
         .json_run(
             "
 lookup_node = testnet.nodes[testnet.nodes.length - 1];
-query = await lookup_node.announce(topic);
+query = await lookup_node.lookup(topic);
 for await (const x of query) {
     writeJson([...x.peers[0].publicKey]);
     break

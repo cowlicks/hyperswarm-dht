@@ -385,6 +385,7 @@ impl HyperDht {
                             Some(req)
                         } else {
                             warn!(
+                                resp.tid = resp.tid,
                                 resp.query_id = display(resp.query),
                                 resp.token = debug(resp.token),
                                 resp.peer_id = debug(resp.peer_id),
