@@ -389,6 +389,12 @@ impl HyperDht {
                             inner.inject_response(resp, req.tid);
                             Some(req)
                         } else {
+                            warn!(
+                                resp.query_id = display(resp.query),
+                                resp.token = debug(resp.token),
+                                resp.peer_id = debug(resp.peer_id),
+                                "response to UnAnnounce missing either token or peer_id"
+                            );
                             None
                         }
                     }
