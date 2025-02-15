@@ -16,7 +16,7 @@ pub struct ReplyMsgData {
 }
 
 /// RequestMsgData is the Request data structure that is encoded to/from bytes
-#[derive(Clone, PartialEq, derive_builder::Builder)]
+#[derive(Clone, PartialEq)]
 pub struct RequestMsgData {
     pub tid: u16,
     pub to: Peer,
