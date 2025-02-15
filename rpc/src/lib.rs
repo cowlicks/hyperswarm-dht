@@ -1194,6 +1194,7 @@ impl Stream for RpcDht {
 /// Response received from `peer` to a request submitted by this DHT.
 #[derive(Debug, Clone)]
 pub struct Response {
+    pub tid: Tid,
     /// The id of the associated query
     pub query: QueryId,
     /// Command of the response message
@@ -1210,15 +1211,6 @@ pub struct Response {
     pub token: Option<[u8; 32]>,
     /// response payload
     pub value: Option<Vec<u8>>,
-}
-
-impl Response {
-    /// Decodes an instance of the message from the response's value.
-    pub fn decode_value<T: prost::Message + Default>(&self) -> Option<T> {
-        self.value
-            .as_ref()
-            .and_then(|val| T::decode(val.as_slice()).ok())
-    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

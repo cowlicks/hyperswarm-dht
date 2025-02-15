@@ -389,6 +389,7 @@ impl Query {
         }
 
         Some(Response {
+            tid: data.response.tid,
             query: self.id,
             cmd: self.cmd,
             to: Some(data.response.to.addr),
