@@ -4,18 +4,18 @@ use tokio::sync::broadcast::{self, Receiver, Sender};
 const CHANNEL_SIZE: usize = 32;
 
 #[derive(Debug)]
-pub struct Master<T> {
+pub struct State<T> {
     value: T,
     tx: Sender<T>,
 }
 
 #[derive(Debug)]
-pub struct Slave<T: Clone> {
+pub struct Observer<T: Clone> {
     current: T,
     rx: Receiver<T>,
 }
 
-impl<T: Clone> Master<T> {
+impl<T: Clone> State<T> {
     pub fn new(initial: T) -> Self {
         let (tx, _) = broadcast::channel(CHANNEL_SIZE);
         Self { value: initial, tx }
@@ -36,15 +36,15 @@ impl<T: Clone> Master<T> {
         &self.value
     }
 
-    pub fn view(&self) -> Slave<T> {
-        Slave {
+    pub fn view(&self) -> Observer<T> {
+        Observer {
             current: self.value.clone(),
             rx: self.tx.subscribe(),
         }
     }
 }
 
-impl<T: Clone> Slave<T> {
+impl<T: Clone> Observer<T> {
     pub fn update(&mut self) -> Vec<T> {
         let mut out = vec![];
         loop {
@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn test_update() {
-        let mut model = Master::new([0u8; 32]);
+        let mut model = State::new([0u8; 32]);
         let mut view = model.view();
 
         for i in 1..=3 {
@@ -81,7 +81,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_lagged_updates() {
-        let mut model = Master::new([0u8; 32]);
+        let mut model = State::new([0u8; 32]);
         let mut view = model.view();
 
         let max = CHANNEL_SIZE + 5;

@@ -484,6 +484,7 @@ impl HyperDht {
         destination: PeerId,
         relay_addresses: &[SocketAddr],
     ) -> Tid {
+        // TODO rm result
         self.request_announce_or_unannounce(
             keypair,
             target,

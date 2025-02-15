@@ -43,11 +43,11 @@ use tokio::sync::oneshot::error::RecvError;
 pub use self::message::{ReplyMsgData, RequestMsgData};
 use self::{
     io::{IoConfig, IoHandler, IoHandlerEvent},
-    mslave::Master,
     query::{
         table::PeerState, CommandQuery, Query, QueryConfig, QueryEvent, QueryPool, QueryPoolEvent,
         QueryStats,
     },
+    stateobserver::State,
     stream::MessageDataStream,
 };
 pub use crate::io::Tid;
@@ -59,9 +59,9 @@ pub mod io;
 mod jobs;
 pub mod kbucket;
 mod message;
-mod mslave;
 pub mod peers;
 pub mod query;
+mod stateobserver;
 mod stream;
 mod util;
 
@@ -204,8 +204,8 @@ pub(crate) type QueryAndTid = (Option<QueryId>, Tid);
 #[builder(pattern = "owned")]
 pub struct RpcDht {
     // TODO use message passing to update id's in IoHandler
-    #[builder(default = "Master::new(IdBytes::from(thirty_two_random_bytes()))")]
-    pub id: Master<IdBytes>,
+    #[builder(default = "State::new(IdBytes::from(thirty_two_random_bytes()))")]
+    pub id: State<IdBytes>,
     ephemeral: bool,
     pub(crate) kbuckets: KBucketsTable<Node>,
     io: IoHandler,
@@ -318,7 +318,7 @@ impl RpcDht {
         let bites = config.local_id.unwrap_or_else(thirty_two_random_bytes);
         let id_bytes = IdBytes::from(bites);
         let local_id = id_bytes.clone();
-        let id = Master::new(local_id.clone());
+        let id = State::new(local_id.clone());
 
         let socket = config
             .socket

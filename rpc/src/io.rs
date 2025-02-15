@@ -20,8 +20,8 @@ use wasm_timer::Instant;
 use super::{
     cenc::{generic_hash, generic_hash_with_key, ipv4},
     message::{MsgData, ReplyMsgData, RequestMsgData},
-    mslave::Slave,
     query::QueryId,
+    stateobserver::Observer,
     stream::MessageDataStream,
     thirty_two_random_bytes, Command, Peer, QueryAndTid,
 };
@@ -139,7 +139,7 @@ struct InflightRequest {
 
 #[derive(Debug)]
 pub struct IoHandler {
-    id: Slave<IdBytes>,
+    id: Observer<IdBytes>,
     ephemeral: bool,
     message_stream: MessageDataStream,
     /// Messages to send
@@ -153,7 +153,11 @@ pub struct IoHandler {
 }
 
 impl IoHandler {
-    pub fn new(id: Slave<IdBytes>, message_stream: MessageDataStream, _config: IoConfig) -> Self {
+    pub fn new(
+        id: Observer<IdBytes>,
+        message_stream: MessageDataStream,
+        _config: IoConfig,
+    ) -> Self {
         Self {
             id,
             ephemeral: true,
@@ -463,13 +467,13 @@ impl std::fmt::Display for IoHandlerEvent {
 
 #[cfg(test)]
 mod test {
-    use crate::{mslave::Master, thirty_two_random_bytes, InternalCommand};
+    use crate::{stateobserver::State, thirty_two_random_bytes, InternalCommand};
     use futures::StreamExt;
 
     use super::*;
 
     fn new_io() -> IoHandler {
-        let view = Master::new(IdBytes::from(thirty_two_random_bytes())).view();
+        let view = State::new(IdBytes::from(thirty_two_random_bytes())).view();
         let message_stream = MessageDataStream::defualt_bind().unwrap();
         IoHandler::new(view, message_stream, Default::default())
     }
