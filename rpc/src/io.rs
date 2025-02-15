@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 use crate::{IdBytes, Result};
 use fnv::FnvHashMap;
@@ -85,6 +85,7 @@ pub struct InResponse {
     pub peer: Peer,
     pub query_id: Option<QueryId>,
 }
+
 impl InResponse {
     fn new(
         request: Box<RequestMsgData>,
@@ -292,12 +293,12 @@ impl IoHandler {
                 cmd = tracing::field::display(&req.message.command),
                 "RX:Response"
             );
-            return IoHandlerEvent::InResponse(InResponse::new(
+            return IoHandlerEvent::InResponse(Arc::new(InResponse::new(
                 Box::new(req.message),
                 recv,
                 peer,
                 req.query_id,
-            ));
+            )));
         }
         IoHandlerEvent::InResponseBadRequestId {
             peer,
@@ -411,7 +412,7 @@ pub enum IoHandlerEvent {
     /// A request was sent
     OutRequest { tid: Tid },
     /// A Response to a Query Message was recieved
-    InResponse(InResponse),
+    InResponse(Arc<InResponse>),
     /// A Request was receieved
     InRequest { message: RequestMsgData, peer: Peer },
     /// Error while sending a message

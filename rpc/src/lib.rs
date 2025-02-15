@@ -488,7 +488,7 @@ impl RpcDht {
     }
 
     /// Process a response.
-    fn on_response(&mut self, resp_data: InResponse) {
+    fn on_response(&mut self, resp_data: Arc<InResponse>) {
         if let Some(id) = validate_id(&resp_data.response.id, &resp_data.peer) {
             self.add_node(
                 id,
@@ -516,7 +516,7 @@ impl RpcDht {
                     if resp_data.query_id.is_some() {
                         error!("Ping has a QueryId?");
                     }
-                    self.on_pong(resp_data.response, resp_data.peer);
+                    self.on_pong(&resp_data.response, resp_data.peer.clone());
                     return;
                 }
                 panic!("TODO");
@@ -778,7 +778,7 @@ impl RpcDht {
         });
     }
     /// Handle a response for our Ping command
-    fn on_pong(&mut self, msg: ReplyMsgData, peer: Peer) {
+    fn on_pong(&mut self, msg: &ReplyMsgData, peer: Peer) {
         // check if pong was for a downhint ping
         if let Some(pos) = self
             .down_hints_in_progress
