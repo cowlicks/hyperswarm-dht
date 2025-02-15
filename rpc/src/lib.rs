@@ -162,7 +162,18 @@ impl Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Command::Internal(c) => write!(f, "Internal({})", c),
-            Command::External(ExternalCommand(x)) => write!(f, "External({x})"),
+            Command::External(ExternalCommand(x)) => {
+                let cmd_name = match x {
+                    0 => "PEER_HANDSHAKE",
+                    1 => "PEER_HOLEPUNCH",
+                    2 => "FIND_PEER",
+                    3 => "LOOKUP",
+                    4 => "ANNOUNCE",
+                    5 => "UNANNOUNCE",
+                    mystery => &format!("??{mystery}??"),
+                };
+                write!(f, "External({cmd_name})")
+            }
         }
     }
 }
