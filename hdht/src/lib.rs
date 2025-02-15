@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 
-use commands::ANNOUNCE;
+use commands::{ANNOUNCE, LOOKUP};
 use compact_encoding::{types::CompactEncodable, EncodingError};
 use crypto::{sign_announce_or_unannounce, Keypair2, PublicKey2};
 use dht_rpc::{
@@ -339,11 +339,7 @@ impl HyperDht {
         let qid = self.lookup(target, Commit::No);
         self.queries.insert(
             qid,
-            QueryStreamType::UnAnnounce(UnannounceInner {
-                topic: target,
-                responses: vec![],
-                keypair: key_pair.clone(),
-            }),
+            QueryStreamType::UnAnnounce(UnannounceInner::new(target, key_pair.clone())),
         );
         qid
     }
@@ -370,9 +366,9 @@ impl HyperDht {
                         None
                     }
                     QueryStreamType::UnAnnounce(inner) => {
-                        #[allow(unused)]
-                        if let (Some(token), Some(id)) =
-                            (&resp.response.token, &resp.valid_peer_id())
+                        // For responses to Lookup requests send an unannounce requests
+                        if let (Some(token), Some(id), Command::External(ExternalCommand(LOOKUP))) =
+                            (&resp.response.token, &resp.valid_peer_id(), resp.cmd())
                         {
                             let destination = PeerId {
                                 addr: resp.peer.addr,
@@ -397,7 +393,8 @@ impl HyperDht {
                                 resp.query_id = display(qid),
                                 resp.token = debug(resp.response.token),
                                 resp.peer_id = debug(resp.valid_peer_id()),
-                                "response to UnAnnounce missing either token or peer_id"
+                                resp.cmd = display(resp.cmd()),
+                                "Other kind of response to lookup query"
                             );
                             None
                         }

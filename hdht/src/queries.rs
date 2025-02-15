@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use crate::{
     commands,
@@ -61,10 +61,19 @@ impl AnnounceInner {
 pub struct UnannounceInner {
     pub topic: IdBytes,
     pub responses: Vec<Arc<InResponse>>,
+    pub inflight_unannounces: BTreeMap<Tid, (Arc<InResponse>, UnannounceRequest)>,
     pub keypair: Keypair2,
 }
 
 impl UnannounceInner {
+    pub fn new(topic: IdBytes, keypair: Keypair2) -> Self {
+        Self {
+            topic,
+            keypair,
+            responses: Default::default(),
+            inflight_unannounces: Default::default(),
+        }
+    }
     /// Store the decoded peers from the `Response` value
     #[instrument(skip_all)]
     pub fn inject_response(&mut self, resp: Arc<InResponse>, _tid: u16) {
