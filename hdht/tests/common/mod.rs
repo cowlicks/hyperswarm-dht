@@ -1,3 +1,7 @@
+//! code related to testing across languages: ways to invoke `make`, wrappers aroundn running
+//! processes, functions to create and use a tempdir, etc.
+//!
+//! TODO separate out test utils
 use std::{
     fs::File,
     io::Write,

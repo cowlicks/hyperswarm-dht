@@ -1,3 +1,6 @@
+//! Code for running javascript.
+//!
+//! TODO move out javascript test utilities
 use rusty_nodejs_repl::{Config, Repl};
 
 use super::{_run_make_from_with, git_root, join_paths};
@@ -16,6 +19,8 @@ pub fn path_to_node_modules() -> Result<PathBuf, Box<dyn std::error::Error>> {
     Ok(p.into())
 }
 
+// TODO move these
+// test utils below
 #[allow(unused)]
 pub const KEYPAIR_JS: &str = "
 createKeyPair = require('hyperdht/lib/crypto.js').createKeyPair;
