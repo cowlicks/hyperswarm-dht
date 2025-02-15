@@ -15,56 +15,77 @@ use tracing_subscriber::EnvFilter;
 fn show_bytes<T: AsRef<[u8]>>(x: T) {
     println!("{}", String::from_utf8(x.as_ref().to_vec()).unwrap())
 }
-/// Get the address of a node from an existing testnet in JS
-/// NB: `testnet` must exist in the js context already
-async fn get_node_i_address(repl: &mut Repl, node_index: usize) -> Result<SocketAddr> {
-    Ok(repl
-        .json_run::<String, _>(format!(
+
+struct Testnet {
+    repl: Repl,
+}
+
+impl Testnet {
+    pub async fn run<S: AsRef<str>>(&mut self, code: S) -> Result<Vec<u8>> {
+        Ok(self.repl.run(code).await?)
+    }
+    pub async fn json_run<T: serde::de::DeserializeOwned, S: AsRef<str>>(
+        &mut self,
+        code: S,
+    ) -> Result<T> {
+        Ok(self.repl.json_run(code).await?)
+    }
+
+    async fn new() -> Result<Self> {
+        let mut repl = make_repl().await;
+        repl.run(
             "
+createTestnet = require('hyperdht/testnet.js');
+testnet = await createTestnet();
+",
+        )
+        .await?;
+        Ok(Self { repl })
+    }
+
+    /// Get the address of a node from an existing testnet in JS
+    /// NB: `testnet` must exist in the js context already
+    async fn get_node_i_address(&mut self, node_index: usize) -> Result<SocketAddr> {
+        Ok(self
+            .repl
+            .json_run::<String, _>(format!(
+                "
 bs_node = testnet.nodes[{node_index}]
 write(stringify(`${{bs_node.host}}:${{bs_node.port}}`))
 "
-        ))
-        .await?
-        .parse()?)
-}
-
-/// Create a target/topic. whith the argument `topic` written to to the beggining of the buffer,
-/// and padded with zeros. The variable in js is named "topic"
-async fn make_topic(repl: &mut Repl, topic: &str) -> Result<[u8; 32]> {
-    Ok(repl
-        .json_run(format!(
-            "
+            ))
+            .await?
+            .parse()?)
+    }
+    /// Create a target/topic. whith the argument `topic` written to to the beggining of the buffer,
+    /// and padded with zeros. The variable in js is named "topic"
+    async fn make_topic(&mut self, topic: &str) -> Result<[u8; 32]> {
+        Ok(self
+            .repl
+            .json_run(format!(
+                "
     const b4a = require('b4a')
     topic = b4a.alloc(32);
     topic.write('{topic}', 0);
     write(stringify([...topic]))
     "
-        ))
-        .await?)
+            ))
+            .await?)
+    }
 }
-
 /// Do an "announce" from javascript, then have rust "lookup"
 /// In rust we get a public key in the lookup response, we check this is the same as the public key
 /// of the node that announced.
 #[tokio::test]
 async fn js_announces_rs_looksup() -> Result<()> {
-    let mut repl = make_repl().await;
+    let mut tn = Testnet::new().await?;
 
-    repl.run(
-        "
-createTestnet = require('hyperdht/testnet.js');
-testnet = await createTestnet();
-",
-    )
-    .await?;
-
-    let bs_addr = get_node_i_address(&mut repl, 1).await?;
+    let bs_addr = tn.get_node_i_address(1).await?;
     let mut hdht = HyperDht::with_config(DhtConfig::default().add_bootstrap_node(bs_addr)).await?;
 
-    let topic = make_topic(&mut repl, "hello").await?;
+    let topic = tn.make_topic("hello").await?;
 
-    let _res = repl
+    let _res = tn
         .run(
             "
 ann_node = testnet.nodes[testnet.nodes.length - 1];
@@ -97,7 +118,7 @@ await query.finished();
     let Some(peers) = r else {
         panic!();
     };
-    let js_pk: Vec<u8> = repl
+    let js_pk: Vec<u8> = tn
         .json_run("writeJson([...ann_node.defaultKeyPair.publicKey])")
         .await?;
     assert_eq!(peers[0].public_key.as_slice(), js_pk);
@@ -109,20 +130,12 @@ await query.finished();
 /// of the node that announced.
 #[tokio::test]
 async fn rs_announces_js_looksup() -> Result<()> {
-    let mut repl = make_repl().await;
+    let mut tn = Testnet::new().await?;
 
-    repl.run(
-        "
-createTestnet = require('hyperdht/testnet.js');
-testnet = await createTestnet();
-",
-    )
-    .await?;
-
-    let bs_addr = get_node_i_address(&mut repl, 1).await?;
+    let bs_addr = tn.get_node_i_address(1).await?;
     let mut hdht = HyperDht::with_config(DhtConfig::default().add_bootstrap_node(bs_addr)).await?;
 
-    let topic = make_topic(&mut repl, "hello").await?;
+    let topic = tn.make_topic("hello").await?;
     let kp = Keypair2::default();
     let qid = hdht.announce(topic.into(), &kp, &[]);
 
@@ -138,7 +151,7 @@ testnet = await createTestnet();
     };
     /// do lookup in js.
     /// get result for js and show it matches the RS keypair above
-    let found_pk_js: Vec<u8> = repl
+    let found_pk_js: Vec<u8> = tn
         .json_run(
             "
 lookup_node = testnet.nodes[testnet.nodes.length - 1];
