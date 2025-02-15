@@ -500,7 +500,7 @@ impl RpcDht {
         match resp_data.query_id {
             Some(query_id) => {
                 if let Some(query) = self.queries.get(&query_id) {
-                    if let Some(resp) = query.write().unwrap().inject_response(&resp_data) {
+                    if let Some(resp) = query.write().unwrap().inject_response(resp_data) {
                         self.queued_events
                             .push_back(RpcDhtEvent::ResponseResult(Ok(ResponseOk::Response(resp))))
                     }
@@ -1044,7 +1044,7 @@ pub enum ResponseOk {
     /// Received a pong response to our ping request.
     Pong(Peer),
     /// A remote peer successfully responded to our query
-    Response(Response),
+    Response(Arc<InResponse>),
 }
 
 #[derive(Debug)]
@@ -1188,29 +1188,6 @@ impl Stream for RpcDht {
             }
         }
     }
-}
-
-// TODO just use ReplyMsgData?
-/// Response received from `peer` to a request submitted by this DHT.
-#[derive(Debug, Clone)]
-pub struct Response {
-    pub tid: Tid,
-    /// The id of the associated query
-    pub query: QueryId,
-    /// Command of the response message
-    pub cmd: Command,
-    /// `to` field of the message
-    pub to: Option<SocketAddr>,
-    /// Peer that issued this reponse
-    pub peer: SocketAddr,
-    /// Included identifier of the peer.
-    pub peer_id: Option<IdBytes>,
-    /// Error code in the Reply,` 0` is no error.
-    pub error: usize,
-    /// Round trip token
-    pub token: Option<[u8; 32]>,
-    /// response payload
-    pub value: Option<Vec<u8>>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

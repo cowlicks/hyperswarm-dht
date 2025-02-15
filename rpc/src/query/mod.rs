@@ -15,7 +15,6 @@ use tracing::{debug, info, instrument, trace, warn};
 use wasm_timer::Instant;
 
 use crate::{
-    cenc::validate_id,
     commit::{Commit, CommitEvent},
     constants::DEFAULT_COMMIT_CHANNEL_SIZE,
     io::InResponse,
@@ -31,7 +30,7 @@ use self::{
     peers::PeersIterState,
     table::{PeerState, QueryTable},
 };
-use super::{message::ReplyMsgData, Command, Peer, Response};
+use super::{message::ReplyMsgData, Command, Peer};
 
 /// A `QueryPool` provides an aggregate state machine for driving `Query`s to
 /// completion.
@@ -251,7 +250,7 @@ pub struct Query {
     /// Whether to send commits when query completes
     pub commit: Commit,
     /// Closest replies are store for commiting data
-    pub closest_replies: Vec<InResponse>,
+    pub closest_replies: Vec<Arc<InResponse>>,
 }
 
 impl Query {
@@ -284,7 +283,7 @@ impl Query {
     // TODO use binary search ot insert
     // TODO in theory, new elements distances get smaller. So maybe reverse the list.
     #[instrument(skip_all)]
-    fn maybe_insert(&mut self, data: &InResponse) -> Option<usize> {
+    fn maybe_insert(&mut self, data: Arc<InResponse>) -> Option<usize> {
         let reply_distance = self.peer_iter.target.distance(data.response.id?);
         let replace = self.closest_replies.len() >= K_VALUE.into();
 
@@ -343,7 +342,7 @@ impl Query {
 
     /// Received a response to a requested driven by this query.
     #[instrument(skip(self, data))]
-    pub(crate) fn inject_response(&mut self, data: &InResponse) -> Option<Response> {
+    pub(crate) fn inject_response(&mut self, data: Arc<InResponse>) -> Option<Arc<InResponse>> {
         use crate::Progress::*;
         use Commit::*;
 
@@ -354,7 +353,7 @@ impl Query {
                 prog.recieved_tid(data.response.tid);
             }
             _ => {
-                self.maybe_insert(data);
+                self.maybe_insert(data.clone());
                 let remote = data
                     .response
                     .id
@@ -388,17 +387,7 @@ impl Query {
             }
         }
 
-        Some(Response {
-            tid: data.response.tid,
-            query: self.id,
-            cmd: self.cmd,
-            to: Some(data.response.to.addr),
-            peer: data.peer.addr,
-            peer_id: validate_id(&data.response.id, &data.peer),
-            error: data.response.error,
-            token: data.response.token,
-            value: data.response.value.clone(),
-        })
+        Some(data)
     }
 
     fn send(&mut self, peer: Peer, update: bool) -> QueryEvent {
