@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::Arc};
 
-use crate::{IdBytes, Result};
+use crate::{cenc::validate_id, IdBytes, Result};
 use fnv::FnvHashMap;
 use futures::{
     task::{Context, Poll},
@@ -87,6 +87,14 @@ pub struct InResponse {
 }
 
 impl InResponse {
+    pub fn cmd(&self) -> Command {
+        self.request.command
+    }
+
+    pub fn valid_peer_id(&self) -> Option<IdBytes> {
+        validate_id(&self.response.id, &self.peer)
+    }
+
     fn new(
         request: Box<RequestMsgData>,
         response: ReplyMsgData,

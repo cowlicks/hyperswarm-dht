@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     commands,
     crypto::{namespace, Keypair2},
@@ -6,26 +8,27 @@ use crate::{
 
 use compact_encoding::types::CompactEncodable;
 use dht_rpc::{
-    query::QueryId, Command, ExternalCommand, IdBytes, Peer, PeerId, RequestMsgData, Response, Tid,
+    io::InResponse, query::QueryId, Command, ExternalCommand, IdBytes, Peer, PeerId,
+    RequestMsgData, Tid,
 };
 use tracing::instrument;
 
 #[derive(Debug)]
 pub struct LookupResponse {
-    pub response: Response,
+    pub response: Arc<InResponse>,
     pub peers: Vec<crate::cenc::Peer>,
 }
 
 impl LookupResponse {
     /// `Ok(None)` when lookup response is missing value field.
-    pub fn from_response(resp: &Response) -> Result<Option<Self>> {
-        let Some(value) = &resp.value else {
+    pub fn from_response(resp: Arc<InResponse>) -> Result<Option<Self>> {
+        let Some(value) = &resp.response.value else {
             return Ok(None);
         };
         let (peers, _rest): (Vec<crate::cenc::Peer>, &[u8]) =
             <Vec<crate::cenc::Peer> as CompactEncodable>::decode(value)?;
         Ok(Some(LookupResponse {
-            response: resp.clone(),
+            response: resp,
             peers,
         }))
     }
@@ -40,30 +43,31 @@ impl From<LookupResponse> for HyperDhtEvent {
 #[derive(Debug)]
 pub struct AnnounceInner {
     pub topic: IdBytes,
-    pub responses: Vec<Response>,
+    pub responses: Vec<Arc<InResponse>>,
     pub keypair: Keypair2,
 }
 
 impl AnnounceInner {
     /// Store the decoded peers from the `Response` value
     #[instrument(skip_all)]
-    pub fn inject_response(&mut self, resp: Response) {
+    pub fn inject_response(&mut self, resp: Arc<InResponse>) {
         self.responses.push(resp);
     }
 }
 
 // this should store info about the unannounce requests and
 #[derive(Debug)]
+#[allow(unused)]
 pub struct UnannounceInner {
     pub topic: IdBytes,
-    pub responses: Vec<Response>,
+    pub responses: Vec<Arc<InResponse>>,
     pub keypair: Keypair2,
 }
 
 impl UnannounceInner {
     /// Store the decoded peers from the `Response` value
     #[instrument(skip_all)]
-    pub fn inject_response(&mut self, resp: Response, _tid: u16) {
+    pub fn inject_response(&mut self, resp: Arc<InResponse>, _tid: u16) {
         self.responses.push(resp);
     }
 }

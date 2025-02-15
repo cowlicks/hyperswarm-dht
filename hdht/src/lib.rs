@@ -18,6 +18,7 @@ use compact_encoding::{types::CompactEncodable, EncodingError};
 use crypto::{sign_announce_or_unannounce, Keypair2, PublicKey2};
 use dht_rpc::{
     commit::{CommitMessage, CommitRequestParams, Progress},
+    io::InResponse,
     query::Query,
     Tid,
 };
@@ -46,7 +47,7 @@ pub use ::dht_rpc::{
     peers::{decode_local_peers, decode_peers, PeersEncoding},
     query::{CommandQuery, QueryId, QueryStats},
     Command, DhtConfig, ExternalCommand, IdBytes, Peer, PeerId, RequestMsgData, RequestOk,
-    Response, ResponseOk, RpcDht, RpcDhtBuilderError, RpcDhtEvent,
+    ResponseOk, RpcDht, RpcDhtBuilderError, RpcDhtEvent,
 };
 
 mod dht_proto {
@@ -348,9 +349,9 @@ impl HyperDht {
     }
 
     #[instrument(skip_all)]
-    fn inject_response(&mut self, resp: Response) {
+    fn inject_response(&mut self, resp: Arc<InResponse>) {
         trace!(
-            cmd = display(resp.cmd),
+            cmd = display(resp.cmd()),
             "Handle Response for custom command"
         );
         // Holding `&mut query` here prevents us from calling self.request_unannounce
@@ -358,7 +359,11 @@ impl HyperDht {
         // however I want to pass in an id from the request.
         // I really just want a mut ref to the query, but
         let request = {
-            if let Some(query) = self.queries.get_mut(&resp.query) {
+            if let Some((query, qid)) = resp
+                .query_id
+                .map(|qid| self.queries.get_mut(&qid).map(|q| (q, qid)))
+                .flatten()
+            {
                 match query {
                     QueryStreamType::Announce(inner) => {
                         inner.inject_response(resp);
@@ -366,15 +371,17 @@ impl HyperDht {
                     }
                     QueryStreamType::UnAnnounce(inner) => {
                         #[allow(unused)]
-                        if let (Some(token), Some(id)) = (&resp.token, &resp.peer_id) {
+                        if let (Some(token), Some(id)) =
+                            (&resp.response.token, &resp.valid_peer_id())
+                        {
                             let destination = PeerId {
-                                addr: resp.peer,
+                                addr: resp.peer.addr,
                                 id: *id,
                             };
 
                             let req = UnannounceRequest {
                                 tid: self.inner.new_tid(),
-                                query_id: resp.query,
+                                query_id: qid,
                                 keypair: inner.keypair.clone(),
                                 topic: inner.topic,
                                 token: *token,
@@ -382,13 +389,14 @@ impl HyperDht {
                             };
 
                             inner.inject_response(resp, req.tid);
+                            warn!("GOOD unannounce sending unannounce");
                             Some(req)
                         } else {
                             warn!(
-                                resp.tid = resp.tid,
-                                resp.query_id = display(resp.query),
-                                resp.token = debug(resp.token),
-                                resp.peer_id = debug(resp.peer_id),
+                                resp.tid = resp.response.tid,
+                                resp.query_id = display(qid),
+                                resp.token = debug(resp.response.token),
+                                resp.peer_id = debug(resp.valid_peer_id()),
                                 "response to UnAnnounce missing either token or peer_id"
                             );
                             None
@@ -400,7 +408,7 @@ impl HyperDht {
                         todo!()
                     }
                     QueryStreamType::Lookup(inner) => {
-                        match LookupResponse::from_response(&resp) {
+                        match LookupResponse::from_response(resp.clone()) {
                             Ok(Some(evt)) => {
                                 trace!("Decoded valid lookup response");
                                 self.queued_events.push_back(evt.into());
@@ -647,7 +655,7 @@ pub struct Lookup {
 #[derive(Debug)]
 pub struct QueryResult {
     pub topic: IdBytes,
-    pub responses: Vec<Response>,
+    pub responses: Vec<Arc<InResponse>>,
     pub query_id: QueryId,
 }
 
@@ -750,7 +758,7 @@ impl QueryStreamType {
 #[derive(Debug)]
 struct QueryStreamInner {
     topic: IdBytes,
-    peers: Vec<Response>,
+    peers: Vec<Arc<InResponse>>,
 }
 
 impl QueryStreamInner {
@@ -764,7 +772,7 @@ impl QueryStreamInner {
 
     /// Store the decoded peers from the `Response` value
     #[instrument(skip_all)]
-    fn inject_response(&mut self, resp: Response) {
+    fn inject_response(&mut self, resp: Arc<InResponse>) {
         self.peers.push(resp);
     }
 }

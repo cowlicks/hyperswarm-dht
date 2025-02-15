@@ -4,7 +4,7 @@ use std::{net::SocketAddr, time::Duration};
 
 use common::{
     js::{make_repl, KEYPAIR_JS},
-    Result,
+    log, Result,
 };
 use dht_rpc::DhtConfig;
 use futures::StreamExt;
@@ -109,7 +109,7 @@ await query.finished();
                 }
             }
             Some(HyperDhtEvent::LookupResponse(resp)) => {
-                if let Some(t) = resp.response.token {
+                if let Some(t) = resp.response.response.token {
                     r = Some(resp.peers);
                 }
             }
