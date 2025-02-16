@@ -1,6 +1,7 @@
 //! Rust Implementation of the hyperswarm DHT
 #![warn(rust_2018_idioms)]
 #![allow(unreachable_code)]
+#![deny(clippy::enum_glob_use)]
 
 use core::cmp;
 use std::{
@@ -221,7 +222,7 @@ impl HyperDht {
                 if let IpAddr::V4(host) = query.peer.addr.ip() {
                     let from = SocketAddr::V4(SocketAddrV4::new(host, port));
 
-                    let remote_cache = CacheKey::Remote(query.target.clone());
+                    let remote_cache = CacheKey::Remote(query.target);
 
                     let local_cache = peer.local_address.as_ref().and_then(|l| {
                         if l.len() == 6 {
@@ -229,7 +230,7 @@ impl HyperDht {
                             let suffix: [u8; 4] = l[2..].try_into().unwrap();
                             Some((
                                 CacheKey::Local {
-                                    id: query.target.clone(),
+                                    id: query.target,
                                     prefix,
                                 },
                                 suffix,
@@ -357,8 +358,7 @@ impl HyperDht {
         let request = {
             if let Some((query, qid)) = resp
                 .query_id
-                .map(|qid| self.queries.get_mut(&qid).map(|q| (q, qid)))
-                .flatten()
+                .and_then(|qid| self.queries.get_mut(&qid).map(|q| (q, qid)))
             {
                 match query {
                     QueryStreamType::Announce(inner) => {

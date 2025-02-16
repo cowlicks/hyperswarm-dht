@@ -472,7 +472,7 @@ mod tests {
             let key = CacheKey::Remote(IdBytes::random());
             let addr = Address::Remote("127.0.0.1:0".parse().unwrap());
 
-            let _ = lru_cache.insert(key, addr);
+            lru_cache.insert(key, addr);
 
             if i < size {
                 assert_eq!(lru_cache.len(), i + 1);

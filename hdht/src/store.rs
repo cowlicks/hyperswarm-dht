@@ -162,7 +162,7 @@ impl Store {
     pub fn query(&mut self, mut query: CommandQuery) -> CommandQueryResponse {
         let val = self
             .inner
-            .get(&StorageKey::Immutable(query.target.clone()))
+            .get(&StorageKey::Immutable(query.target))
             .and_then(StorageEntry::as_immutable)
             .cloned();
         query.value = val;
