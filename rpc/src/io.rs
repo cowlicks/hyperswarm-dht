@@ -444,17 +444,17 @@ pub enum IoHandlerEvent {
 
 impl IoHandlerEvent {
     fn kind(&self) -> String {
-        use IoHandlerEvent::*;
+        use IoHandlerEvent as Ihe;
         match self {
-            OutResponse { .. } => "OutResponse",
-            OutRequest { .. } => "OutRequest",
-            InResponse(_) => "InResponse",
-            InRequest { .. } => "InRequest",
-            OutSocketErr { .. } => "OutSocketErr",
-            RequestTimeout { .. } => "RequestTimeout",
-            InMessageErr { .. } => "InMessageErr",
-            InSocketErr { .. } => "InSocketErr",
-            InResponseBadRequestId { .. } => "InResponseBadRequestId",
+            Ihe::OutResponse { .. } => "OutResponse",
+            Ihe::OutRequest { .. } => "OutRequest",
+            Ihe::InResponse(_) => "InResponse",
+            Ihe::InRequest { .. } => "InRequest",
+            Ihe::OutSocketErr { .. } => "OutSocketErr",
+            Ihe::RequestTimeout { .. } => "RequestTimeout",
+            Ihe::InMessageErr { .. } => "InMessageErr",
+            Ihe::InSocketErr { .. } => "InSocketErr",
+            Ihe::InResponseBadRequestId { .. } => "InResponseBadRequestId",
         }
         .to_string()
     }
@@ -462,9 +462,9 @@ impl IoHandlerEvent {
 
 impl std::fmt::Display for IoHandlerEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use IoHandlerEvent::*;
+        use IoHandlerEvent as Ihe;
         match self {
-            InResponse(x) => write!(
+            Ihe::InResponse(x) => write!(
                 f,
                 "InRespInResponse(tid={}, cmd={})",
                 x.request.tid, x.request.command

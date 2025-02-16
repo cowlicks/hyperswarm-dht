@@ -1,4 +1,5 @@
 //! Rust Implementation of the hyperswarm DHT
+#![deny(clippy::enum_glob_use)]
 #![warn(rust_2018_idioms)]
 #![allow(unreachable_code)]
 
@@ -131,13 +132,13 @@ pub enum InternalCommand {
 
 impl Display for InternalCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use InternalCommand::*;
+        use InternalCommand as Ic;
         write!(f, "COMMAND")?;
         match self {
-            Ping => write!(f, "::Ping"),
-            PingNat => write!(f, "::PingNat"),
-            FindNode => write!(f, "::FindNode"),
-            DownHint => write!(f, "::DownHint"),
+            Ic::Ping => write!(f, "::Ping"),
+            Ic::PingNat => write!(f, "::PingNat"),
+            Ic::FindNode => write!(f, "::FindNode"),
+            Ic::DownHint => write!(f, "::DownHint"),
         }
     }
 }
@@ -191,12 +192,12 @@ impl TryFrom<u8> for InternalCommand {
     type Error = crate::Error;
 
     fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
-        use InternalCommand::*;
+        use InternalCommand as Ic;
         Ok(match value {
-            0 => Ping,
-            1 => PingNat,
-            2 => FindNode,
-            3 => DownHint,
+            0 => Ic::Ping,
+            1 => Ic::PingNat,
+            2 => Ic::FindNode,
+            3 => Ic::DownHint,
             x => return Err(crate::Error::InvalidRpcCommand(x)),
         })
     }
@@ -581,18 +582,18 @@ impl RpcDht {
                     last_pinged: None,
                 };
 
-                use InsertResult::*;
+                use InsertResult as Ir;
                 match entry.insert(node, NodeStatus::Connected) {
-                    Inserted => {
+                    Ir::Inserted => {
                         self.queued_events.push_back(RpcDhtEvent::RoutingUpdated {
                             peer,
                             old_peer: None,
                         });
                     }
-                    Full => {
+                    Ir::Full => {
                         debug!("Bucket full. Peer not added to routing table: {:?}", peer)
                     }
-                    Pending { disconnected: _ } => {
+                    Ir::Pending { disconnected: _ } => {
 
                         // TODO dial remote
                     }
@@ -1102,25 +1103,21 @@ impl Stream for RpcDht {
                 } else {
                     match pin.queries.poll(now) {
                         QueryPoolEvent::Commit((query, cev)) => {
-                            use commit::{
-                                Commit::*,
-                                CommitEvent::{self, *},
-                                Progress::*,
-                            };
+                            use commit::{Commit as C, CommitEvent as E, Progress as P};
                             // TODO add all commit handlers
                             match cev {
-                                AutoStart((_, _)) => {
+                                E::AutoStart((_, _)) => {
                                     let tids = pin.default_commit(query.clone());
                                     query.write().unwrap().commit =
-                                        Auto(AwaitingReplies(BTreeSet::from_iter(tids)))
+                                        C::Auto(P::AwaitingReplies(BTreeSet::from_iter(tids)))
                                 }
-                                CustomStart((tx_commit_messages, _)) => {
+                                E::CustomStart((tx_commit_messages, _)) => {
                                     return Poll::Ready(Some(RpcDhtEvent::ReadyToCommit {
                                         query,
                                         tx_commit_messages,
                                     }));
                                 }
-                                SendRequests((commits, _)) => {
+                                E::SendRequests((commits, _)) => {
                                     for msg in commits {
                                         match msg {
                                             CommitMessage::Send(cr) => {
@@ -1132,7 +1129,7 @@ impl Stream for RpcDht {
                                                     Some(cr.query_id),
                                                     Some(cr.token),
                                                 );
-                                                if let Custom(prog @ Sending(_)) =
+                                                if let C::Custom(prog @ P::Sending(_)) =
                                                     &mut query.write().unwrap().commit
                                                 {
                                                     prog.sent_tid(tid);
@@ -1140,7 +1137,7 @@ impl Stream for RpcDht {
                                             }
                                             CommitMessage::Done => {
                                                 match &mut query.write().unwrap().commit {
-                                                    Custom(prog @ Sending(_)) => {
+                                                    C::Custom(prog @ P::Sending(_)) => {
                                                         // Done should only be emitted last. Any
                                                         // further rquests sent with `Send` are
                                                         // dropped
@@ -1162,7 +1159,7 @@ impl Stream for RpcDht {
                                         }
                                     }
                                 }
-                                CommitEvent::Done => {
+                                E::Done => {
                                     todo!("Commit Done!")
                                 }
                             }

@@ -343,12 +343,12 @@ impl Query {
     /// Received a response to a requested driven by this query.
     #[instrument(skip(self, data))]
     pub(crate) fn inject_response(&mut self, data: Arc<InResponse>) -> Option<Arc<InResponse>> {
-        use crate::Progress::*;
-        use Commit::*;
+        use crate::Progress as P;
+        use Commit as C;
 
         match &mut self.commit {
-            Auto(prog @ (AwaitingReplies(_) | Sending(_)))
-            | Custom(prog @ (AwaitingReplies(_) | Sending(_))) => {
+            C::Auto(prog @ (P::AwaitingReplies(_) | P::Sending(_)))
+            | C::Custom(prog @ (P::AwaitingReplies(_) | P::Sending(_))) => {
                 warn!("recieved a response! for tid {}", data.response.tid);
                 prog.recieved_tid(data.response.tid);
             }
@@ -451,24 +451,24 @@ impl Query {
 
 #[instrument(skip_all)]
 fn poll(commit: &mut Commit, query_id: QueryId) -> Poll<Option<CommitEvent>> {
-    use crate::Progress::*;
-    use Commit::*;
+    use crate::Progress as P;
+    use Commit as C;
     trace!("polling commit: {commit:?}");
     match commit {
-        No | Auto(Done) | Custom(Done) => Poll::Ready(None),
-        Auto(BeforeStart) => {
+        C::No | C::Auto(P::Done) | C::Custom(P::Done) => Poll::Ready(None),
+        C::Auto(P::BeforeStart) => {
             let (tx, rx) = mpsc::channel(DEFAULT_COMMIT_CHANNEL_SIZE);
-            *commit = Auto(Sending((rx, Default::default())));
+            *commit = C::Auto(P::Sending((rx, Default::default())));
             // RpcDht should recieve this and send the query messages
             Poll::Ready(Some(CommitEvent::AutoStart((tx, query_id))))
         }
-        Custom(BeforeStart) => {
+        C::Custom(P::BeforeStart) => {
             let (tx, rx) = mpsc::channel(DEFAULT_COMMIT_CHANNEL_SIZE);
-            *commit = Custom(Sending((rx, Default::default())));
+            *commit = C::Custom(P::Sending((rx, Default::default())));
             Poll::Ready(Some(CommitEvent::CustomStart((tx, query_id))))
         }
-        Auto(Sending(_)) => Poll::Pending,
-        Custom(Sending((rx, _tids))) => {
+        C::Auto(P::Sending(_)) => Poll::Pending,
+        C::Custom(P::Sending((rx, _tids))) => {
             let mut out = vec![];
             while let Some(e) = rx.try_next().ok().flatten() {
                 out.push(e)
@@ -479,11 +479,11 @@ fn poll(commit: &mut Commit, query_id: QueryId) -> Poll<Option<CommitEvent>> {
             }
             Poll::Pending
         }
-        Custom(AwaitingReplies(ids_waiting_on)) => {
+        C::Custom(P::AwaitingReplies(ids_waiting_on)) => {
             debug!("Custom still waiting on [{}] replies", ids_waiting_on.len());
             Poll::Pending
         }
-        Auto(AwaitingReplies(ids_waiting_on)) => {
+        C::Auto(P::AwaitingReplies(ids_waiting_on)) => {
             debug!("Auto still waiting on [{}] replies", ids_waiting_on.len());
             Poll::Pending
         }

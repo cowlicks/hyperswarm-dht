@@ -73,12 +73,12 @@ pub enum Progress {
     Done,
 }
 
-use Progress::*;
+use Progress as P;
 impl Progress {
     pub fn start_sending(&mut self) -> Sender<CommitMessage> {
-        if matches!(self, BeforeStart) {
+        if matches!(self, P::BeforeStart) {
             let (tx, rx) = mpsc::channel(DEFAULT_COMMIT_CHANNEL_SIZE);
-            *self = Sending((rx, Default::default()));
+            *self = P::Sending((rx, Default::default()));
             tx
         } else {
             panic!("Tried to start sending but already started");
@@ -87,36 +87,36 @@ impl Progress {
 
     pub fn all_replies_recieved(&self) -> bool {
         match self {
-            BeforeStart => false,
-            Sending(_) => false,
-            AwaitingReplies(tids) => tids.is_empty(),
-            Done => true,
+            P::BeforeStart => false,
+            P::Sending(_) => false,
+            P::AwaitingReplies(tids) => tids.is_empty(),
+            P::Done => true,
         }
     }
     pub fn transition_to_awaiting(&mut self) {
-        *self = AwaitingReplies(match self {
-            Sending((_, tids)) => tids.clone(),
+        *self = P::AwaitingReplies(match self {
+            P::Sending((_, tids)) => tids.clone(),
             _ => panic!("not in sending"),
         })
     }
 
     pub fn poll(&mut self) -> Option<CommitMessage> {
-        let Sending((rx, _tids)) = self else {
+        let P::Sending((rx, _tids)) = self else {
             panic!("poll while not sending");
         };
         rx.try_next().ok().flatten()
     }
     pub fn sent_tid(&mut self, tid: Tid) -> bool {
         match self {
-            Sending((rx, tids)) => tids.insert(tid),
+            P::Sending((rx, tids)) => tids.insert(tid),
             _ => panic!("only call while `Sending`"),
         }
         // insert to Sending.tids
     }
 
     pub fn start_awaiting(&mut self, tids: Vec<Tid>) {
-        if matches!(self, BeforeStart | Sending(_)) {
-            *self = AwaitingReplies(BTreeSet::from_iter(tids))
+        if matches!(self, P::BeforeStart | P::Sending(_)) {
+            *self = P::AwaitingReplies(BTreeSet::from_iter(tids))
         } else {
             panic!("Tried to start commit that was already started");
         }
@@ -134,8 +134,8 @@ impl Progress {
             _ => false,
         };
         if done {
-            *self = Done;
+            *self = P::Done;
         }
-        matches!(self, Done)
+        matches!(self, P::Done)
     }
 }
