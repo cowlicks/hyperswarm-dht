@@ -2,7 +2,7 @@
 use futures::channel::mpsc::{self, Receiver, Sender};
 /// Commit
 /// * commit request - An outgoing [`ReplyMsgData`] which includes a valid token. When the message
-/// is recieved and verified, the reciever does some mutation of state
+///   is recieved and verified, the reciever does some mutation of state
 use std::{
     collections::{BTreeMap, BTreeSet},
     iter::FromIterator,

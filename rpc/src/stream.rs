@@ -135,7 +135,7 @@ mod test {
             error: 0,
             value: None,
         });
-        let _ = one.send((expected.clone(), two.local_addr()?)).await?;
+        one.send((expected.clone(), two.local_addr()?)).await?;
         let (result, _sender) = two.next().await.unwrap()?;
         assert_eq!(result, expected);
 

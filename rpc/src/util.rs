@@ -27,7 +27,7 @@ use std::fmt;
 pub(crate) fn debug_vec<T: fmt::Debug>(vec: &[T]) -> impl fmt::Debug + '_ {
     struct VecFormatter<'a, T>(&'a [T]);
 
-    impl<'a, T: fmt::Debug> fmt::Debug for VecFormatter<'a, T> {
+    impl<T: fmt::Debug> fmt::Debug for VecFormatter<'_, T> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             if self.0.len() <= 4 {
                 return f.debug_list().entries(self.0).finish();

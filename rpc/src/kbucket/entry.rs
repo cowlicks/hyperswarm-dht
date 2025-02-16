@@ -50,7 +50,7 @@ impl<TVal> EntryRefView<'_, TVal> {
     {
         EntryView {
             node: Node {
-                key: self.node.key.clone(),
+                key: *self.node.key,
                 value: self.node.value.clone(),
             },
             status: self.status,
@@ -273,7 +273,7 @@ where
     pub fn insert(self, value: TVal, status: NodeStatus) -> InsertResult {
         self.0.bucket.insert(
             Node {
-                key: self.0.key.clone(),
+                key: *self.0.key,
                 value,
             },
             status,

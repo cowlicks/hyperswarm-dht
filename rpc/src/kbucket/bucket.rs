@@ -330,7 +330,7 @@ where
                             replace: Instant::now() + self.pending_timeout,
                         });
                         return InsertResult::Pending {
-                            disconnected: self.nodes[0].key.clone(),
+                            disconnected: self.nodes[0].key,
                         };
                     }
                 }

@@ -129,7 +129,7 @@ impl QueryPool {
             id,
             cmd,
             self.config.parallelism,
-            self.local_id.clone(),
+            self.local_id,
             target,
             value,
             peers,
@@ -140,7 +140,7 @@ impl QueryPool {
         id
     }
 
-    /// Returns a reference to a query with the given ID, if it is in the pool.
+    // Returns a reference to a query with the given ID, if it is in the pool.
     // pub fn get(&self, id: &QueryId) -> Option<&Query> {
     //     self.queries.get(id)
     // }
@@ -270,7 +270,7 @@ impl Query {
         Self {
             id,
             parallelism,
-            peer_iter: ClosestPeersIter::new(target.clone(), bootstrap),
+            peer_iter: ClosestPeersIter::new(target, bootstrap),
             cmd,
             stats: QueryStats::empty(),
             value,
@@ -396,7 +396,7 @@ impl Query {
                 QueryEvent::Update {
                     command: self.cmd,
                     token: Some(token.clone()),
-                    target: self.target().clone(),
+                    target: *self.target(),
                     peer,
                     value: self.value.clone(),
                 }
@@ -408,7 +408,7 @@ impl Query {
         } else {
             QueryEvent::Query {
                 command: self.cmd,
-                target: self.target().clone(),
+                target: *self.target(),
                 value: self.value.clone(),
                 peer,
             }

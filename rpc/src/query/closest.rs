@@ -288,7 +288,7 @@ impl ClosestPeersIter {
         }
 
         let id = calculate_peer_id(peer);
-        let distance = distance(&id, &self.target.as_ref());
+        let distance = distance(&id, self.target.as_ref());
 
         match self.closest_peers.entry(distance) {
             Entry::Vacant(_) => return false,

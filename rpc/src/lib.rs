@@ -329,8 +329,8 @@ impl RpcDht {
     pub async fn with_config(config: DhtConfig) -> crate::Result<Self> {
         let bites = config.local_id.unwrap_or_else(thirty_two_random_bytes);
         let id_bytes = IdBytes::from(bites);
-        let local_id = id_bytes.clone();
-        let id = State::new(local_id.clone());
+        let local_id = id_bytes;
+        let id = State::new(local_id);
 
         let socket = config
             .socket
@@ -342,7 +342,7 @@ impl RpcDht {
         let mut dht = Self {
             id,
             ephemeral: config.ephemeral,
-            kbuckets: KBucketsTable::new(local_id.clone(), config.kbucket_pending_timeout),
+            kbuckets: KBucketsTable::new(local_id, config.kbucket_pending_timeout),
             io,
             bootstrap_job: PeriodicJob::new(config.bootstrap_interval),
             ping_job: PeriodicJob::new(config.ping_interval),
@@ -373,12 +373,12 @@ impl RpcDht {
 
     pub fn bootstrap(&mut self) {
         if !self.bootstrap_nodes.is_empty() {
-            let target = self.id.get().clone();
+            let target = self.id.get();
             let peers = self
                 .kbuckets
                 .closest(&target)
                 .take(usize::from(K_VALUE))
-                .map(|e| PeerId::new(e.node.value.addr, e.node.key.clone()))
+                .map(|e| PeerId::new(e.node.value.addr, e.node.key))
                 .collect::<Vec<_>>();
             let bootstrap_nodes: Vec<Peer> = self.bootstrap_nodes.iter().map(Peer::from).collect();
             self.queries.bootstrap(target, peers, bootstrap_nodes);
@@ -417,7 +417,7 @@ impl RpcDht {
             .kbuckets
             .closest(&target)
             .take(usize::from(K_VALUE))
-            .map(|e| PeerId::new(e.node.value.addr, e.node.key.clone()))
+            .map(|e| PeerId::new(e.node.value.addr, e.node.key))
             .collect::<Vec<_>>();
 
         let bootstrap_nodes: Vec<Peer> = self.bootstrap_nodes.iter().map(Peer::from).collect();
