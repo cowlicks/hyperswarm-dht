@@ -277,6 +277,7 @@ impl Query {
             inner: QueryTable::new(local_id, target, peers),
             commit,
             closest_replies: vec![],
+            extra_requests: Default::default(),
         }
     }
 
@@ -390,28 +391,12 @@ impl Query {
         Some(data)
     }
 
-    fn send(&mut self, peer: Peer, update: bool) -> QueryEvent {
-        if update {
-            if let Some(token) = self.inner.get_token(&peer) {
-                QueryEvent::Update {
-                    command: self.cmd,
-                    token: Some(token.clone()),
-                    target: *self.target(),
-                    peer,
-                    value: self.value.clone(),
-                }
-            } else {
-                // don't wait for a response
-                self.peer_iter.on_failure(&peer);
-                QueryEvent::MissingRoundtripToken { peer }
-            }
-        } else {
-            QueryEvent::Query {
-                command: self.cmd,
-                target: *self.target(),
-                value: self.value.clone(),
-                peer,
-            }
+    fn send(&mut self, peer: Peer) -> QueryEvent {
+        QueryEvent::Query {
+            command: self.cmd,
+            target: *self.target(),
+            value: self.value.clone(),
+            peer,
         }
     }
 
@@ -422,7 +407,7 @@ impl Query {
         match pis {
             PeersIterState::Waiting(peer) => {
                 return if let Some(peer) = peer {
-                    Poll::Ready(Some(self.send(peer, false)))
+                    Poll::Ready(Some(self.send(peer)))
                 } else {
                     Poll::Pending
                 };

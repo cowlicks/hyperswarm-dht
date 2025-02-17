@@ -139,7 +139,7 @@ struct InflightRequest {
     /// Timestamp when the request was sent
     #[allow(unused)] // TODO FIXME not read. Why not?
     timestamp: Instant,
-    ///// Identifier for the query this request is used with
+    // Identifier for the query this request is used with
     query_id: Option<QueryId>,
 }
 
