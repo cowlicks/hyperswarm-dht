@@ -475,36 +475,8 @@ fn poll(commit: &mut Commit, query_id: QueryId) -> Poll<Option<CommitEvent>> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum QueryType {
-    Query,
-    // TODO this can be removed
-    Update,
-    // TODO this can be removed
-    QueryUpdate,
-}
-
-impl QueryType {
-    pub fn is_query(&self) -> bool {
-        matches!(self, QueryType::Query | QueryType::QueryUpdate)
-    }
-
-    // TODO update type is removed
-    pub fn is_update(&self) -> bool {
-        matches!(self, QueryType::Update | QueryType::QueryUpdate)
-    }
-}
-
 #[derive(Debug)]
 pub enum QueryEvent {
-    // can be:
-    // * commit start(enum {
-    //      Auto,
-    //      Custom
-    //      }})
-    // * commit ready
-    // * send commit request
-    // * commit completed
     Commit(CommitEvent),
     Query {
         peer: Peer,
@@ -518,14 +490,6 @@ pub enum QueryEvent {
     MissingRoundtripToken {
         peer: Peer,
     },
-    // TODO update type is removed
-    Update {
-        peer: Peer,
-        command: Command,
-        target: IdBytes,
-        value: Option<Vec<u8>>,
-        token: Option<Vec<u8>>,
-    },
 }
 
 /// Represents an incoming query with a custom command.
@@ -535,11 +499,11 @@ pub struct CommandQuery {
     pub tid: u16,
     /// Command def
     pub command: usize,
-    /// the node who sent the query/update
+    /// the node who sent the query
     pub peer: Peer,
-    /// the query/update target (32 byte target)
+    /// the query target (32 byte target)
     pub target: IdBytes,
-    /// the query/update payload decoded with the inputEncoding
+    /// the query payload decoded with the inputEncoding
     pub value: Option<Vec<u8>>,
 }
 
