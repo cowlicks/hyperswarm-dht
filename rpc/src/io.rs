@@ -87,6 +87,9 @@ pub struct InResponse {
 }
 
 impl InResponse {
+    pub fn tid(&self) -> Tid {
+        self.request.tid
+    }
     pub fn cmd(&self) -> Command {
         self.request.command
     }

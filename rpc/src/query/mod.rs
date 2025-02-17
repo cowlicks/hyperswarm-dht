@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fmt::Display,
     num::NonZeroUsize,
     sync::{Arc, RwLock},
@@ -19,7 +20,7 @@ use crate::{
     constants::DEFAULT_COMMIT_CHANNEL_SIZE,
     io::InResponse,
     kbucket::{ALPHA_VALUE, K_VALUE},
-    IdBytes, PeerId,
+    IdBytes, PeerId, Tid,
 };
 
 mod closest;
@@ -116,6 +117,7 @@ impl QueryPool {
         value: Option<Vec<u8>>,
         bootstrap: Vec<Peer>,
         commit: Commit,
+        external_requests: bool,
     ) -> QueryId {
         let id = self.next_query_id();
         debug!(
@@ -251,6 +253,8 @@ pub struct Query {
     pub commit: Commit,
     /// Closest replies are store for commiting data
     pub closest_replies: Vec<Arc<InResponse>>,
+    /// Requests injected externally
+    pub external_requests: Option<BTreeMap<Tid, Instant>>,
 }
 
 impl Query {
@@ -277,14 +281,14 @@ impl Query {
             inner: QueryTable::new(local_id, target, peers),
             commit,
             closest_replies: vec![],
-            extra_requests: Default::default(),
+            external_requests: external_requests.then(|| Default::default()),
         }
     }
 
     // TODO use binary search ot insert
     // TODO in theory, new elements distances get smaller. So maybe reverse the list.
     #[instrument(skip_all)]
-    fn maybe_insert(&mut self, data: Arc<InResponse>) -> Option<usize> {
+    fn maybe_update_closest_replies(&mut self, data: Arc<InResponse>) -> Option<usize> {
         let reply_distance = self.peer_iter.target.distance(data.response.id?);
         let replace = self.closest_replies.len() >= K_VALUE.into();
 
@@ -347,14 +351,24 @@ impl Query {
         use crate::Progress as P;
         use Commit as C;
 
+        if let Some(_instant) = self
+            .external_requests
+            .as_mut()
+            .and_then(|x| x.remove(&data.tid()))
+        {
+            return Some(data);
+        }
+
         match &mut self.commit {
+            // Commit is in progress
             C::Auto(prog @ (P::AwaitingReplies(_) | P::Sending(_)))
             | C::Custom(prog @ (P::AwaitingReplies(_) | P::Sending(_))) => {
                 warn!("recieved a response! for tid {}", data.response.tid);
                 prog.recieved_tid(data.response.tid);
             }
+            // Before commit
             _ => {
-                self.maybe_insert(data.clone());
+                self.maybe_update_closest_replies(data.clone());
                 let remote = data
                     .response
                     .id
@@ -415,10 +429,20 @@ impl Query {
             PeersIterState::WaitingAtCapacity => return Poll::Pending,
             PeersIterState::Finished => {}
         };
-        let out = match poll(&mut self.commit, self.id) {
+
+        let out = match poll_commit(&mut self.commit, self.id) {
             Poll::Ready(op) => Poll::Ready(op.map(QueryEvent::Commit)),
             Poll::Pending => Poll::Pending,
         };
+
+        // if commit is done, but we are waiting on external request, wait for requests
+        // TODO maybe emit query event to indicate waiting
+        if let Poll::Ready(None) = out {
+            // check if waiting on requests
+            if let Some(false) = self.external_requests.as_ref().map(|x| x.is_empty()) {
+                return Poll::Pending;
+            }
+        }
         trace!("Query::poll result {out:?}");
         out
     }
@@ -434,8 +458,9 @@ impl Query {
     }
 }
 
+/// NB this is not idempotent
 #[instrument(skip_all)]
-fn poll(commit: &mut Commit, query_id: QueryId) -> Poll<Option<CommitEvent>> {
+fn poll_commit(commit: &mut Commit, query_id: QueryId) -> Poll<Option<CommitEvent>> {
     use crate::Progress as P;
     use Commit as C;
     trace!("polling commit: {commit:?}");
