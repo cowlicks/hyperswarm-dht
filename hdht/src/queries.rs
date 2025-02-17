@@ -48,6 +48,13 @@ pub struct AnnounceInner {
 }
 
 impl AnnounceInner {
+    pub fn new(topic: IdBytes, keypair: Keypair2) -> Self {
+        Self {
+            topic,
+            keypair,
+            responses: Default::default(),
+        }
+    }
     /// Store the decoded peers from the `Response` value
     #[instrument(skip_all)]
     pub fn inject_response(&mut self, resp: Arc<InResponse>) {

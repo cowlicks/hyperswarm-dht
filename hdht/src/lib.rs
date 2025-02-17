@@ -205,6 +205,7 @@ impl HyperDht {
             target,
             None,
             Commit::No,
+            false,
         )
     }
 
@@ -302,6 +303,7 @@ impl HyperDht {
             target,
             None,
             commit,
+            false,
         );
         self.queries.insert(
             query_id,
@@ -319,14 +321,16 @@ impl HyperDht {
         key_pair: &Keypair2,
         _relay_addresses: &[SocketAddr],
     ) -> QueryId {
-        let qid = self.lookup(target, Commit::Custom(Progress::default()));
+        let qid = self.inner.query(
+            Command::External(ExternalCommand(commands::LOOKUP)),
+            target,
+            None,
+            Commit::Custom(Progress::default()),
+            true,
+        );
         self.queries.insert(
             qid,
-            QueryStreamType::Announce(AnnounceInner {
-                topic: target,
-                responses: vec![],
-                keypair: key_pair.clone(),
-            }),
+            QueryStreamType::Announce(AnnounceInner::new(target, key_pair.clone())),
         );
         qid
     }

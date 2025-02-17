@@ -105,6 +105,7 @@ impl QueryPool {
             None,
             bootstrap,
             Commit::No,
+            false,
         )
     }
 
@@ -137,6 +138,7 @@ impl QueryPool {
             peers,
             bootstrap,
             commit,
+            external_requests,
         );
         self.queries.insert(id, Arc::new(RwLock::new(query)));
         id
@@ -270,6 +272,7 @@ impl Query {
         peers: Vec<PeerId>,
         bootstrap: Vec<Peer>,
         commit: Commit,
+        external_requests: bool,
     ) -> Self {
         Self {
             id,
