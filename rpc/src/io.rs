@@ -136,9 +136,6 @@ impl OutMessage {
 struct InflightRequest {
     /// The message send
     message: RequestMsgData,
-    /// The remote peer
-    #[allow(unused)] // TODO  FIXME
-    peer: Peer,
     /// Timestamp when the request was sent
     #[allow(unused)] // TODO FIXME not read. Why not?
     timestamp: Instant,
@@ -365,12 +362,10 @@ impl Stream for IoHandler {
                 return match ev {
                     OutMessage::Request((query_id, message)) => {
                         let tid = message.tid;
-                        let peer = message.to.clone();
                         pin.pending_recv.insert(
                             message.tid,
                             InflightRequest {
                                 message,
-                                peer,
                                 timestamp: Instant::now(),
                                 query_id,
                             },
