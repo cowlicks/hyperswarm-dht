@@ -135,7 +135,7 @@ impl OutMessage {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct InflightRequest {
     /// The message send
     message: RequestMsgData,
