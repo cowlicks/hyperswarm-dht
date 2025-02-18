@@ -165,13 +165,12 @@ impl QueryPool {
         let mut waiting = None;
 
         for (&query_id, query) in self.queries.iter() {
-            let mut query = query.write().unwrap();
-            query.stats.start = query.stats.start.or(Some(now));
-            match query.poll(now) {
+            let mut w_query = query.write().unwrap();
+            w_query.stats.start = w_query.stats.start.or(Some(now));
+            match w_query.poll(now) {
                 Poll::Ready(Some(ev)) => {
                     match ev {
                         QueryEvent::Commit(cev) => {
-                            let query = self.queries.get(&query_id).expect("s.a.");
                             return QueryPoolEvent::Commit((query.clone(), cev));
                         }
                         QueryEvent::ExternalRequests(reqs) => {
@@ -186,7 +185,7 @@ impl QueryPool {
                     break;
                 }
                 Poll::Pending => {
-                    let elapsed = now - query.stats.start.unwrap_or(now);
+                    let elapsed = now - w_query.stats.start.unwrap_or(now);
                     if elapsed >= self.config.timeout {
                         timeout = Some(query_id);
                         break;
