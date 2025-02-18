@@ -126,13 +126,14 @@ pub fn check_cmd_output(out: Output) -> Result<Output> {
 
 #[allow(unused)]
 pub fn log() {
+    use tracing_subscriber::fmt::format::FmtSpan;
     static START_LOGS: OnceLock<()> = OnceLock::new();
     START_LOGS.get_or_init(|| {
         tracing_subscriber::fmt()
             .with_target(true)
             .with_line_number(true)
             // print when instrumented funtion enters
-            .with_span_events(tracing_subscriber::fmt::format::FmtSpan::ENTER)
+            .with_span_events(FmtSpan::ENTER | FmtSpan::EXIT)
             .with_file(true)
             .with_env_filter(EnvFilter::from_default_env()) // Reads `RUST_LOG` environment variable
             .without_time()
