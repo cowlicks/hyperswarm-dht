@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     fmt::Display,
     num::NonZeroUsize,
     sync::{Arc, RwLock},
@@ -7,6 +6,7 @@ use std::{
 };
 
 use closest::ClosestPeersIter;
+use extreqs::ExternalRequests;
 use fnv::FnvHashMap;
 use futures::{
     channel::mpsc::{self},
@@ -20,10 +20,11 @@ use crate::{
     constants::DEFAULT_COMMIT_CHANNEL_SIZE,
     io::InResponse,
     kbucket::{ALPHA_VALUE, K_VALUE},
-    IdBytes, PeerId, Tid,
+    IdBytes, PeerId, RequestMsgData,
 };
 
 mod closest;
+mod extreqs;
 mod peers;
 pub mod table;
 
@@ -162,7 +163,6 @@ impl QueryPool {
         let mut finished = None;
         let mut timeout = None;
         let mut waiting = None;
-        let mut commiting = None;
 
         for (&query_id, query) in self.queries.iter() {
             let mut query = query.write().unwrap();
@@ -170,7 +170,13 @@ impl QueryPool {
             match query.poll(now) {
                 Poll::Ready(Some(ev)) => {
                     match ev {
-                        QueryEvent::Commit(cev) => commiting = Some((cev, query_id)),
+                        QueryEvent::Commit(cev) => {
+                            let query = self.queries.get(&query_id).expect("s.a.");
+                            return QueryPoolEvent::Commit((query.clone(), cev));
+                        }
+                        QueryEvent::ExternalRequests(reqs) => {
+                            return QueryPoolEvent::ExternalRequests((query_id, reqs));
+                        }
                         qev => waiting = Some((qev, query_id)),
                     }
                     break;
@@ -189,10 +195,6 @@ impl QueryPool {
             }
         }
 
-        if let Some((event, query_id)) = commiting {
-            let query = self.queries.get(&query_id).expect("s.a.");
-            return QueryPoolEvent::Commit((query.clone(), event));
-        }
         if let Some((event, query_id)) = waiting {
             let query = self.queries.get(&query_id).expect("s.a.");
             return QueryPoolEvent::Waiting(Some((query.clone(), event)));
@@ -228,6 +230,8 @@ pub enum QueryPoolEvent {
     Waiting(Option<(Arc<RwLock<Query>>, QueryEvent)>),
     /// A query is ready to commit
     Commit((Arc<RwLock<Query>>, CommitEvent)),
+    /// A handler of an external query is sending requests
+    ExternalRequests((QueryId, Vec<RequestMsgData>)),
     /// A query has finished.
     Finished(Arc<RwLock<Query>>),
     /// A query has timed out.
@@ -256,7 +260,7 @@ pub struct Query {
     /// Closest replies are store for commiting data
     pub closest_replies: Vec<Arc<InResponse>>,
     /// Requests injected externally
-    pub external_requests: Option<BTreeMap<Tid, Instant>>,
+    pub external_requests: Option<ExternalRequests>,
 }
 
 impl Query {
@@ -357,7 +361,7 @@ impl Query {
         if let Some(_instant) = self
             .external_requests
             .as_mut()
-            .and_then(|x| x.remove(&data.tid()))
+            .and_then(|x| x.remove_tid(&data.tid()))
         {
             return Some(data);
         }
@@ -433,6 +437,9 @@ impl Query {
             PeersIterState::Finished => {}
         };
 
+        if let Some(msgs) = self.external_requests.as_mut().and_then(|x| x.poll()) {
+            return Poll::Ready(Some(QueryEvent::ExternalRequests(msgs)));
+        }
         let out = match poll_commit(&mut self.commit, self.id) {
             Poll::Ready(op) => Poll::Ready(op.map(QueryEvent::Commit)),
             Poll::Pending => Poll::Pending,
@@ -442,7 +449,7 @@ impl Query {
         // TODO maybe emit query event to indicate waiting
         if let Poll::Ready(None) = out {
             // check if waiting on requests
-            if let Some(false) = self.external_requests.as_ref().map(|x| x.is_empty()) {
+            if let Some(false) = self.external_requests.as_ref().map(|x| x.is_done()) {
                 return Poll::Pending;
             }
         }
@@ -506,6 +513,7 @@ fn poll_commit(commit: &mut Commit, query_id: QueryId) -> Poll<Option<CommitEven
 #[derive(Debug)]
 pub enum QueryEvent {
     Commit(CommitEvent),
+    ExternalRequests(Vec<RequestMsgData>),
     Query {
         peer: Peer,
         command: Command,

@@ -1111,6 +1111,11 @@ impl Stream for RpcDht {
                     }
                 } else {
                     match pin.queries.poll(now) {
+                        QueryPoolEvent::ExternalRequests((qid, reqs)) => {
+                            for req in reqs {
+                                pin.io.enqueue_request((Some(qid), req));
+                            }
+                        }
                         QueryPoolEvent::Commit((query, cev)) => {
                             use commit::{Commit as C, CommitEvent as E, Progress as P};
                             // TODO add all commit handlers
