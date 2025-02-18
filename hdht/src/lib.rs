@@ -31,7 +31,8 @@ use futures::{
 };
 use prost::Message as ProstMessage;
 use queries::{
-    AnnounceInner, LookupResponse, UnannounceInner, UnannounceRequest, UnannounceResult,
+    AnnounceInner, LookupResponse, QueryStreamInner, UnannounceInner, UnannounceRequest,
+    UnannounceResult,
 };
 use smallvec::alloc::collections::VecDeque;
 use tokio::sync::oneshot::error::RecvError;
@@ -133,8 +134,7 @@ pub struct HyperDht {
     inner: RpcDht,
     /// Map to track the queries currently in progress
     queries: FnvHashMap<QueryId, QueryStreamType>,
-    /// If `true`, the node will become non-ephemeral after the node has shown
-    /// to be long-lived
+    /// If `true`, the node will become non-ephemeral after the node has shown, to be long-lived
     #[allow(unused)] // FIXME why aint this used
     adaptive: bool,
     /// Cache for known peers
@@ -759,28 +759,6 @@ impl QueryStreamType {
                 HyperDhtEvent::UnAnnounceResult(UnannounceResult {})
             }
         }
-    }
-}
-
-#[derive(Debug)]
-struct QueryStreamInner {
-    topic: IdBytes,
-    peers: Vec<Arc<InResponse>>,
-}
-
-impl QueryStreamInner {
-    #[allow(unused)] // TODO FIXME
-    fn new(topic: IdBytes) -> Self {
-        Self {
-            topic,
-            peers: Vec::new(),
-        }
-    }
-
-    /// Store the decoded peers from the `Response` value
-    #[instrument(skip_all)]
-    fn inject_response(&mut self, resp: Arc<InResponse>) {
-        self.peers.push(resp);
     }
 }
 

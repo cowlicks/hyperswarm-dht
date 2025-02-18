@@ -14,6 +14,28 @@ use dht_rpc::{
 use tracing::instrument;
 
 #[derive(Debug)]
+pub struct QueryStreamInner {
+    pub topic: IdBytes,
+    pub peers: Vec<Arc<InResponse>>,
+}
+
+impl QueryStreamInner {
+    #[allow(unused)] // TODO FIXME
+    pub fn new(topic: IdBytes) -> Self {
+        Self {
+            topic,
+            peers: Vec::new(),
+        }
+    }
+
+    /// Store the decoded peers from the `Response` value
+    #[instrument(skip_all)]
+    pub fn inject_response(&mut self, resp: Arc<InResponse>) {
+        self.peers.push(resp);
+    }
+}
+
+#[derive(Debug)]
 pub struct LookupResponse {
     pub response: Arc<InResponse>,
     pub peers: Vec<crate::cenc::Peer>,
