@@ -326,7 +326,7 @@ impl HyperDht {
             target,
             None,
             Commit::Custom(Progress::default()),
-            true,
+            false,
         );
         self.queries.insert(
             qid,
@@ -341,7 +341,13 @@ impl HyperDht {
     /// The result of the query is delivered in a
     /// [`HyperDhtEvent::UnAnnounceResult`].
     pub fn unannounce(&mut self, target: IdBytes, key_pair: &Keypair2) -> QueryId {
-        let qid = self.lookup(target, Commit::No);
+        let qid = self.inner.query(
+            Command::External(ExternalCommand(commands::LOOKUP)),
+            target,
+            None,
+            Commit::No,
+            true,
+        );
         self.queries.insert(
             qid,
             QueryStreamType::UnAnnounce(UnannounceInner::new(target, key_pair.clone())),
