@@ -14,7 +14,7 @@ use std::{
     time::Duration,
 };
 
-use commands::{ANNOUNCE, LOOKUP};
+use commands::ANNOUNCE;
 use compact_encoding::{types::CompactEncodable, EncodingError};
 use crypto::{sign_announce_or_unannounce, Keypair2, PublicKey2};
 use dht_rpc::{
@@ -30,10 +30,7 @@ use futures::{
     Stream,
 };
 use prost::Message as ProstMessage;
-use queries::{
-    AnnounceInner, LookupResponse, QueryStreamInner, UnannounceInner, UnannounceRequest,
-    UnannounceResult,
-};
+use queries::{AnnounceInner, LookupResponse, QueryStreamInner, UnannounceInner, UnannounceResult};
 use smallvec::alloc::collections::VecDeque;
 use tokio::sync::oneshot::error::RecvError;
 use tracing::{debug, error, instrument, trace, warn};
@@ -131,7 +128,7 @@ impl From<EncodingError> for Error {
 #[derive(Debug)]
 pub struct HyperDht {
     /// The underlying Rpc DHT including IO
-    inner: RpcDht,
+    rpc: RpcDht,
     /// Map to track the queries currently in progress
     queries: FnvHashMap<QueryId, QueryStreamType>,
     /// If `true`, the node will become non-ephemeral after the node has shown, to be long-lived
@@ -161,7 +158,7 @@ impl HyperDht {
         Ok(Self {
             adaptive: config.adaptive,
             queries: Default::default(),
-            inner: RpcDht::with_config(config).await?,
+            rpc: RpcDht::with_config(config).await?,
             // peer cache with 25 min timeout
             peers: PeerCache::new(65536, Duration::from_secs(60 * 25)),
             store: Store::new(5000),
@@ -172,7 +169,7 @@ impl HyperDht {
     /// The local address of the underlying `UdpSocket`
     #[inline]
     pub fn local_addr(&self) -> Result<SocketAddr> {
-        Ok(self.inner.local_addr()?)
+        Ok(self.rpc.local_addr()?)
     }
 
     /// Handle an incoming requests for the registered commands and reply.
@@ -180,11 +177,11 @@ impl HyperDht {
         match q.command {
             MUTABLE_STORE_CMD => {
                 let resp = self.store.on_command_mut(q);
-                self.inner.reply_command(resp)
+                self.rpc.reply_command(resp)
             }
             IMMUTABLE_STORE_CMD => {
                 let resp = self.store.on_command(q);
-                self.inner.reply_command(resp)
+                self.rpc.reply_command(resp)
             }
             PEERS_CMD => self.on_peers(q),
             command => self
@@ -200,7 +197,7 @@ impl HyperDht {
     pub fn find_peer(&mut self, pub_key: PublicKey2) -> QueryId {
         let target = IdBytes(generic_hash(&*pub_key));
 
-        self.inner.query(
+        self.rpc.query(
             Command::External(ExternalCommand(commands::FIND_PEER)),
             target,
             None,
@@ -284,11 +281,11 @@ impl HyperDht {
                     // fits safe in vec
                     output.encode(&mut buf).unwrap();
                     query.value = Some(buf);
-                    self.inner.reply_command(query.into());
+                    self.rpc.reply_command(query.into());
                     return;
                 }
                 let _ = query.value.take();
-                self.inner.reply_command(query.into());
+                self.rpc.reply_command(query.into());
             }
         }
     }
@@ -298,7 +295,7 @@ impl HyperDht {
     /// The result of the query is delivered in a
     /// [`HyperDhtEvent::LookupResult`].
     pub fn lookup(&mut self, target: IdBytes, commit: Commit) -> QueryId {
-        let query_id = self.inner.query(
+        let query_id = self.rpc.query(
             Command::External(ExternalCommand(commands::LOOKUP)),
             target,
             None,
@@ -321,7 +318,7 @@ impl HyperDht {
         key_pair: &Keypair2,
         _relay_addresses: &[SocketAddr],
     ) -> QueryId {
-        let qid = self.inner.query(
+        let qid = self.rpc.query(
             Command::External(ExternalCommand(commands::LOOKUP)),
             target,
             None,
@@ -341,7 +338,7 @@ impl HyperDht {
     /// The result of the query is delivered in a
     /// [`HyperDhtEvent::UnAnnounceResult`].
     pub fn unannounce(&mut self, target: IdBytes, key_pair: &Keypair2) -> QueryId {
-        let qid = self.inner.query(
+        let qid = self.rpc.query(
             Command::External(ExternalCommand(commands::LOOKUP)),
             target,
             None,
@@ -433,7 +430,7 @@ impl HyperDht {
         };
         if let Some(req) = request {
             let qid = req.query_id;
-            self.inner.send_request((Some(qid), req.into()))
+            self.rpc.send_request((Some(qid), req.into()))
         }
     }
 
@@ -483,7 +480,7 @@ impl HyperDht {
             referrer: None,
         };
 
-        self.inner.request(
+        self.rpc.request(
             Command::External(cmd),
             Some(target),
             Some(value),
@@ -545,7 +542,7 @@ impl Stream for HyperDht {
                 return Poll::Ready(Some(event));
             }
 
-            while let Poll::Ready(Some(ev)) = Stream::poll_next(Pin::new(&mut pin.inner), cx) {
+            while let Poll::Ready(Some(ev)) = Stream::poll_next(Pin::new(&mut pin.rpc), cx) {
                 match ev {
                     RpcDhtEvent::RequestResult(Ok(RequestOk::CustomCommandRequest {
                         query,
