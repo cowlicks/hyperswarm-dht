@@ -3,6 +3,26 @@
 #![warn(rust_2018_idioms)]
 #![allow(unreachable_code)]
 
+pub mod cenc;
+pub mod commit;
+pub mod constants;
+mod futreqs;
+pub mod io;
+mod jobs;
+pub mod kbucket;
+mod message;
+pub mod peers;
+pub mod query;
+mod stateobserver;
+mod stream;
+mod util;
+
+pub use futreqs::{Error as RequestFutureError, RequestFuture};
+
+#[cfg(test)]
+mod s_test;
+#[cfg(test)]
+pub mod test;
 use constants::ID_BYTES_LENGTH;
 use futures::{channel::mpsc, Stream};
 use query::CommandQueryResponse;
@@ -41,7 +61,7 @@ use crate::{
 use compact_encoding::EncodingError;
 use tokio::sync::oneshot::error::RecvError;
 
-pub use self::message::{ReplyMsgData, RequestMsgData};
+pub use self::message::{ReplyMsgData, RequestMsgData, RequestMsgDataInner};
 use self::{
     io::{IoConfig, IoHandler, IoHandlerEvent},
     query::{
@@ -52,24 +72,6 @@ use self::{
     stream::MessageDataStream,
 };
 pub use crate::io::Tid;
-
-pub mod cenc;
-pub mod commit;
-pub mod constants;
-pub mod io;
-mod jobs;
-pub mod kbucket;
-mod message;
-pub mod peers;
-pub mod query;
-mod stateobserver;
-mod stream;
-mod util;
-
-#[cfg(test)]
-mod s_test;
-#[cfg(test)]
-pub mod test;
 
 /// The publicly available hyperswarm DHT addresses
 pub const DEFAULT_BOOTSTRAP: [&str; 3] = [
@@ -220,7 +222,7 @@ pub struct RpcDht {
     pub id: State<IdBytes>,
     ephemeral: bool,
     pub(crate) kbuckets: KBucketsTable<Node>,
-    io: IoHandler,
+    pub io: IoHandler,
     bootstrap_job: PeriodicJob,
     ping_job: PeriodicJob,
     /// The currently active (i.e. in-progress) queries.

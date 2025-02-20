@@ -1,6 +1,10 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{collections::BTreeMap, net::SocketAddr, sync::Arc};
 
-use crate::{cenc::validate_id, IdBytes, Result};
+use crate::{
+    cenc::validate_id,
+    futreqs::{new_request_channel, RequestFuture, RequestSender},
+    IdBytes, RequestMsgDataInner, Result,
+};
 use fnv::FnvHashMap;
 use futures::{
     task::{Context, Poll},
@@ -147,6 +151,15 @@ struct InflightRequest {
 }
 
 #[derive(Debug)]
+struct InflightRequestFuture {
+    /// The message send
+    message: RequestMsgData,
+    sender: RequestSender<Arc<InResponse>>,
+    // Identifier for the query this request is used with
+    query_id: Option<QueryId>,
+}
+
+#[derive(Debug)]
 pub struct IoHandler {
     id: Observer<IdBytes>,
     ephemeral: bool,
@@ -157,6 +170,8 @@ pub struct IoHandler {
     pending_flush: Option<OutMessage>,
     /// Sent requests we currently wait for a response
     pending_recv: FnvHashMap<Tid, InflightRequest>,
+    // inflight futures
+    inflight: BTreeMap<Tid, InflightRequestFuture>,
     secrets: Secrets,
     tid: AtomicU16,
 }
@@ -174,10 +189,12 @@ impl IoHandler {
             pending_send: Default::default(),
             pending_flush: None,
             pending_recv: Default::default(),
+            inflight: Default::default(),
             secrets: Default::default(),
             tid: AtomicU16::new(rand::thread_rng().gen()),
         }
     }
+
     pub fn is_ephemeral(&self) -> bool {
         self.ephemeral
     }
@@ -215,7 +232,7 @@ impl IoHandler {
         token: Option<[u8; 32]>,
     ) -> QueryAndTid {
         let id = if !self.ephemeral {
-            Some(self.id.get().0)
+            Some(self.id().0)
         } else {
             None
         };
@@ -244,7 +261,7 @@ impl IoHandler {
         peer: &Peer,
     ) -> crate::Result<()> {
         let id = if !self.ephemeral {
-            Some(self.id.get().0)
+            Some(self.id().0)
         } else {
             None
         };
@@ -278,7 +295,7 @@ impl IoHandler {
         peer: Peer,
     ) -> crate::Result<()> {
         let id = if !self.ephemeral {
-            Some(self.id.get().0)
+            Some(self.id().0)
         } else {
             None
         };
@@ -295,6 +312,17 @@ impl IoHandler {
         Ok(())
     }
     fn on_response(&mut self, recv: ReplyMsgData, peer: Peer) -> IoHandlerEvent {
+        if let Some(InflightRequestFuture {
+            message: request,
+            sender,
+            query_id,
+        }) = self.inflight.remove(&recv.tid)
+        {
+            let tid = request.tid;
+            let msg = Arc::new(InResponse::new(Box::new(request), recv, peer, query_id));
+            let _ = sender.send(msg);
+            return IoHandlerEvent::ChanneledResponse(tid);
+        }
         if let Some(req) = self.pending_recv.remove(&recv.tid) {
             trace!(
                 msg.tid = recv.tid,
@@ -321,21 +349,46 @@ impl IoHandler {
             MsgData::Reply(rep) => self.on_response(rep, peer),
         }
     }
+    pub fn start_send_next_fut_no_id(
+        &mut self,
+        query_id: Option<QueryId>,
+        data: RequestMsgDataInner,
+    ) -> crate::Result<RequestFuture<Arc<InResponse>>> {
+        let tid = self.new_tid();
+        let id = self.id().0;
+        let msg = RequestMsgData::from_ids_and_inner_data(tid, Some(id), data);
+        self.start_send_next_fut((query_id, msg))
+    }
+
+    pub fn start_send_next_fut(
+        &mut self,
+        msg: (Option<QueryId>, RequestMsgData),
+    ) -> crate::Result<RequestFuture<Arc<InResponse>>> {
+        let tid = msg.1.tid;
+        self.inner_send(OutMessage::Request(msg.clone()))?;
+        let (sender, reciever) = new_request_channel(tid);
+        let inflight_req = InflightRequestFuture {
+            message: msg.1,
+            sender,
+            query_id: msg.0,
+        };
+        self.inflight.insert(tid, inflight_req);
+        Ok(reciever)
+    }
 
     fn start_send_next(&mut self) -> crate::Result<()> {
         if self.pending_flush.is_none() {
             if let Some(msg) = self.pending_send.pop_front() {
-                //log::trace!("send to {}: {}", peer.addr, msg);
-                let addr = SocketAddr::from(&msg.to());
-
-                Sink::start_send(
-                    Pin::new(&mut self.message_stream),
-                    (msg.clone().inner(), addr),
-                )?;
+                self.inner_send(msg.clone())?;
                 self.pending_flush = Some(msg);
             }
         }
         Ok(())
+    }
+
+    fn inner_send(&mut self, msg: OutMessage) -> crate::Result<()> {
+        let addr = SocketAddr::from(&msg.to());
+        Sink::start_send(Pin::new(&mut self.message_stream), (msg.inner(), addr))
     }
 }
 #[derive(Debug, Clone, Default)]

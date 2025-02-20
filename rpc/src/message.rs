@@ -27,6 +27,32 @@ pub struct RequestMsgData {
     pub value: Option<Vec<u8>>,
 }
 
+impl RequestMsgData {
+    pub fn from_ids_and_inner_data(
+        tid: u16,
+        id: Option<[u8; 32]>,
+        data: RequestMsgDataInner,
+    ) -> Self {
+        Self {
+            tid,
+            id,
+            to: data.to,
+            token: data.token,
+            command: data.command,
+            target: data.target,
+            value: data.value,
+        }
+    }
+}
+
+pub struct RequestMsgDataInner {
+    pub to: Peer,
+    pub token: Option<[u8; 32]>,
+    pub command: Command,
+    pub target: Option<[u8; 32]>,
+    pub value: Option<Vec<u8>>,
+}
+
 macro_rules! opt_map_inner {
     ($debug_struct:tt, $name:expr, $name_s:tt, $func:tt) => {
         match &$name {
