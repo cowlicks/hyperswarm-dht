@@ -491,6 +491,8 @@ pub enum IoHandlerEvent {
     /// Received a response with a request id that was doesn't match any pending
     /// responses.
     InResponseBadRequestId { message: ReplyMsgData, peer: Peer },
+    /// A Response to message handled by a request future
+    ChanneledResponse(Tid),
 }
 
 impl IoHandlerEvent {
@@ -506,6 +508,7 @@ impl IoHandlerEvent {
             Ihe::InMessageErr { .. } => "InMessageErr",
             Ihe::InSocketErr { .. } => "InSocketErr",
             Ihe::InResponseBadRequestId { .. } => "InResponseBadRequestId",
+            Ihe::ChanneledResponse(_) => "ChanneledResponse",
         }
         .to_string()
     }

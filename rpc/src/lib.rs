@@ -109,6 +109,8 @@ pub enum Error {
     RequestRequiresToField,
     #[error("Ipv6 not supported")]
     Ipv6NotSupported,
+    #[error("Request failed with: {0}")]
+    RequestFailed(#[from] RequestFutureError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -506,6 +508,9 @@ impl RpcDht {
             }
             IoHandlerEvent::RequestTimeout { .. } => {
                 todo!()
+            }
+            IoHandlerEvent::ChanneledResponse(tid) => {
+                trace!(msg.id = tid, "Passed io response through channel")
             }
         }
     }
