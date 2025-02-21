@@ -23,14 +23,14 @@ pub enum Error {
 
 #[derive(Debug)]
 pub struct RequestFuture<T> {
-    tid: Tid,
+    pub tid: Tid,
     rx: oneshot::Receiver<T>,
     started_at: Instant,
 }
 
 #[derive(Debug)]
 pub struct RequestSender<T> {
-    tid: Tid,
+    pub tid: Tid,
     tx: oneshot::Sender<T>,
 }
 
