@@ -11,7 +11,8 @@ use futures::Stream;
 use pin_project::pin_project;
 
 #[pin_project]
-struct FuturesMap<K: Ord + Clone, V: Future> {
+#[derive(Debug)]
+pub struct FuturesMap<K: Ord + Clone, V: Future> {
     map: BTreeMap<K, Pin<Box<V>>>,
     ready: VecDeque<(K, V::Output)>,
 }
@@ -22,6 +23,9 @@ impl<K: Ord + Clone, V: Future> FuturesMap<K, V> {
     }
     pub fn get_mut(&mut self, key: &K) -> Option<&mut Pin<Box<V>>> {
         self.map.get_mut(key)
+    }
+    pub fn remove(&mut self, key: &K) -> Option<Pin<Box<V>>> {
+        self.map.remove(key)
     }
 }
 
