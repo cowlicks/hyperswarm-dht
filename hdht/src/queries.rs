@@ -1,31 +1,41 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{future::Future, pin::Pin, sync::Arc, task::Poll};
 
 use crate::{
-    commands,
+    commands::{self, LOOKUP},
     crypto::{namespace, Keypair2},
-    request_announce_or_unannounce_value, HyperDhtEvent, Result,
+    request_announce_or_unannounce_value, HyperDhtEvent, QueryResult, Result,
 };
+use futures::{stream::FuturesUnordered, Stream};
 
 use compact_encoding::types::CompactEncodable;
 use dht_rpc::{
-    io::InResponse, query::QueryId, Command, ExternalCommand, IdBytes, Peer, PeerId,
-    RequestMsgData, Tid,
+    io::{InResponse, IoHandler},
+    query::QueryId,
+    Command, ExternalCommand, IdBytes, Peer, PeerId, RequestFuture, RequestMsgDataInner,
 };
-use tracing::instrument;
+use tracing::{error, instrument, warn};
 
 #[derive(Debug)]
 pub struct QueryStreamInner {
+    done: bool,
+    pub query_id: QueryId,
     pub topic: IdBytes,
     pub peers: Vec<Arc<InResponse>>,
 }
 
 impl QueryStreamInner {
     #[allow(unused)] // TODO FIXME
-    pub fn new(topic: IdBytes) -> Self {
+    pub fn new(query_id: QueryId, topic: IdBytes) -> Self {
         Self {
+            done: false,
+            query_id,
             topic,
             peers: Vec::new(),
         }
+    }
+
+    pub fn finalize(&mut self) {
+        self.done = true;
     }
 
     /// Store the decoded peers from the `Response` value
@@ -64,19 +74,27 @@ impl From<LookupResponse> for HyperDhtEvent {
 
 #[derive(Debug)]
 pub struct AnnounceInner {
+    done: bool,
+    query_id: QueryId,
     pub topic: IdBytes,
     pub responses: Vec<Arc<InResponse>>,
     pub keypair: Keypair2,
 }
 
 impl AnnounceInner {
-    pub fn new(topic: IdBytes, keypair: Keypair2) -> Self {
+    pub fn new(query_id: QueryId, topic: IdBytes, keypair: Keypair2) -> Self {
         Self {
+            done: false,
+            query_id,
             topic,
             keypair,
             responses: Default::default(),
         }
     }
+    pub fn finalize(&mut self) {
+        self.done = true;
+    }
+
     /// Store the decoded peers from the `Response` value
     #[instrument(skip_all)]
     pub fn inject_response(&mut self, resp: Arc<InResponse>) {
@@ -86,48 +104,140 @@ impl AnnounceInner {
 
 // this should store info about the unannounce requests and
 #[derive(Debug)]
-#[allow(unused)]
 pub struct UnannounceInner {
+    /// switched on when query is completed
+    done: bool,
     pub topic: IdBytes,
-    pub responses: Vec<Arc<InResponse>>,
-    pub inflight_unannounces: BTreeMap<Tid, (Arc<InResponse>, UnannounceRequest)>,
+    pub inflight_unannounces: FuturesUnordered<RequestFuture<Arc<InResponse>>>,
     pub keypair: Keypair2,
+    pub results: Vec<Result<Arc<InResponse>>>,
 }
 
 impl UnannounceInner {
     pub fn new(topic: IdBytes, keypair: Keypair2) -> Self {
         Self {
+            done: false,
             topic,
             keypair,
-            responses: Default::default(),
             inflight_unannounces: Default::default(),
+            results: Default::default(),
         }
     }
+
     /// Store the decoded peers from the `Response` value
     #[instrument(skip_all)]
-    pub fn inject_response(&mut self, resp: Arc<InResponse>, _tid: u16) {
-        self.responses.push(resp);
+    pub fn inject_response(
+        &mut self,
+        io: &mut IoHandler,
+        resp: Arc<InResponse>,
+        query_id: QueryId,
+    ) {
+        if let (Some(token), Some(id), Command::External(ExternalCommand(LOOKUP))) =
+            (&resp.response.token, &resp.valid_peer_id(), resp.cmd())
+        {
+            let destination = PeerId {
+                addr: resp.peer.addr,
+                id: *id,
+            };
+
+            let req = UnannounceRequest {
+                keypair: self.keypair.clone(),
+                topic: self.topic,
+                token: *token,
+                destination,
+            };
+            match io.start_send_next_fut_no_id(Some(query_id), req.into()) {
+                Ok(fut) => self.inflight_unannounces.push(fut),
+                Err(e) => error!("Erorr sending unannonuce: {e:?}"),
+            }
+        } else {
+            warn!(
+                resp.tid = resp.response.tid,
+                resp.query_id = display(query_id),
+                resp.token = debug(resp.response.token),
+                resp.peer_id = debug(resp.valid_peer_id()),
+                resp.cmd = display(resp.cmd()),
+                "Other kind of response to lookup query"
+            );
+        };
+    }
+
+    pub fn finalize(&mut self) {
+        self.done = true;
+    }
+}
+
+impl Future for UnannounceInner {
+    type Output = Result<UnannounceResult>;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        while let Poll::Ready(Some(result)) = Pin::new(&mut self.inflight_unannounces).poll_next(cx)
+        {
+            self.results.push(result.map_err(|e| e.into()))
+        }
+
+        // NB we check results not empty to prevent resolving before an unannounces are sent
+        if self.inflight_unannounces.is_empty() && self.done {
+            Poll::Ready(Ok(UnannounceResult::new(std::mem::take(&mut self.results))))
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
+impl Future for AnnounceInner {
+    type Output = Result<QueryResult>;
+
+    fn poll(mut self: Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        if self.done {
+            return Poll::Ready(Ok(QueryResult {
+                topic: self.topic,
+                responses: std::mem::take(&mut self.responses),
+                query_id: self.query_id,
+            }));
+        }
+        Poll::Pending
+    }
+}
+impl Future for QueryStreamInner {
+    type Output = Result<QueryResult>;
+
+    fn poll(mut self: Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        if self.done {
+            return Poll::Ready(Ok(QueryResult {
+                topic: self.topic,
+                responses: std::mem::take(&mut self.peers),
+                query_id: self.query_id,
+            }));
+        }
+        Poll::Pending
     }
 }
 
 #[derive(Debug)]
-pub struct UnannounceResult {}
+pub struct UnannounceResult {
+    pub responses: Vec<Result<Arc<InResponse>>>,
+}
+impl UnannounceResult {
+    fn new(responses: Vec<Result<Arc<InResponse>>>) -> Self {
+        Self { responses }
+    }
+}
 
 #[derive(Debug)]
 pub struct UnannounceRequest {
-    pub tid: Tid,
-    pub query_id: QueryId,
     pub keypair: Keypair2,
     pub topic: IdBytes,
     pub token: [u8; 32],
     pub destination: PeerId,
 }
 
-impl From<UnannounceRequest> for RequestMsgData {
+impl From<UnannounceRequest> for RequestMsgDataInner {
     fn from(
         UnannounceRequest {
-            tid,
-            query_id,
             keypair,
             topic,
             token,
@@ -148,13 +258,9 @@ impl From<UnannounceRequest> for RequestMsgData {
             addr: destination.addr,
             referrer: None,
         };
-        RequestMsgData {
-            tid,
+
+        RequestMsgDataInner {
             to: destination,
-            //id: todo!(),
-            // TODO... should this be in UnannounceRequest? Maybe it should just be added by
-            // rpc::IoHandler
-            id: None,
             token: Some(token),
             command: Command::External(ExternalCommand(commands::UNANNOUNCE)),
             target: Some(topic.0),

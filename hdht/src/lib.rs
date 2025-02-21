@@ -8,7 +8,9 @@ use std::{
     array::TryFromSliceError,
     convert::{TryFrom, TryInto},
     fmt,
+    future::Future,
     net::{AddrParseError, IpAddr, SocketAddr, SocketAddrV4, ToSocketAddrs},
+    ops::{Deref, DerefMut},
     pin::Pin,
     sync::{Arc, RwLock},
     time::Duration,
@@ -21,14 +23,16 @@ use dht_rpc::{
     commit::{CommitMessage, CommitRequestParams, Progress},
     io::InResponse,
     query::Query,
-    Tid,
+    RequestFutureError, Tid,
 };
 use fnv::FnvHashMap;
 use futures::{
     channel::mpsc::{self},
+    stream::FuturesUnordered,
     task::{Context, Poll},
-    Stream,
+    Stream, StreamExt,
 };
+use futuresmap::FuturesMap;
 use prost::Message as ProstMessage;
 use queries::{AnnounceInner, LookupResponse, QueryStreamInner, UnannounceInner, UnannounceResult};
 use smallvec::alloc::collections::VecDeque;
@@ -54,6 +58,7 @@ mod dht_proto {
 }
 pub mod cenc;
 pub mod crypto;
+mod futuresmap;
 pub mod lru;
 mod queries;
 pub mod store;
@@ -113,6 +118,8 @@ pub enum Error {
     Ipv6NotSupported,
     #[error("Invalid Signature")]
     InvalidSignature(i32),
+    #[error("Future Request error")]
+    FutureRequestFailed(#[from] RequestFutureError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -130,7 +137,7 @@ pub struct HyperDht {
     /// The underlying Rpc DHT including IO
     rpc: RpcDht,
     /// Map to track the queries currently in progress
-    queries: FnvHashMap<QueryId, QueryStreamType>,
+    queries: FuturesMap<QueryId, QueryStreamType>,
     /// If `true`, the node will become non-ephemeral after the node has shown, to be long-lived
     #[allow(unused)] // FIXME why aint this used
     adaptive: bool,
@@ -304,7 +311,7 @@ impl HyperDht {
         );
         self.queries.insert(
             query_id,
-            QueryStreamType::Lookup(QueryStreamInner::new(target)),
+            QueryStreamType::Lookup(QueryStreamInner::new(query_id, target)),
         );
         query_id
     }
@@ -327,7 +334,7 @@ impl HyperDht {
         );
         self.queries.insert(
             qid,
-            QueryStreamType::Announce(AnnounceInner::new(target, key_pair.clone())),
+            QueryStreamType::Announce(AnnounceInner::new(qid, target, key_pair.clone())),
         );
         qid
     }
@@ -362,82 +369,36 @@ impl HyperDht {
         // maybe instead we return something from the block to do the msg that we want?
         // however I want to pass in an id from the request.
         // I really just want a mut ref to the query, but
-        let request = {
-            if let Some((query, qid)) = resp
-                .query_id
-                .and_then(|qid| self.queries.get_mut(&qid).map(|q| (q, qid)))
-            {
-                match query {
-                    QueryStreamType::Announce(inner) => {
-                        inner.inject_response(resp);
-                        None
-                    }
-                    QueryStreamType::UnAnnounce(inner) => {
-                        // For responses to Lookup requests send an unannounce requests
-                        if let (Some(token), Some(id), Command::External(ExternalCommand(LOOKUP))) =
-                            (&resp.response.token, &resp.valid_peer_id(), resp.cmd())
-                        {
-                            let destination = PeerId {
-                                addr: resp.peer.addr,
-                                id: *id,
-                            };
-
-                            let req = UnannounceRequest {
-                                tid: self.inner.new_tid(),
-                                query_id: qid,
-                                keypair: inner.keypair.clone(),
-                                topic: inner.topic,
-                                token: *token,
-                                destination,
-                            };
-
-                            inner.inject_response(resp, req.tid);
-                            warn!("GOOD unannounce sending unannounce");
-                            Some(req)
-                        } else {
-                            warn!(
-                                resp.tid = resp.response.tid,
-                                resp.query_id = display(qid),
-                                resp.token = debug(resp.response.token),
-                                resp.peer_id = debug(resp.valid_peer_id()),
-                                resp.cmd = display(resp.cmd()),
-                                "Other kind of response to lookup query"
-                            );
-                            None
-                        }
-                    }
-                    QueryStreamType::LookupAndUnannounce(_inner) => {
-                        // do unannnounce request
-                        // store request id to wait for request to finish
-                        todo!()
-                    }
-                    QueryStreamType::Lookup(inner) => {
-                        match LookupResponse::from_response(resp.clone()) {
-                            Ok(Some(evt)) => {
-                                trace!("Decoded valid lookup response");
-                                self.queued_events.push_back(evt.into());
-                            }
-                            Ok(None) => trace!("Lookup respones missing value field"),
-                            Err(e) => error!(error = display(e), "Error decoding lookup response"),
-                        }
-                        inner.inject_response(resp);
-                        None
-                    }
+        if let Some((query, qid)) = resp
+            .query_id
+            .and_then(|qid| self.queries.get_mut(&qid).map(|q| (q, qid)))
+        {
+            match query.deref_mut() {
+                QueryStreamType::Announce(inner) => {
+                    inner.inject_response(resp);
                 }
-            } else {
-                None
+                QueryStreamType::UnAnnounce(inner) => {
+                    inner.inject_response(&mut self.rpc.io, resp, qid);
+                }
+                QueryStreamType::Lookup(inner) => {
+                    match LookupResponse::from_response(resp.clone()) {
+                        Ok(Some(evt)) => {
+                            trace!("Decoded valid lookup response");
+                            self.queued_events.push_back(evt.into());
+                        }
+                        Ok(None) => trace!("Lookup respones missing value field"),
+                        Err(e) => error!(error = display(e), "Error decoding lookup response"),
+                    }
+                    inner.inject_response(resp);
+                }
             }
-        };
-        if let Some(req) = request {
-            let qid = req.query_id;
-            self.rpc.send_request((Some(qid), req.into()))
         }
     }
 
     // A query was completed
     fn query_finished(&mut self, id: QueryId) {
-        if let Some(query) = self.queries.remove(&id) {
-            self.queued_events.push_back(query.finalize(id))
+        if let Some(query) = self.queries.get_mut(&id) {
+            query.finalize(id);
         } else {
             warn!(
                 id = ?id,
@@ -542,6 +503,7 @@ impl Stream for HyperDht {
                 return Poll::Ready(Some(event));
             }
 
+            // Drain rpc events
             while let Poll::Ready(Some(ev)) = Stream::poll_next(Pin::new(&mut pin.rpc), cx) {
                 match ev {
                     RpcDhtEvent::RequestResult(Ok(RequestOk::CustomCommandRequest {
@@ -568,6 +530,20 @@ impl Stream for HyperDht {
                     } => pin.query_finished(id),
                     _ => {}
                 }
+            }
+
+            // Poll ongoing queries
+            while let Poll::Ready(Some(query_result)) = pin.queries.poll_next_unpin(cx) {
+                use HyperDhtEvent as hde;
+                use QueryStreamResult as qsr;
+                pin.queued_events.push_back(match query_result {
+                    Err(_) => todo!("this should be an event. when does this happen?"),
+                    Ok(res) => match res {
+                        qsr::Lookup(r) => hde::LookupResult(r),
+                        qsr::Announce(r) => hde::AnnounceResult(r),
+                        qsr::UnAnnounce(r) => hde::UnAnnounceResult(Ok(r)),
+                    },
+                })
             }
 
             // No immediate event was produced as a result of the DHT.
@@ -610,7 +586,7 @@ pub enum HyperDhtEvent {
     /// The result of [`HyperDht::lookup`].
     LookupResult(QueryResult),
     /// The result of [`HyperDht::unannounce`].
-    UnAnnounceResult(UnannounceResult),
+    UnAnnounceResult(Result<UnannounceResult>),
     /// Received a query with a custom command that is not automatically handled
     /// by the DHT
     CustomCommandQuery {
@@ -689,17 +665,61 @@ pub struct Peers {
 /// Type to keep track of the responses for queries in progress.
 #[derive(Debug)]
 #[allow(unused)]
+#[pin_project::pin_project(project = QueryStreamTypeProj)]
 enum QueryStreamType {
-    LookupAndUnannounce(QueryStreamInner),
     Lookup(QueryStreamInner),
     Announce(AnnounceInner),
-    UnAnnounce(UnannounceInner),
+    UnAnnounce(#[pin] UnannounceInner),
+}
+
+#[derive(Debug)]
+enum QueryStreamResult {
+    Lookup(QueryResult),
+    Announce(QueryResult),
+    UnAnnounce(UnannounceResult),
+}
+
+impl Future for QueryStreamType {
+    type Output = Result<QueryStreamResult>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        use QueryStreamResult as qsr;
+        use QueryStreamTypeProj as qstp;
+        match self.project() {
+            qstp::UnAnnounce(mut inner) => {
+                if let Poll::Ready(x) = Future::poll(Pin::new(&mut inner), cx) {
+                    match x {
+                        Ok(res) => return Poll::Ready(Ok(qsr::UnAnnounce(res))),
+                        Err(e) => return Poll::Ready(Err(e)),
+                    }
+                }
+                Poll::Pending
+            }
+            qstp::Announce(mut inner) => {
+                if let Poll::Ready(x) = Future::poll(Pin::new(&mut inner), cx) {
+                    match x {
+                        Ok(res) => return Poll::Ready(Ok(qsr::Announce(res))),
+                        Err(e) => return Poll::Ready(Err(e)),
+                    }
+                }
+                Poll::Pending
+            }
+            qstp::Lookup(mut inner) => {
+                if let Poll::Ready(x) = Future::poll(Pin::new(&mut inner), cx) {
+                    match x {
+                        Ok(res) => return Poll::Ready(Ok(qsr::Lookup(res))),
+                        Err(e) => return Poll::Ready(Err(e)),
+                    }
+                }
+                Poll::Pending
+            }
+        }
+    }
 }
 
 impl QueryStreamType {
     fn commit(&mut self, query: Arc<RwLock<Query>>, mut channel: mpsc::Sender<CommitMessage>) {
         match self {
-            QueryStreamType::LookupAndUnannounce(_) => todo!(),
             QueryStreamType::Lookup(_) => todo!(),
             QueryStreamType::UnAnnounce(_) => todo!(),
             QueryStreamType::Announce(inner) => {
@@ -741,20 +761,11 @@ impl QueryStreamType {
         }
     }
 
-    fn finalize(self, query_id: QueryId) -> HyperDhtEvent {
+    fn finalize(&mut self, query_id: QueryId) {
         match self {
-            QueryStreamType::LookupAndUnannounce(_inner) => todo!(),
-            QueryStreamType::Lookup(inner) => {
-                HyperDhtEvent::LookupResult(QueryResult::new(&query_id, inner))
-            }
-            QueryStreamType::Announce(inner) => HyperDhtEvent::AnnounceResult(QueryResult {
-                topic: inner.topic,
-                responses: inner.responses,
-                query_id,
-            }),
-            QueryStreamType::UnAnnounce(_inner) => {
-                HyperDhtEvent::UnAnnounceResult(UnannounceResult {})
-            }
+            QueryStreamType::Lookup(ref mut inner) => inner.finalize(),
+            QueryStreamType::Announce(ref mut inner) => inner.finalize(),
+            QueryStreamType::UnAnnounce(ref mut inner) => inner.finalize(),
         }
     }
 }
