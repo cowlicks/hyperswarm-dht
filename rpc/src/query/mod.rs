@@ -673,7 +673,7 @@ impl QueryStats {
     }
 }
 /// Unique identifier for an active query.
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct QueryId(pub usize);
 
 impl Display for QueryId {
