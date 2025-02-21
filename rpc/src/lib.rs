@@ -17,7 +17,7 @@ mod stateobserver;
 mod stream;
 mod util;
 
-pub use futreqs::{Error as RequestFutureError, RequestFuture};
+pub use futreqs::{new_request_channel, Error as RequestFutureError, RequestFuture};
 
 #[cfg(test)]
 mod s_test;
