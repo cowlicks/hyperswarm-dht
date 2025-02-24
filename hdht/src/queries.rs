@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin, sync::Arc, task::Poll};
+use std::{future::Future, mem::take, pin::Pin, sync::Arc, task::Poll};
 
 use crate::{
     commands::{self, LOOKUP},
@@ -181,7 +181,7 @@ impl Future for UnannounceInner {
 
         // NB we check results not empty to prevent resolving before an unannounces are sent
         if self.inflight_unannounces.is_empty() && self.done {
-            Poll::Ready(Ok(UnannounceResult::new(std::mem::take(&mut self.results))))
+            Poll::Ready(Ok(UnannounceResult::new(take(&mut self.results))))
         } else {
             Poll::Pending
         }
@@ -193,11 +193,11 @@ impl Future for AnnounceInner {
 
     fn poll(mut self: Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
         if self.done {
-            return Poll::Ready(Ok(QueryResult {
-                topic: self.topic,
-                responses: std::mem::take(&mut self.responses),
-                query_id: self.query_id,
-            }));
+            return Poll::Ready(Ok(QueryResult::new(
+                self.topic,
+                take(&mut self.responses),
+                self.query_id,
+            )));
         }
         Poll::Pending
     }
@@ -209,7 +209,7 @@ impl Future for QueryStreamInner {
         if self.done {
             return Poll::Ready(Ok(QueryResult {
                 topic: self.topic,
-                responses: std::mem::take(&mut self.peers),
+                responses: take(&mut self.peers),
                 query_id: self.query_id,
             }));
         }

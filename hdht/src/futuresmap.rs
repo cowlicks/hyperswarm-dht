@@ -24,9 +24,6 @@ impl<K: Ord + Clone, V: Future> FuturesMap<K, V> {
     pub fn get_mut(&mut self, key: &K) -> Option<&mut Pin<Box<V>>> {
         self.map.get_mut(key)
     }
-    pub fn remove(&mut self, key: &K) -> Option<Pin<Box<V>>> {
-        self.map.remove(key)
-    }
 }
 
 impl<K: Ord + Clone, V: Future> Default for FuturesMap<K, V> {
@@ -42,7 +39,7 @@ impl<K: Ord + Clone + std::fmt::Debug, V: Future> Stream for FuturesMap<K, V> {
     type Item = V::Output;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut this = self.project();
+        let this = self.project();
 
         // Check if there's a ready item to yield
         if let Some((_, output)) = this.ready.pop_front() {

@@ -10,7 +10,7 @@ use std::{
     fmt,
     future::Future,
     net::{AddrParseError, IpAddr, SocketAddr, SocketAddrV4, ToSocketAddrs},
-    ops::{Deref, DerefMut},
+    ops::DerefMut,
     pin::Pin,
     sync::{Arc, RwLock},
     time::Duration,
@@ -25,10 +25,8 @@ use dht_rpc::{
     query::Query,
     RequestFutureError, Tid,
 };
-use fnv::FnvHashMap;
 use futures::{
     channel::mpsc::{self},
-    stream::FuturesUnordered,
     task::{Context, Poll},
     Stream, StreamExt,
 };
@@ -640,11 +638,11 @@ pub struct QueryResult {
 }
 
 impl QueryResult {
-    fn new(query_id: &QueryId, qsi: QueryStreamInner) -> Self {
+    fn new(topic: IdBytes, responses: Vec<Arc<InResponse>>, query_id: QueryId) -> Self {
         Self {
-            topic: qsi.topic,
-            responses: qsi.peers,
-            query_id: *query_id,
+            topic,
+            responses,
+            query_id,
         }
     }
 }
@@ -761,7 +759,7 @@ impl QueryStreamType {
         }
     }
 
-    fn finalize(&mut self, query_id: QueryId) {
+    fn finalize(&mut self, _query_id: QueryId) {
         match self {
             QueryStreamType::Lookup(ref mut inner) => inner.finalize(),
             QueryStreamType::Announce(ref mut inner) => inner.finalize(),
