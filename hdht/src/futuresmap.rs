@@ -52,8 +52,6 @@ impl<K: Ord + Clone + std::fmt::Debug, V: Future> Stream for FuturesMap<K, V> {
             let pinned = Pin::new(future);
             match pinned.poll(cx) {
                 Poll::Ready(output) => {
-                    println!("key = {key:?} is ready");
-
                     completed.push((key.clone(), output));
                 }
                 Poll::Pending => {}
