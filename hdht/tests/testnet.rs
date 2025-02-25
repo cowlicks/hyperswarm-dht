@@ -103,7 +103,6 @@ macro_rules! setup_rs_node_and_js_testnet {
         let mut tn = Testnet::new().await?;
         let bs_addr = tn.get_node_i_address(1).await?;
         let hdht = HyperDht::with_config(DhtConfig::default().add_bootstrap_node(bs_addr)).await?;
-
         (tn, hdht)
     }};
 }

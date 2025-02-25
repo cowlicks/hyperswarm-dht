@@ -207,7 +207,6 @@ impl HyperDht {
             target,
             None,
             Commit::No,
-            false,
         )
     }
 
@@ -305,7 +304,6 @@ impl HyperDht {
             target,
             None,
             commit,
-            false,
         );
         self.queries.insert(
             query_id,
@@ -328,7 +326,6 @@ impl HyperDht {
             target,
             None,
             Commit::Custom(Progress::default()),
-            false,
         );
         self.queries.insert(
             qid,
@@ -348,7 +345,6 @@ impl HyperDht {
             target,
             None,
             Commit::No,
-            true,
         );
         self.queries.insert(
             qid,

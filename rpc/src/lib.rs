@@ -405,9 +405,8 @@ impl RpcDht {
         target: IdBytes,
         value: Option<Vec<u8>>,
         commit: Commit,
-        external_requests: bool,
     ) -> QueryId {
-        self.run_command(cmd, target, value, commit, external_requests)
+        self.run_command(cmd, target, value, commit)
     }
 
     #[instrument(skip(self))]
@@ -417,7 +416,6 @@ impl RpcDht {
         target: IdBytes,
         value: Option<Vec<u8>>,
         commit: Commit,
-        external_requests: bool,
     ) -> QueryId {
         let peers = self
             .kbuckets
@@ -427,15 +425,8 @@ impl RpcDht {
             .collect::<Vec<_>>();
 
         let bootstrap_nodes: Vec<Peer> = self.bootstrap_nodes.iter().map(Peer::from).collect();
-        self.queries.add_stream(
-            cmd,
-            peers,
-            target,
-            value,
-            bootstrap_nodes,
-            commit,
-            external_requests,
-        )
+        self.queries
+            .add_stream(cmd, peers, target, value, bootstrap_nodes, commit)
     }
 
     pub fn request(
@@ -1118,11 +1109,6 @@ impl Stream for RpcDht {
                     }
                 } else {
                     match pin.queries.poll(now) {
-                        QueryPoolEvent::ExternalRequests((qid, reqs)) => {
-                            for req in reqs {
-                                pin.io.enqueue_request((Some(qid), req));
-                            }
-                        }
                         QueryPoolEvent::Commit((query, cev)) => {
                             use commit::{Commit as C, CommitEvent as E, Progress as P};
                             // TODO add all commit handlers
