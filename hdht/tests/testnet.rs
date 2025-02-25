@@ -1,19 +1,40 @@
-#![allow(unused, unreachable_code)]
+#![allow(unreachable_code)]
 mod common;
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
 
-use common::{
-    js::{make_repl, KEYPAIR_JS},
-    log, Result,
-};
+use common::{js::make_repl, Result};
 use dht_rpc::DhtConfig;
 use futures::StreamExt;
 use hyperdht::{crypto::Keypair2, HyperDht, HyperDhtEvent};
 use rusty_nodejs_repl::Repl;
-use tracing_subscriber::EnvFilter;
 
+#[allow(unused)]
 fn show_bytes<T: AsRef<[u8]>>(x: T) {
     println!("{}", String::from_utf8(x.as_ref().to_vec()).unwrap())
+}
+
+macro_rules! get_pub_keys_for_lookup {
+    ($testnet:tt) => {{
+        get_pub_keys_for_lookup!($testnet, "testnet.nodes.length - 1")
+    }};
+    ($testnet:tt, $node_index:tt) => {{
+        let node_index = $node_index;
+        let found_pk_js: Vec<Vec<u8>> = $testnet
+            .repl
+            .json_run(format!(
+                "
+lookup_node = testnet.nodes[{node_index}];
+query = await lookup_node.lookup(topic);
+let out = [];
+for await (const x of query) {{
+    out.push([...x.peers[0].publicKey])
+}}
+writeJson(out)
+",
+            ))
+            .await?;
+        found_pk_js
+    }};
 }
 
 macro_rules! poll_until {
@@ -21,7 +42,9 @@ macro_rules! poll_until {
         let res = loop {
             match $hdht.next().await {
                 Some($variant(x)) => break x,
-                _ => {}
+                _other => {
+                    //tracing::info!("{other:?}");
+                }
             }
         };
         res
@@ -45,7 +68,7 @@ testnet = await createTestnet();
         Ok(Self { repl })
     }
 
-    /// Get the address of a node from an existing testnet in JS
+    /// Get the address of a node from an existing testnet in js
     /// NB: `testnet` must exist in the js context already
     async fn get_node_i_address(&mut self, node_index: usize) -> Result<SocketAddr> {
         Ok(self
@@ -75,18 +98,26 @@ write(stringify(`${{bs_node.host}}:${{bs_node.port}}`))
             .await?)
     }
 }
-/// Do an "announce" from javascript, then have rust "lookup"
-/// In rust we get a public key in the lookup response, we check this is the same as the public key
-/// of the node that announced.
+macro_rules! setup_rs_node_and_js_testnet {
+    () => {{
+        let mut tn = Testnet::new().await?;
+        let bs_addr = tn.get_node_i_address(1).await?;
+        let hdht = HyperDht::with_config(DhtConfig::default().add_bootstrap_node(bs_addr)).await?;
+
+        (tn, hdht)
+    }};
+}
+
+/// Check that Rust's lookup works. The steps:
+/// js does an announce with a `topic` and `keypair`
+/// rs does a lookup for `topic`. Then checks the resulting keys found match `keypair`
 #[tokio::test]
 async fn js_announces_rs_looksup() -> Result<()> {
-    let mut tn = Testnet::new().await?;
-
-    let bs_addr = tn.get_node_i_address(1).await?;
-    let mut hdht = HyperDht::with_config(DhtConfig::default().add_bootstrap_node(bs_addr)).await?;
+    let (mut tn, mut hdht) = setup_rs_node_and_js_testnet!();
 
     let topic = tn.make_topic("hello").await?;
 
+    // with js announc on topic with the node's default keypair
     let _res = tn
         .repl
         .run(
@@ -98,19 +129,22 @@ await query.finished();
         )
         .await?;
 
-    let _qid = hdht.lookup(topic.into(), hyperdht::Commit::No);
+    // with RS do a lookup
+    let query_id = hdht.lookup(topic.into(), hyperdht::Commit::No);
 
-    let mut r = None;
+    // wait for rs lookup to complete
+    // and record the public keys in responses
+    let mut rs_lookup_keys = vec![];
     loop {
         match hdht.next().await {
             Some(HyperDhtEvent::LookupResult(res)) => {
-                if res.query_id == _qid {
+                if res.query_id == query_id {
                     break;
                 }
             }
             Some(HyperDhtEvent::LookupResponse(resp)) => {
-                if let Some(t) = resp.response.response.token {
-                    r = Some(resp.peers);
+                if let Some(_token) = resp.response.response.token {
+                    rs_lookup_keys.extend(resp.peers);
                 }
             }
             Some(_) => {}
@@ -118,49 +152,75 @@ await query.finished();
         }
     }
 
-    let Some(peers) = r else {
-        panic!();
-    };
+    // get the public key js announced with
     let js_pk: Vec<u8> = tn
         .repl
         .json_run("writeJson([...ann_node.defaultKeyPair.publicKey])")
         .await?;
-    assert_eq!(peers[0].public_key.as_slice(), js_pk);
+
+    // check js pub key matches the ones we found in rust
+    assert!(!rs_lookup_keys.is_empty());
+    for p in rs_lookup_keys {
+        assert_eq!(p.public_key.as_slice(), js_pk);
+    }
     Ok(())
 }
 
-/// Do an "announce" from javascript, then have rust "lookup"
-/// In rust we get a public key in the lookup response, we check this is the same as the public key
-/// of the node that announced.
+/// Test Rust's announce. The steps:
+/// rs does announce for a `topic` with `keypair`
+/// js does loookup, and we check that resulting publick keys match `keypair`
 #[tokio::test]
 async fn rs_announces_js_looksup() -> Result<()> {
-    let mut tn = Testnet::new().await?;
+    let (mut testnet, mut hdht) = setup_rs_node_and_js_testnet!();
 
-    let bs_addr = tn.get_node_i_address(1).await?;
-    let mut hdht = HyperDht::with_config(DhtConfig::default().add_bootstrap_node(bs_addr)).await?;
+    let topic = testnet.make_topic("hello").await?;
+    let keypair = Keypair2::default();
+    let _qid = hdht.announce(topic.into(), &keypair, &[]);
 
-    let topic = tn.make_topic("hello").await?;
-    let kp = Keypair2::default();
-    let qid = hdht.announce(topic.into(), &kp, &[]);
-
-    /// Run announce to completion
+    // Run announce to completion
     let _res = poll_until!(hdht, HyperDhtEvent::AnnounceResult);
-    /// do lookup in js.
-    /// get result for js and show it matches the RS keypair above
-    let found_pk_js: Vec<u8> = tn
-        .repl
-        .json_run(
-            "
-lookup_node = testnet.nodes[testnet.nodes.length - 1];
-query = await lookup_node.lookup(topic);
-for await (const x of query) {
-    writeJson([...x.peers[0].publicKey]);
-    break
-}
-",
-        )
-        .await?;
+    // do lookup in js.
+    let found_pk_js = get_pub_keys_for_lookup!(testnet);
 
-    assert_eq!(kp.public.as_slice(), found_pk_js);
+    assert!(!found_pk_js.is_empty());
+    for pk in found_pk_js {
+        assert_eq!(keypair.public.as_slice(), pk);
+    }
+    Ok(())
+}
+
+/// Test Rust's unannounce. The steps:
+/// rs does announce
+/// js does lookup, check topic is found with correct pk
+/// rs does unannounce
+/// ss does a lookup, check no results found
+#[tokio::test]
+async fn test_rs_unannounce() -> Result<()> {
+    let (mut testnet, mut hdht) = setup_rs_node_and_js_testnet!();
+    let topic = testnet.make_topic("hello").await?;
+    let keypair = Keypair2::default();
+
+    // announce our rust node with `topic` and `keypair`
+    let _qid = hdht.announce(topic.into(), &keypair, &[]);
+
+    // finish announce
+    let _ = poll_until!(hdht, HyperDhtEvent::AnnounceResult);
+    // show_bytes(&test_net.repl.drain_stdout().await?);
+
+    // with js do a lookup and get pubkeys
+    let found_pk_js = get_pub_keys_for_lookup!(testnet);
+
+    // get result for js and show it matches the RS keypair above
+    assert_eq!(keypair.public.as_slice(), found_pk_js[0]);
+
+    // Do the unannounce
+    let _qid = hdht.unannounce(topic.into(), &keypair);
+    // Wait for unannounce to complete
+    let _ = poll_until!(hdht, HyperDhtEvent::UnAnnounceResult);
+
+    // Do a lookup for a the topic again
+    let found_pk_js = get_pub_keys_for_lookup!(testnet);
+    // assert no keys found for the topic
+    assert_eq!(found_pk_js.len(), 0);
     Ok(())
 }
